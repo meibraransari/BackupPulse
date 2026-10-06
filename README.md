@@ -123,10 +123,26 @@ chmod +x /usr/local/bin/backup_agent.sh
 ### 2. Configuration (`/etc/backup_agent.conf`)
 Create `/etc/backup_agent.conf` on each server:
 ```bash
+# Central Ingestion Hub
 API_URL="http://your-backup-hub-ip:3000/api/v1/backups/report"
 API_KEY="bkp_live_secret_key_12345"
+
+# S3 Destination Settings
 S3_BUCKET="my-company-backup-vault"
+S3_PREFIX="servers"
+AWS_DEFAULT_REGION="us-east-1"
+
+# S3 Access Key & Secret Key Authentication
+# (Leave empty to use AWS IAM Instance Profiles or existing ~/.aws/credentials)
+AWS_ACCESS_KEY_ID="AKIAIOSFODNN7EXAMPLE"
+AWS_SECRET_ACCESS_KEY="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+
+# Optional Custom S3 Endpoint (for MinIO, Wasabi, Cloudflare R2, DigitalOcean Spaces)
+# S3_ENDPOINT_URL="https://s3.wasabisys.com"
+
 ENVIRONMENT="production"
+KEEP_LOCAL_DAYS=0
+TEMP_DIR="/tmp/backup_jobs"
 ```
 
 ### 3. Crontab Examples (`crontab -e`)

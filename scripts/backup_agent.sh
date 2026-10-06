@@ -23,6 +23,10 @@ SOURCE_DIR="${SOURCE_DIR:-}"
 DB_DUMP_CMD="${DB_DUMP_CMD:-}"
 S3_BUCKET="${S3_BUCKET:-}"
 S3_PREFIX="${S3_PREFIX:-backups}"
+AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-${S3_ACCESS_KEY:-}}"
+AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-${S3_SECRET_KEY:-}}"
+AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-${AWS_REGION:-${S3_REGION:-us-east-1}}}"
+S3_ENDPOINT_URL="${S3_ENDPOINT_URL:-${AWS_ENDPOINT_URL:-}}"
 ENVIRONMENT="${ENVIRONMENT:-production}"
 TEMP_DIR="${TEMP_DIR:-/tmp/backups}"
 KEEP_LOCAL_DAYS="${KEEP_LOCAL_DAYS:-0}" # 0 = delete immediately after S3 upload
@@ -42,6 +46,10 @@ while [[ "$#" -gt 0 ]]; do
     --db-cmd) DB_DUMP_CMD="$2"; shift 2 ;;
     --s3-bucket) S3_BUCKET="$2"; shift 2 ;;
     --s3-prefix) S3_PREFIX="$2"; shift 2 ;;
+    --s3-access-key|--access-key|--aws-access-key-id) AWS_ACCESS_KEY_ID="$2"; shift 2 ;;
+    --s3-secret-key|--secret-key|--aws-secret-access-key) AWS_SECRET_ACCESS_KEY="$2"; shift 2 ;;
+    --s3-region|--region|--aws-region) AWS_DEFAULT_REGION="$2"; shift 2 ;;
+    --s3-endpoint|--endpoint-url) S3_ENDPOINT_URL="$2"; shift 2 ;;
     --api-url) API_URL="$2"; shift 2 ;;
     --api-key) API_KEY="$2"; shift 2 ;;
     --server-id) SERVER_ID="$2"; shift 2 ;;
@@ -49,16 +57,20 @@ while [[ "$#" -gt 0 ]]; do
     --dry-run) DRY_RUN=true; shift ;;
     --help)
       echo "Usage: $0 [options]"
-      echo "  --project     Project name (e.g. billing-service)"
-      echo "  --type        Backup type: 'db', 'code', or 'full'"
-      echo "  --dir         Target directory to backup/zip"
-      echo "  --db-cmd      Optional command to dump DB into the target directory"
-      echo "  --s3-bucket   AWS S3 Bucket name"
-      echo "  --s3-prefix   S3 key prefix (default: backups)"
-      echo "  --api-url     BackupPulse Ingestion API URL"
-      echo "  --api-key     BackupPulse Ingestion API Key"
-      echo "  --server-id   Server identification identifier"
-      echo "  --dry-run     Simulate without uploading to S3 or calling API"
+      echo "  --project       Project name (e.g. billing-service)"
+      echo "  --type          Backup type: 'db', 'code', or 'full'"
+      echo "  --dir           Target directory to backup/zip"
+      echo "  --db-cmd        Optional command to dump DB into the target directory"
+      echo "  --s3-bucket     AWS S3 Bucket name"
+      echo "  --s3-prefix     S3 key prefix (default: backups)"
+      echo "  --s3-access-key AWS / S3 Access Key ID"
+      echo "  --s3-secret-key AWS / S3 Secret Access Key"
+      echo "  --s3-region     AWS / S3 Region (default: us-east-1)"
+      echo "  --s3-endpoint   Custom S3 Endpoint URL (e.g. MinIO, Cloudflare R2, Wasabi)"
+      echo "  --api-url       BackupPulse Ingestion API URL"
+      echo "  --api-key       BackupPulse Ingestion API Key"
+      echo "  --server-id     Server identification identifier"
+      echo "  --dry-run       Simulate without uploading to S3 or calling API"
       exit 0
       ;;
     *) echo "Unknown option: $1"; exit 1 ;;
@@ -247,14 +259,38 @@ CHECKSUM="$(sha256sum "$ARCHIVE_PATH" 2>/dev/null | awk '{print $1}' || md5sum "
 echo "[+] Archive created: $(format_bytes "$ARCHIVE_SIZE_BYTES") (${ARCHIVE_SIZE_BYTES} bytes)"
 echo "[+] SHA256 Checksum: ${CHECKSUM}"
 
+# Export S3 / AWS credentials to environment if configured
+if [ -n "$AWS_ACCESS_KEY_ID" ]; then
+  export AWS_ACCESS_KEY_ID
+fi
+if [ -n "$AWS_SECRET_ACCESS_KEY" ]; then
+  export AWS_SECRET_ACCESS_KEY
+fi
+if [ -n "$AWS_DEFAULT_REGION" ]; then
+  export AWS_DEFAULT_REGION
+  export AWS_REGION="$AWS_DEFAULT_REGION"
+fi
+
 # 5. Upload to S3
 if [ -n "$S3_BUCKET" ]; then
   echo "[*] Uploading archive to AWS S3: ${S3_URI}..."
+
+  S3_EXTRA_ARGS=()
+  if [ -n "$S3_ENDPOINT_URL" ]; then
+    S3_EXTRA_ARGS+=(--endpoint-url "$S3_ENDPOINT_URL")
+  fi
+
+  if [ -n "$AWS_ACCESS_KEY_ID" ]; then
+    echo "[*] S3 Authentication: Using configured Access Key (${AWS_ACCESS_KEY_ID:0:4}****)"
+  else
+    echo "[*] S3 Authentication: Using environment credentials or IAM Instance Profile"
+  fi
+
   if [ "$DRY_RUN" = true ]; then
-    echo "[DRY RUN] Would upload with: aws s3 cp ${ARCHIVE_PATH} ${S3_URI}"
+    echo "[DRY RUN] Would upload with: aws s3 cp ${ARCHIVE_PATH} ${S3_URI} ${S3_EXTRA_ARGS[*]}"
   else
     if command -v aws >/dev/null 2>&1; then
-      aws s3 cp "$ARCHIVE_PATH" "$S3_URI" --only-show-errors
+      aws s3 cp "$ARCHIVE_PATH" "$S3_URI" "${S3_EXTRA_ARGS[@]}" --only-show-errors
       echo "[+] S3 upload verified successfully."
     else
       echo "[-] 'aws' CLI command not found. S3 upload skipped." >&2
