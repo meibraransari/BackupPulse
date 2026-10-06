@@ -98,6 +98,13 @@ export const api = {
     return request<BackupReport>(`/api/v1/backups/${id}`);
   },
 
+  async updateBackupStatus(id: string, status: string, resolutionNote?: string): Promise<BackupReport> {
+    return request<BackupReport>(`/api/v1/backups/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status, resolutionNote }),
+    });
+  },
+
   async getProjects(): Promise<string[]> {
     return request<string[]>('/api/v1/backups/projects');
   },

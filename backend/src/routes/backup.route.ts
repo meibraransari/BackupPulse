@@ -244,6 +244,66 @@ export async function backupRoutes(fastify: FastifyInstance) {
     }
   );
 
+  // Manually update backup report status (e.g. resolve FAILED to SUCCESS)
+  fastify.patch(
+    '/api/v1/backups/:id/status',
+    {
+      preValidation: [(fastify as any).authenticate],
+      schema: {
+        description: 'Manually update backup report status (e.g. resolve FAILED to SUCCESS)',
+        tags: ['Backups'],
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: 'object',
+          properties: { id: { type: 'string' } },
+          required: ['id'],
+        },
+        body: {
+          type: 'object',
+          required: ['status'],
+          properties: {
+            status: { type: 'string', enum: ['SUCCESS', 'FAILED', 'WARNING', 'IN_PROGRESS'] },
+            resolutionNote: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { id } = request.params as any;
+      const { status, resolutionNote } = request.body as any;
+      const authUser = (request as any).user;
+
+      const existing = await prisma.backupReport.findUnique({
+        where: { id },
+      });
+
+      if (!existing) {
+        return reply.status(404).send({ error: 'Backup report not found' });
+      }
+
+      const existingMeta = (existing.metadata as Record<string, any>) || {};
+      const updatedMeta = {
+        ...existingMeta,
+        manually_resolved: status === 'SUCCESS',
+        previous_status: existing.status,
+        resolved_at: new Date().toISOString(),
+        resolved_by: authUser?.username || 'admin',
+        resolution_note: resolutionNote || 'Manually marked as SUCCESS by administrator',
+      };
+
+      const updated = await prisma.backupReport.update({
+        where: { id },
+        data: {
+          status: status.toUpperCase(),
+          metadata: updatedMeta,
+          ...(status.toUpperCase() === 'SUCCESS' ? { exitCode: 0 } : {}),
+        },
+      });
+
+      return reply.send(updated);
+    }
+  );
+
   // Unique Projects list for filter dropdown
   fastify.get(
     '/api/v1/backups/projects',

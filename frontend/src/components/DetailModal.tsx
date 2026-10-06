@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
-import { X, Copy, Check, Terminal, AlertCircle, HardDrive, ShieldCheck, Database, Calendar } from 'lucide-react';
+import { X, Copy, Check, Terminal, AlertCircle, HardDrive, CheckCircle2 } from 'lucide-react';
 import { BackupReport } from '../types';
 
 interface DetailModalProps {
   report: BackupReport | null;
   onClose: () => void;
+  onMarkSuccess?: (report: BackupReport) => void;
 }
 
-export const DetailModal: React.FC<DetailModalProps> = ({ report, onClose }) => {
+export const DetailModal: React.FC<DetailModalProps> = ({ report, onClose, onMarkSuccess }) => {
   const [copiedKey, setCopiedKey] = useState(false);
 
   if (!report) return null;
@@ -50,16 +51,29 @@ export const DetailModal: React.FC<DetailModalProps> = ({ report, onClose }) => 
 
         {/* Body */}
         <div className="p-6 overflow-y-auto space-y-6">
-          {/* Failure Alert Banner (if failed) */}
-          {report.status === 'FAILED' && report.errorMessage && (
-            <div className="p-4 rounded-xl bg-red-950/40 border border-red-800/50 text-red-300 space-y-1">
-              <div className="flex items-center space-x-2 text-sm font-semibold text-red-400">
-                <AlertCircle className="h-4 w-4" />
-                <span>Backup Failure Detected</span>
+          {/* Failure Alert Banner (if failed) with Resolve Action */}
+          {report.status === 'FAILED' && (
+            <div className="p-4 rounded-xl bg-red-950/40 border border-red-800/50 text-red-300 space-y-2.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center space-x-2 text-sm font-semibold text-red-400">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  <span>Backup Failure Detected</span>
+                </div>
+                {onMarkSuccess && (
+                  <button
+                    onClick={() => onMarkSuccess(report)}
+                    className="self-start sm:self-auto px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition-colors flex items-center space-x-1.5 shadow-md shadow-emerald-700/30"
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    <span>Mark as Resolved (Convert to Success)</span>
+                  </button>
+                )}
               </div>
-              <p className="text-xs font-mono bg-red-950/80 p-2.5 rounded-lg border border-red-900/50">
-                {report.errorMessage}
-              </p>
+              {report.errorMessage && (
+                <p className="text-xs font-mono bg-red-950/80 p-2.5 rounded-lg border border-red-900/50">
+                  {report.errorMessage}
+                </p>
+              )}
             </div>
           )}
 
