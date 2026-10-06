@@ -5,6 +5,7 @@ import { TrendChart } from '../components/TrendChart';
 import { FilterBar } from '../components/FilterBar';
 import { BackupTable } from '../components/BackupTable';
 import { DetailModal } from '../components/DetailModal';
+import { ResolveModal } from '../components/ResolveModal';
 import { api } from '../services/api';
 import { BackupFilters, BackupReport, DashboardStats, ProjectBreakdown, TrendItem, User } from '../types';
 import { RefreshCw, CheckCircle2 } from 'lucide-react';
@@ -38,6 +39,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
 
   const [filters, setFilters] = useState<BackupFilters>(initialFilters);
   const [selectedReport, setSelectedReport] = useState<BackupReport | null>(null);
+  const [resolvingReport, setResolvingReport] = useState<BackupReport | null>(null);
 
   const [loadingStats, setLoadingStats] = useState(true);
   const [loadingBackups, setLoadingBackups] = useState(true);
@@ -127,33 +129,34 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
     scrollToTable();
   };
 
-  // Manually resolve failed backup job to SUCCESS
-  const handleMarkSuccess = async (report: BackupReport) => {
-    const confirmed = window.confirm(
-      `Mark backup job for "${report.projectName}" on server "${report.serverId}" as SUCCESS manually?`
-    );
-    if (!confirmed) return;
+  // Open the professional resolution modal
+  const handleOpenResolveModal = (report: BackupReport) => {
+    setResolvingReport(report);
+  };
 
+  // Confirm resolution from the professional modal
+  const handleConfirmResolve = async (report: BackupReport, resolutionNote: string) => {
     try {
       const updated = await api.updateBackupStatus(
         report.id,
         'SUCCESS',
-        `Manually resolved and approved by ${user?.username || 'admin'}`
+        resolutionNote
       );
 
-      // If viewing in modal, update modal state
+      // If currently viewing in detail drawer, update it in place
       if (selectedReport && selectedReport.id === report.id) {
         setSelectedReport(updated);
       }
 
-      // Show toast
-      setActionToast(`Backup for "${report.projectName}" resolved and converted to SUCCESS.`);
+      // Show success notification toast
+      setActionToast(`Backup for "${report.projectName}" marked as SUCCESS.`);
       setTimeout(() => setActionToast(null), 4000);
 
       // Refresh stats & table so it immediately disappears from Failed count!
       await Promise.all([loadDashboardData(), loadBackups()]);
     } catch (err: any) {
       alert(`Failed to update backup status: ${err.message}`);
+      throw err;
     }
   };
 
@@ -223,14 +226,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
             exporting={exporting}
           />
 
-          {/* 4. Telemetry Records Table (With manual resolve button) */}
+          {/* 4. Telemetry Records Table (With professional resolve modal trigger) */}
           <BackupTable
             data={backups}
             loading={loadingBackups}
             pagination={pagination}
             onPageChange={handlePageChange}
             onSelectReport={(report) => setSelectedReport(report)}
-            onMarkSuccess={handleMarkSuccess}
+            onMarkSuccess={handleOpenResolveModal}
           />
         </div>
       </main>
@@ -239,7 +242,16 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
       <DetailModal
         report={selectedReport}
         onClose={() => setSelectedReport(null)}
-        onMarkSuccess={handleMarkSuccess}
+        onMarkSuccess={handleOpenResolveModal}
+      />
+
+      {/* 6. Professional Incident Resolution Modal */}
+      <ResolveModal
+        report={resolvingReport}
+        currentUser={user}
+        isOpen={!!resolvingReport}
+        onClose={() => setResolvingReport(null)}
+        onConfirm={handleConfirmResolve}
       />
 
       {/* Floating Action Toast */}
