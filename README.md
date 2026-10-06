@@ -35,41 +35,29 @@ A high-performance Node.js & React telemetry platform designed to monitor automa
 
 ## 🚀 Quick Start with Docker Compose
 
-### 1. Configure Environment Variables
+### 1. Clone the Repository
+```bash
+git clone --depth 1 https://github.com/meibraransari/BackupPulse.git
+cd BackupPulse
+```
+
+### 2. Configure Environment Variables
 Copy `.env.example` to `.env` and configure your credentials:
 ```bash
 cp .env.example .env
 ```
 
-Key environment variables:
-```ini
-# Server & DB
-PORT=3000
-DATABASE_URL=postgresql://postgres:postgres_secure_pass_123@postgres:5432/backup_monitor_db?schema=public
-
-# Ingestion Key (Use this in client backup scripts)
-INGESTION_API_KEY=bkp_live_secret_key_12345
-
-# Admin Login Credentials
-INITIAL_ADMIN_USERNAME=admin
-INITIAL_ADMIN_PASSWORD=Admin@123456
-
-# Google Chat (Optional)
-GOOGLE_CHAT_WEBHOOK_URL=https://chat.googleapis.com/v1/spaces/.../messages?key=...&token=...
-GOOGLE_CHAT_REPORT_CRON="0 9 * * *"
-```
-
-### 2. Launch the Application
+### 3. Launch the Application
 Run Docker Compose to build and start the PostgreSQL database and the unified application container:
 ```bash
 docker compose up -d --build
 ```
 
-### 3. Access the Services
+### 4. Access the Services
 * **Web Dashboard**: [http://localhost:3000](http://localhost:3000)
   * Default Username: `admin`
   * Default Password: `Admin@123456`
-* **Swagger OpenAPI Docs**: [http://localhost:3000/api/docs](http://localhost:3000/api/docs)
+* **Swagger OpenAPI Docs**: [http://localhost:3000/api/docs](http://localhost:3000/api/docs) (or [http://localhost:3000/docs](http://localhost:3000/docs))
 * **Health Check**: [http://localhost:3000/health](http://localhost:3000/health)
 
 ---
