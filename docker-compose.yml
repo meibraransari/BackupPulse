@@ -1,0 +1,68 @@
+services:
+  # ============================================================================
+  # PostgreSQL Database Service
+  # ============================================================================
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:17-alpine}
+    container_name: backup-pulse-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_secure_pass_123}
+      POSTGRES_DB: ${POSTGRES_DB:-backup_monitor_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-backup_monitor_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backup-network
+
+  # ============================================================================
+  # BackupPulse Application (Backend API + Frontend Dashboard in Single Container)
+  # ============================================================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: backup-pulse-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: ${PORT:-3000}
+      HOST: 0.0.0.0
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_secure_pass_123}@postgres:5432/${POSTGRES_DB:-backup_monitor_db}?schema=public
+      JWT_SECRET: ${JWT_SECRET:-production_jwt_secret_please_change_me_super_secure_987654321}
+      INGESTION_API_KEY: ${INGESTION_API_KEY:-bkp_live_secret_key_12345}
+      INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:-admin}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-Admin@123456}
+      GOOGLE_CHAT_WEBHOOK_URL: ${GOOGLE_CHAT_WEBHOOK_URL:-}
+      GOOGLE_CHAT_REPORT_CRON: ${GOOGLE_CHAT_REPORT_CRON:-0 9 * * *}
+      ENABLE_DAILY_REPORT: ${ENABLE_DAILY_REPORT:-true}
+    ports:
+      - "${PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    networks:
+      - backup-network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  backup-network:
+    driver: bridge
