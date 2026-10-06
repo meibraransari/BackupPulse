@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 # ==============================================================================
 # BackupPulse — Interactive Dummy Data Generator & Scenario Simulator
 # ==============================================================================
