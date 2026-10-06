@@ -11,7 +11,7 @@ export const authStorage = {
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = authStorage.getToken();
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    ...(options.body ? { 'Content-Type': 'application/json' } : {}),
     ...(options.headers as Record<string, string>),
   };
 
@@ -34,7 +34,8 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     let errorMsg = `Error ${response.status}: ${response.statusText}`;
     try {
       const errJson = await response.json();
-      if (errJson.error) errorMsg = errJson.error;
+      if (errJson.message) errorMsg = errJson.message;
+      else if (errJson.error) errorMsg = errJson.error;
     } catch {}
     throw new Error(errorMsg);
   }
@@ -109,12 +110,14 @@ export const api = {
   async testGoogleChat(): Promise<{ success: boolean; message: string }> {
     return request<{ success: boolean; message: string }>('/api/v1/notifications/test-gchat', {
       method: 'POST',
+      body: JSON.stringify({}),
     });
   },
 
   async triggerDailyReport(): Promise<{ success: boolean; message: string }> {
     return request<{ success: boolean; message: string }>('/api/v1/notifications/trigger-daily-report', {
       method: 'POST',
+      body: JSON.stringify({}),
     });
   },
 

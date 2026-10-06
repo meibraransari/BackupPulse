@@ -27,6 +27,21 @@ async function bootstrap() {
     bodyLimit: 15 * 1024 * 1024, // 15MB limit for large logs if needed
   });
 
+  // Support empty JSON bodies gracefully without throwing FST_ERR_CTP_EMPTY_JSON_BODY
+  fastify.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body: string | Buffer, done) => {
+    const str = typeof body === 'string' ? body : body?.toString('utf-8') || '';
+    if (!str || str.trim() === '') {
+      return done(null, {});
+    }
+    try {
+      const json = JSON.parse(str);
+      done(null, json);
+    } catch (err: any) {
+      err.statusCode = 400;
+      done(err, undefined);
+    }
+  });
+
   // Enable CORS
   await fastify.register(cors, {
     origin: true,
