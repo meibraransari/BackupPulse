@@ -143,3 +143,22 @@ BackupPulse automatically dispatches daily summary cards using Google Chat **Car
 - Highlighted red alert section for failed jobs (including server hostname, project name, and error message).
 - Action button linking directly back to the web dashboard.
 - Schedule is customizable in `.env` using standard cron syntax (e.g. `GOOGLE_CHAT_REPORT_CRON="0 9 * * *"`).
+
+---
+
+## 🧪 Interactive Dummy Data & Scenario Generator
+
+Load realistic telemetry data and test edge cases into your dashboard using the interactive CLI script:
+
+```bash
+chmod +x scripts/load_dummy_data.sh
+./scripts/load_dummy_data.sh
+```
+
+### Menu Options:
+- **`[1] Full Production Dataset`**: Generates 40+ multi-day reports across 10 projects and 15 servers, populating the 7-day trend chart, storage breakdown, and success ratios.
+- **`[2] Failure Scenarios Only`**: Simulates 5 distinct failure conditions (out-of-disk space, S3 permission denied, connection loss, checksum mismatch, memory limits) with complete error traces.
+- **`[3] Single Report Test`**: An interactive wizard to fire a custom test backup report (SUCCESS or FAILED) for any project/server in 1 second.
+- **`[4] 100-Server Fleet Simulation`**: Rapid batch ingestion of 100 server backup events in parallel to test high-throughput performance.
+- **`[5] Change API Target`**: Point the script to any local or remote BackupPulse endpoint.
+
