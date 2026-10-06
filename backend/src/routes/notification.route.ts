@@ -1,9 +1,79 @@
 import { FastifyInstance } from 'fastify';
+import { config } from '../config/env';
 import { sendTestGoogleChatNotification, sendDailyBackupReportToGoogleChat } from '../services/gchat.service';
+import { sendTestEmailNotification, sendDailyBackupReportEmail } from '../services/smtp.service';
 
 export async function notificationRoutes(fastify: FastifyInstance) {
-  // Test Google Chat Webhook (Supports both POST and GET)
-  const testHandler = async (_request: any, reply: any) => {
+  // 1. Get Notification Channels Status & Settings
+  fastify.get(
+    '/api/v1/notifications/status',
+    {
+      preValidation: [(fastify as any).authenticate],
+      schema: {
+        description: 'Get current status and active configuration of notification channels (Google Chat and SMTP)',
+        tags: ['Notifications'],
+        security: [{ bearerAuth: [] }],
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              googleChat: {
+                type: 'object',
+                properties: {
+                  enabled: { type: 'boolean' },
+                  configured: { type: 'boolean' },
+                },
+              },
+              smtp: {
+                type: 'object',
+                properties: {
+                  enabled: { type: 'boolean' },
+                  configured: { type: 'boolean' },
+                  host: { type: 'string' },
+                  port: { type: 'number' },
+                  from: { type: 'string' },
+                  to: { type: 'string' },
+                },
+              },
+              cron: {
+                type: 'object',
+                properties: {
+                  expression: { type: 'string' },
+                  active: { type: 'boolean' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (_request: any, reply: any) => {
+      const isGchatConfigured = Boolean(config.GOOGLE_CHAT_WEBHOOK_URL && config.GOOGLE_CHAT_WEBHOOK_URL.trim().length > 0);
+      const isSmtpConfigured = Boolean(config.SMTP_HOST && config.SMTP_TO);
+
+      return reply.send({
+        googleChat: {
+          enabled: config.ENABLE_GOOGLE_CHAT,
+          configured: isGchatConfigured,
+        },
+        smtp: {
+          enabled: config.ENABLE_SMTP,
+          configured: isSmtpConfigured,
+          host: config.SMTP_HOST || '',
+          port: config.SMTP_PORT,
+          from: config.SMTP_FROM,
+          to: config.SMTP_TO || '',
+        },
+        cron: {
+          expression: config.REPORT_CRON,
+          active: config.ENABLE_GOOGLE_CHAT || config.ENABLE_SMTP,
+        },
+      });
+    }
+  );
+
+  // 2. Test Google Chat Webhook (Supports both POST and GET)
+  const testGchatHandler = async (_request: any, reply: any) => {
     const result = await sendTestGoogleChatNotification();
     if (!result.success) {
       return reply.status(400).send(result);
@@ -16,7 +86,7 @@ export async function notificationRoutes(fastify: FastifyInstance) {
     {
       preValidation: [(fastify as any).authenticate],
       schema: {
-        description: 'Send a test notification to Google Chat webhook',
+        description: 'Send an instant test notification card to the configured Google Chat webhook',
         tags: ['Notifications'],
         security: [{ bearerAuth: [] }],
         body: {
@@ -42,7 +112,7 @@ export async function notificationRoutes(fastify: FastifyInstance) {
         },
       },
     },
-    testHandler
+    testGchatHandler
   );
 
   fastify.get(
@@ -50,17 +120,17 @@ export async function notificationRoutes(fastify: FastifyInstance) {
     {
       preValidation: [(fastify as any).authenticate],
       schema: {
-        description: 'Send a test notification to Google Chat webhook (GET alias)',
+        description: 'Send an instant test notification card to the configured Google Chat webhook (GET alias)',
         tags: ['Notifications'],
         security: [{ bearerAuth: [] }],
       },
     },
-    testHandler
+    testGchatHandler
   );
 
-  // Trigger Daily Backup Report Manually
-  const triggerHandler = async (_request: any, reply: any) => {
-    const result = await sendDailyBackupReportToGoogleChat();
+  // 3. Test SMTP Email Delivery (Supports both POST and GET)
+  const testSmtpHandler = async (_request: any, reply: any) => {
+    const result = await sendTestEmailNotification();
     if (!result.success) {
       return reply.status(400).send(result);
     }
@@ -68,11 +138,11 @@ export async function notificationRoutes(fastify: FastifyInstance) {
   };
 
   fastify.post(
-    '/api/v1/notifications/trigger-daily-report',
+    '/api/v1/notifications/test-smtp',
     {
       preValidation: [(fastify as any).authenticate],
       schema: {
-        description: 'Manually trigger and dispatch the daily backup report to Google Chat',
+        description: 'Send an instant test notification email to the configured recipient via SMTP',
         tags: ['Notifications'],
         security: [{ bearerAuth: [] }],
         body: {
@@ -93,6 +163,130 @@ export async function notificationRoutes(fastify: FastifyInstance) {
             properties: {
               success: { type: 'boolean' },
               message: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+    testSmtpHandler
+  );
+
+  fastify.get(
+    '/api/v1/notifications/test-smtp',
+    {
+      preValidation: [(fastify as any).authenticate],
+      schema: {
+        description: 'Send an instant test notification email to the configured recipient via SMTP (GET alias)',
+        tags: ['Notifications'],
+        security: [{ bearerAuth: [] }],
+      },
+    },
+    testSmtpHandler
+  );
+
+  // 4. Trigger Daily Backup Report Manually across all enabled channels
+  const triggerHandler = async (_request: any, reply: any) => {
+    const isGchatEnabled = config.ENABLE_GOOGLE_CHAT;
+    const isSmtpEnabled = config.ENABLE_SMTP;
+
+    if (!isGchatEnabled && !isSmtpEnabled) {
+      return reply.status(400).send({
+        success: false,
+        message: 'No notification channels are enabled. Set ENABLE_GOOGLE_CHAT=true and/or ENABLE_SMTP=true in .env to dispatch reports.',
+        channels: {},
+      });
+    }
+
+    const channelResults: {
+      googleChat?: { success: boolean; message: string };
+      smtp?: { success: boolean; message: string };
+    } = {};
+
+    let gchatSuccess = true;
+    let smtpSuccess = true;
+
+    if (isGchatEnabled) {
+      const gchatRes = await sendDailyBackupReportToGoogleChat();
+      channelResults.googleChat = gchatRes;
+      if (!gchatRes.success) gchatSuccess = false;
+    }
+
+    if (isSmtpEnabled) {
+      const smtpRes = await sendDailyBackupReportEmail();
+      channelResults.smtp = smtpRes;
+      if (!smtpRes.success) smtpSuccess = false;
+    }
+
+    const overallSuccess = (isGchatEnabled ? gchatSuccess : true) && (isSmtpEnabled ? smtpSuccess : true);
+    const messages: string[] = [];
+    if (channelResults.googleChat) {
+      messages.push(`Google Chat: ${channelResults.googleChat.message}`);
+    }
+    if (channelResults.smtp) {
+      messages.push(`SMTP: ${channelResults.smtp.message}`);
+    }
+
+    const responsePayload = {
+      success: overallSuccess,
+      message: messages.join(' | '),
+      channels: channelResults,
+    };
+
+    if (!overallSuccess) {
+      return reply.status(400).send(responsePayload);
+    }
+    return reply.send(responsePayload);
+  };
+
+  fastify.post(
+    '/api/v1/notifications/trigger-daily-report',
+    {
+      preValidation: [(fastify as any).authenticate],
+      schema: {
+        description: 'Manually trigger and dispatch the daily backup report across all enabled notification channels (Google Chat, SMTP email, or both)',
+        tags: ['Notifications'],
+        security: [{ bearerAuth: [] }],
+        body: {
+          type: 'object',
+          properties: {},
+          additionalProperties: true,
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              message: { type: 'string' },
+              channels: {
+                type: 'object',
+                properties: {
+                  googleChat: {
+                    type: 'object',
+                    properties: {
+                      success: { type: 'boolean' },
+                      message: { type: 'string' },
+                    },
+                  },
+                  smtp: {
+                    type: 'object',
+                    properties: {
+                      success: { type: 'boolean' },
+                      message: { type: 'string' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          400: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              message: { type: 'string' },
+              channels: {
+                type: 'object',
+                additionalProperties: true,
+              },
             },
           },
         },
@@ -106,7 +300,7 @@ export async function notificationRoutes(fastify: FastifyInstance) {
     {
       preValidation: [(fastify as any).authenticate],
       schema: {
-        description: 'Manually trigger and dispatch the daily backup report to Google Chat (GET alias)',
+        description: 'Manually trigger and dispatch the daily backup report across all enabled notification channels (GET alias)',
         tags: ['Notifications'],
         security: [{ bearerAuth: [] }],
       },

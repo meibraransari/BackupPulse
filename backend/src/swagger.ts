@@ -8,7 +8,7 @@ export async function setupSwagger(fastify: FastifyInstance) {
       info: {
         title: 'Centralized Backup Monitoring & Telemetry API',
         description:
-          'High-performance Node.js API to ingest backup telemetry from 100+ servers, monitor status, and dispatch Google Chat notifications.',
+          'High-performance Node.js API to ingest backup telemetry from 100+ servers, monitor status, and dispatch automated daily reports via Google Chat webhook and SMTP email.',
         version: '1.0.0',
       },
       servers: [

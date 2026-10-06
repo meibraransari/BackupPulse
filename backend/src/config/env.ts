@@ -21,9 +21,24 @@ export const config = {
   INITIAL_ADMIN_USERNAME: process.env.INITIAL_ADMIN_USERNAME || 'admin',
   INITIAL_ADMIN_PASSWORD: process.env.INITIAL_ADMIN_PASSWORD || 'Admin@123456',
 
+  // Automated Report Schedule (Cron)
+  REPORT_CRON: process.env.REPORT_CRON || process.env.GOOGLE_CHAT_REPORT_CRON || '0 9 * * *',
+
+  // Google Chat Channel Settings
+  ENABLE_GOOGLE_CHAT:
+    process.env.ENABLE_GOOGLE_CHAT === 'true' ||
+    (process.env.ENABLE_GOOGLE_CHAT !== 'false' && process.env.ENABLE_DAILY_REPORT !== 'false' && !!process.env.GOOGLE_CHAT_WEBHOOK_URL),
   GOOGLE_CHAT_WEBHOOK_URL: process.env.GOOGLE_CHAT_WEBHOOK_URL || '',
-  GOOGLE_CHAT_REPORT_CRON: process.env.GOOGLE_CHAT_REPORT_CRON || '0 9 * * *',
-  ENABLE_DAILY_REPORT: process.env.ENABLE_DAILY_REPORT !== 'false',
+
+  // SMTP Email Channel Settings
+  ENABLE_SMTP: process.env.ENABLE_SMTP === 'true',
+  SMTP_HOST: process.env.SMTP_HOST || '',
+  SMTP_PORT: parseInt(process.env.SMTP_PORT || '587', 10),
+  SMTP_SECURE: process.env.SMTP_SECURE === 'true',
+  SMTP_USER: process.env.SMTP_USER || '',
+  SMTP_PASSWORD: process.env.SMTP_PASSWORD || '',
+  SMTP_FROM: process.env.SMTP_FROM || 'BackupPulse <alerts@backup-pulse.internal>',
+  SMTP_TO: process.env.SMTP_TO || '',
 
   // Console Logging Configuration (applies across development & production)
   ENABLE_CONSOLE_LOG: process.env.ENABLE_CONSOLE_LOG !== 'false',

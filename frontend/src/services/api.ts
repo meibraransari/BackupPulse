@@ -121,8 +121,37 @@ export const api = {
     });
   },
 
-  async triggerDailyReport(): Promise<{ success: boolean; message: string }> {
-    return request<{ success: boolean; message: string }>('/api/v1/notifications/trigger-daily-report', {
+  async testSmtp(): Promise<{ success: boolean; message: string }> {
+    return request<{ success: boolean; message: string }>('/api/v1/notifications/test-smtp', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  },
+
+  async getNotificationStatus(): Promise<{
+    googleChat: { enabled: boolean; configured: boolean };
+    smtp: { enabled: boolean; configured: boolean; host: string; port: number; from: string; to: string };
+    cron: { expression: string; active: boolean };
+  }> {
+    return request('/api/v1/notifications/status');
+  },
+
+  async triggerDailyReport(): Promise<{
+    success: boolean;
+    message: string;
+    channels?: {
+      googleChat?: { success: boolean; message: string };
+      smtp?: { success: boolean; message: string };
+    };
+  }> {
+    return request<{
+      success: boolean;
+      message: string;
+      channels?: {
+        googleChat?: { success: boolean; message: string };
+        smtp?: { success: boolean; message: string };
+      };
+    }>('/api/v1/notifications/trigger-daily-report', {
       method: 'POST',
       body: JSON.stringify({}),
     });

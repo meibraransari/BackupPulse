@@ -53,9 +53,17 @@ services:
       INGESTION_API_KEY: ${INGESTION_API_KEY:-bkp_live_secret_key_12345}
       INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:-admin}
       INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-Admin@123456}
+      REPORT_CRON: ${REPORT_CRON:-0 9 * * *}
+      ENABLE_GOOGLE_CHAT: ${ENABLE_GOOGLE_CHAT:-true}
       GOOGLE_CHAT_WEBHOOK_URL: ${GOOGLE_CHAT_WEBHOOK_URL:-}
-      GOOGLE_CHAT_REPORT_CRON: ${GOOGLE_CHAT_REPORT_CRON:-0 9 * * *}
-      ENABLE_DAILY_REPORT: ${ENABLE_DAILY_REPORT:-true}
+      ENABLE_SMTP: ${ENABLE_SMTP:-false}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-BackupPulse Central <alerts@backup-pulse.internal>}
+      SMTP_TO: ${SMTP_TO:-}
     ports:
       - "${PORT:-3000}:3000"
     healthcheck:

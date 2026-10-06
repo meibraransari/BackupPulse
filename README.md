@@ -20,14 +20,18 @@ A high-performance Node.js & React telemetry platform designed to monitor automa
        ├──► Live Swagger UI: /api/docs
        ├──► Health Check: /health
        ├──► Stores Telemetry in PostgreSQL
-       └──► Daily Scheduled Reporter ───► [Google Chat Webhook (Cards v2)]
+       └──► Automated Scheduled Reporter (Cron: REPORT_CRON)
+              │
+              ├──► Channel 1: [Google Chat Webhook (Cards v2)]
+              └──► Channel 2: [SMTP Email (Responsive Dark HTML)]
        │
        ▼
 [BackupPulse Dashboard] (React + Vite + Tailwind CSS)
        ├──► Summary KPI Cards (Total Backups, Success Rate, Failed count, Storage)
-       ├──► Historical Trends (7-30 Days Success vs Failure Charts)
+       ├──► Historical Trends (Clickable 7-30 Days Success vs Failure Charts)
        ├──► Advanced Multi-Filter (Project, Server Host, Status, Type, Date Range)
-       ├──► Detail Drawer (S3 URIs, stdout/stderr logs, checksums, durations)
+       ├──► Detail Drawer & Modal (Resolve/Mark Success manually with audit trail)
+       ├──► Instant Test Actions (Test Google Chat, Test SMTP Email)
        └──► Export Reports to CSV & JSON
 ```
 
@@ -57,8 +61,53 @@ docker compose up -d --build
 * **Web Dashboard**: [http://localhost:3000](http://localhost:3000)
   * Default Username: `admin`
   * Default Password: `Admin@123456`
-* **Swagger OpenAPI Docs**: [http://localhost:3000/api/docs](http://localhost:3000/api/docs) (or [http://localhost:3000/docs](http://localhost:3000/docs))
+* **Swagger OpenAPI Docs**: [http://localhost:3000/api/docs](http://localhost:3000/api/docs)
 * **Health Check**: [http://localhost:3000/health](http://localhost:3000/health)
+
+---
+
+## 🔔 Automated Daily Reporting & Notification Matrix
+
+BackupPulse includes a flexible multi-channel notification engine. Depending on your team's workflow, you can choose to enable **both channels**, **only one**, or **disable both** completely via `.env`:
+
+| Mode | `ENABLE_GOOGLE_CHAT` | `ENABLE_SMTP` | Dispatch Behavior |
+| :--- | :---: | :---: | :--- |
+| **Both Channels** | `true` | `true` | Scheduled cron delivers to both Google Chat Space & SMTP Mail recipients. |
+| **Chat Only** | `true` | `false` | Dispatches Google Chat Cards v2 only; SMTP is completely dormant. |
+| **Email Only** | `false` | `true` | Dispatches rich HTML email reports only; Google Chat is dormant. |
+| **Disabled** | `false` | `false` | Automated reporter cron does not run. Telemetry is saved in DB only. |
+
+### Notification Settings in `.env`
+
+```ini
+# Schedule expression (default: 9:00 AM daily)
+REPORT_CRON="0 9 * * *"
+
+# --- Channel 1: Google Chat ---
+ENABLE_GOOGLE_CHAT=true
+GOOGLE_CHAT_WEBHOOK_URL="https://chat.googleapis.com/v1/spaces/YOUR_SPACE/messages?key=...&token=..."
+
+# --- Channel 2: SMTP Email Delivery ---
+ENABLE_SMTP=true
+SMTP_HOST="smtp.gmail.com"
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER="alerts@yourdomain.com"
+SMTP_PASSWORD="your-app-password"
+SMTP_FROM="BackupPulse Central <alerts@yourdomain.com>"
+SMTP_TO="devops@yourdomain.com,team-lead@yourdomain.com"
+```
+
+### ✉️ Email Report Features
+- Responsive dark-mode HTML template designed for mobile and desktop mail clients.
+- Executive KPIs: Total Backups, 24h Success Rate %, Failed Count, Total Vault Storage.
+- **Dedicated Failure Table**: Lists failed jobs with project, server hostname, backup type, and error traces.
+- One-click CTA button to jump directly into the live BackupPulse web dashboard.
+
+### 💬 Google Chat Features
+- Google Chat **Cards v2** with color badges (green for 100% healthy, red for failures).
+- Highlighted crash reasons and hostnames.
+- Interactive deep link button to inspect the incident in BackupPulse.
 
 ---
 
@@ -116,21 +165,12 @@ ENVIRONMENT="production"
 | `GET` | `/api/v1/dashboard/trends` | Daily trends for charts (last 7-30 days) | Bearer JWT |
 | `GET` | `/api/v1/backups` | Filtered & paginated backup records | Bearer JWT |
 | `GET` | `/api/v1/backups/:id` | Full details, logs, and S3 paths | Bearer JWT |
+| `PUT` | `/api/v1/backups/:id/status` | Manually mark failed backup as SUCCESS with notes | Bearer JWT |
 | `GET` | `/api/v1/backups/export` | Export filtered records to CSV or JSON | Bearer JWT |
-| `POST` | `/api/v1/notifications/test-gchat` | Immediate Google Chat webhook test | Bearer JWT |
-| `POST` | `/api/v1/notifications/trigger-daily-report` | Manually dispatch daily summary | Bearer JWT |
-
----
-
-## 🔔 Google Chat Integration
-
-BackupPulse automatically dispatches daily summary cards using Google Chat **Cards v2**:
-- Total backups executed in the last 24 hours.
-- Success percentage rate.
-- Storage uploaded to S3.
-- Highlighted red alert section for failed jobs (including server hostname, project name, and error message).
-- Action button linking directly back to the web dashboard.
-- Schedule is customizable in `.env` using standard cron syntax (e.g. `GOOGLE_CHAT_REPORT_CRON="0 9 * * *"`).
+| `GET` | `/api/v1/notifications/status` | Check active status of Google Chat & SMTP channels | Bearer JWT |
+| `POST` | `/api/v1/notifications/test-gchat` | Immediate Google Chat webhook test card | Bearer JWT |
+| `POST` | `/api/v1/notifications/test-smtp` | Immediate SMTP email test delivery | Bearer JWT |
+| `POST` | `/api/v1/notifications/trigger-daily-report` | Manually dispatch daily report to all enabled channels | Bearer JWT |
 
 ---
 
