@@ -63,3 +63,20 @@ model BackupReport {
   @@index([createdAt(sort: Desc)])
   @@map("backup_reports")
 }
+
+model NotificationLog {
+  id        String   @id @default(uuid())
+  channel   String   // GOOGLE_CHAT, SMTP
+  eventType String   @map("event_type") // DAILY_REPORT, TEST_NOTIFICATION, FAILURE_ALERT
+  recipient String   // Masked Webhook URL or recipient email(s)
+  status    String   // SUCCESS, FAILED
+  message   String   // Delivery response message or error description
+  payload   Json?    // Summary metrics, subject, or delivery details
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([channel, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@map("notification_logs")
+}
+

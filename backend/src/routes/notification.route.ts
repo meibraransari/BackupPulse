@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { config } from '../config/env';
 import { sendTestGoogleChatNotification, sendDailyBackupReportToGoogleChat } from '../services/gchat.service';
 import { sendTestEmailNotification, sendDailyBackupReportEmail } from '../services/smtp.service';
+import { getNotificationLogs } from '../services/notification-log.service';
 
 export async function notificationRoutes(fastify: FastifyInstance) {
   // 1. Get Notification Channels Status & Settings
@@ -307,4 +308,64 @@ export async function notificationRoutes(fastify: FastifyInstance) {
     },
     triggerHandler
   );
+
+  // 5. Query Alert & Notification Delivery Audit Logs
+  fastify.get(
+    '/api/v1/notifications/logs',
+    {
+      preValidation: [(fastify as any).authenticate],
+      schema: {
+        description: 'Retrieve paginated notification delivery audit logs (Google Chat webhook and SMTP email dispatches with delivery status and payloads)',
+        tags: ['Notifications'],
+        security: [{ bearerAuth: [] }],
+        querystring: {
+          type: 'object',
+          properties: {
+            page: { type: 'integer', default: 1 },
+            limit: { type: 'integer', default: 20 },
+            channel: { type: 'string', description: 'Filter by channel: GOOGLE_CHAT, SMTP, or ALL' },
+            status: { type: 'string', description: 'Filter by status: SUCCESS, FAILED, or ALL' },
+            eventType: { type: 'string', description: 'Filter by event type: DAILY_REPORT, TEST_NOTIFICATION, etc.' },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              data: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    channel: { type: 'string' },
+                    eventType: { type: 'string' },
+                    recipient: { type: 'string' },
+                    status: { type: 'string' },
+                    message: { type: 'string' },
+                    payload: { type: ['object', 'null'], additionalProperties: true },
+                    createdAt: { type: 'string' },
+                  },
+                },
+              },
+              pagination: {
+                type: 'object',
+                properties: {
+                  page: { type: 'integer' },
+                  limit: { type: 'integer' },
+                  total: { type: 'integer' },
+                  totalPages: { type: 'integer' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request: any, reply: any) => {
+      const result = await getNotificationLogs(request.query);
+      return reply.send(result);
+    }
+  );
 }
+

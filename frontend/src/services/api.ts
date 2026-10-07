@@ -157,6 +157,54 @@ export const api = {
     });
   },
 
+  async getNotificationLogs(params: { page?: number; limit?: number; channel?: string; status?: string; eventType?: string } = {}): Promise<{
+    data: Array<{
+      id: string;
+      channel: string;
+      eventType: string;
+      recipient: string;
+      status: string;
+      message: string;
+      payload?: any;
+      createdAt: string;
+    }>;
+    pagination: { page: number; limit: number; total: number; totalPages: number };
+  }> {
+    const query = new URLSearchParams();
+    if (params.page) query.append('page', String(params.page));
+    if (params.limit) query.append('limit', String(params.limit));
+    if (params.channel && params.channel !== 'ALL') query.append('channel', params.channel);
+    if (params.status && params.status !== 'ALL') query.append('status', params.status);
+    if (params.eventType && params.eventType !== 'ALL') query.append('eventType', params.eventType);
+    return request(`/api/v1/notifications/logs?${query.toString()}`);
+  },
+
+  // Housekeeping & Retention
+  async getHousekeepingStatus(): Promise<{
+    enabled: boolean;
+    retentionDays: number;
+    cutoffDate: string;
+    housekeepingCron: string;
+    backupReports: { total: number; eligibleForCleanup: number };
+    notificationLogs: { total: number; eligibleForCleanup: number };
+  }> {
+    return request('/api/v1/system/housekeeping');
+  },
+
+  async triggerCleanup(days?: number): Promise<{
+    success: boolean;
+    message: string;
+    retentionDays: number;
+    cutoffDate?: string;
+    deletedBackupReports: number;
+    deletedNotificationLogs: number;
+  }> {
+    return request('/api/v1/system/cleanup', {
+      method: 'POST',
+      body: JSON.stringify(days ? { days } : {}),
+    });
+  },
+
   // Export CSV
   async downloadExport(filters: Partial<BackupFilters>, format: 'csv' | 'json' = 'csv') {
     const token = authStorage.getToken();

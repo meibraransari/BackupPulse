@@ -69,6 +69,21 @@ async function main() {
     console.log('[SEED] Sample backup reports created successfully.');
   }
 
+  const notifLogCount = await prisma.notificationLog.count();
+  if (notifLogCount === 0) {
+    console.log('[SEED] Seeding sample notification delivery log...');
+    await prisma.notificationLog.create({
+      data: {
+        channel: 'GOOGLE_CHAT',
+        eventType: 'TEST_NOTIFICATION',
+        recipient: 'Google Chat Space Webhook',
+        status: 'SUCCESS',
+        message: 'Initial system deployment test alert recorded.',
+        payload: { initialSetup: true },
+      },
+    });
+  }
+
   console.log('[SEED] Seeding completed.');
 }
 

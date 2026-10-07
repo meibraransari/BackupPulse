@@ -43,4 +43,10 @@ export const config = {
   // Console Logging Configuration (applies across development & production)
   ENABLE_CONSOLE_LOG: process.env.ENABLE_CONSOLE_LOG !== 'false',
   LOG_LEVEL: process.env.LOG_LEVEL || 'info',
+
+  // Database Housekeeping & Data Retention (e.g. 365 days)
+  DB_RETENTION_DAYS: parseInt(process.env.DB_RETENTION_DAYS || '365', 10),
+  ENABLE_HOUSEKEEPING: process.env.ENABLE_HOUSEKEEPING !== 'false',
+  HOUSEKEEPING_CRON: process.env.HOUSEKEEPING_CRON || '0 3 * * *', // Daily at 03:00 AM
 };
+

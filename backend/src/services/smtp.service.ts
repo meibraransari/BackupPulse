@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import { config } from '../config/env';
 import { getDailyStats } from './gchat.service';
+import { recordNotificationLog } from './notification-log.service';
 
 /**
  * Creates and returns configured Nodemailer transport
@@ -89,12 +90,30 @@ export async function sendTestEmailNotification(): Promise<{ success: boolean; m
       `,
     });
 
+    await recordNotificationLog({
+      channel: 'SMTP',
+      eventType: 'TEST_NOTIFICATION',
+      recipient: config.SMTP_TO,
+      status: 'SUCCESS',
+      message: `Test email successfully dispatched to ${config.SMTP_TO} (Message ID: ${info.messageId})`,
+      payload: { messageId: info.messageId },
+    });
+
     return {
       success: true,
       message: `Test email successfully dispatched to ${config.SMTP_TO} (Message ID: ${info.messageId})`,
     };
   } catch (error: any) {
     console.error('[SMTP] Error sending test email:', error.message);
+
+    await recordNotificationLog({
+      channel: 'SMTP',
+      eventType: 'TEST_NOTIFICATION',
+      recipient: config.SMTP_TO || 'Unconfigured',
+      status: 'FAILED',
+      message: `SMTP delivery failed: ${error.message}`,
+    });
+
     return {
       success: false,
       message: `SMTP delivery failed: ${error.message}`,
@@ -239,12 +258,37 @@ export async function sendDailyBackupReportEmail(): Promise<{ success: boolean; 
     });
 
     console.log(`[SMTP] Daily backup report email dispatched successfully to ${config.SMTP_TO} (ID: ${info.messageId})`);
+
+    await recordNotificationLog({
+      channel: 'SMTP',
+      eventType: 'DAILY_REPORT',
+      recipient: config.SMTP_TO,
+      status: 'SUCCESS',
+      message: `Daily report email sent to ${config.SMTP_TO} (ID: ${info.messageId})`,
+      payload: {
+        total: stats.total,
+        successRate: stats.successRate,
+        failed: stats.failed,
+        totalSizeHuman: stats.totalSizeHuman,
+        subject,
+      },
+    });
+
     return {
       success: true,
       message: `Daily report email sent to ${config.SMTP_TO}`,
     };
   } catch (error: any) {
     console.error('[SMTP] Failed to send daily report email:', error.message);
+
+    await recordNotificationLog({
+      channel: 'SMTP',
+      eventType: 'DAILY_REPORT',
+      recipient: config.SMTP_TO || 'Unconfigured',
+      status: 'FAILED',
+      message: `Failed to dispatch daily email: ${error.message}`,
+    });
+
     return {
       success: false,
       message: `Failed to dispatch daily email: ${error.message}`,

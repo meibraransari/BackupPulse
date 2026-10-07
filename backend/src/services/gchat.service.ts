@@ -1,5 +1,15 @@
 import { config } from '../config/env';
 import { prisma } from '../db/prisma';
+import { recordNotificationLog } from './notification-log.service';
+
+function getMaskedWebhookUrl(url: string): string {
+  if (!url) return 'Unconfigured';
+  try {
+    return url.replace(/token=[^&]+/i, 'token=******');
+  } catch {
+    return 'Google Chat Webhook';
+  }
+}
 
 export interface DailySummaryStats {
   total: number;
@@ -175,7 +185,23 @@ export async function sendDailyBackupReportToGoogleChat(): Promise<{ success: bo
     ],
   };
 
-  return sendGoogleChatMessage(cardPayload);
+  const res = await sendGoogleChatMessage(cardPayload);
+
+  await recordNotificationLog({
+    channel: 'GOOGLE_CHAT',
+    eventType: 'DAILY_REPORT',
+    recipient: getMaskedWebhookUrl(config.GOOGLE_CHAT_WEBHOOK_URL),
+    status: res.success ? 'SUCCESS' : 'FAILED',
+    message: res.message,
+    payload: {
+      total: stats.total,
+      successRate: stats.successRate,
+      failed: stats.failed,
+      totalSizeHuman: stats.totalSizeHuman,
+    },
+  });
+
+  return res;
 }
 
 export async function sendTestGoogleChatNotification(): Promise<{ success: boolean; message: string }> {
@@ -222,5 +248,17 @@ export async function sendTestGoogleChatNotification(): Promise<{ success: boole
     ],
   };
 
-  return sendGoogleChatMessage(cardPayload);
+  const res = await sendGoogleChatMessage(cardPayload);
+
+  await recordNotificationLog({
+    channel: 'GOOGLE_CHAT',
+    eventType: 'TEST_NOTIFICATION',
+    recipient: getMaskedWebhookUrl(config.GOOGLE_CHAT_WEBHOOK_URL),
+    status: res.success ? 'SUCCESS' : 'FAILED',
+    message: res.message,
+    payload: { test: true },
+  });
+
+  return res;
 }
+

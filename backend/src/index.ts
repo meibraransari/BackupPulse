@@ -15,6 +15,7 @@ import { authRoutes } from './routes/auth.route';
 import { backupRoutes } from './routes/backup.route';
 import { dashboardRoutes } from './routes/dashboard.route';
 import { notificationRoutes } from './routes/notification.route';
+import { systemRoutes } from './routes/system.route';
 
 async function bootstrap() {
   // Fastify logger configuration across all modes
@@ -109,6 +110,7 @@ async function bootstrap() {
   await fastify.register(backupRoutes);
   await fastify.register(dashboardRoutes);
   await fastify.register(notificationRoutes);
+  await fastify.register(systemRoutes);
 
   // Serve static frontend build if present (for single container deployment)
   const frontendDistPath = path.resolve(__dirname, '../../frontend/dist');

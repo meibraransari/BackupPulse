@@ -184,9 +184,35 @@ TEMP_DIR="/tmp/backup_jobs"
 | `PUT` | `/api/v1/backups/:id/status` | Manually mark failed backup as SUCCESS with notes | Bearer JWT |
 | `GET` | `/api/v1/backups/export` | Export filtered records to CSV or JSON | Bearer JWT |
 | `GET` | `/api/v1/notifications/status` | Check active status of Google Chat & SMTP channels | Bearer JWT |
+| `GET` | `/api/v1/notifications/logs` | Query alert send audit logs (channel, recipient, status, payload) | Bearer JWT |
 | `POST` | `/api/v1/notifications/test-gchat` | Immediate Google Chat webhook test card | Bearer JWT |
 | `POST` | `/api/v1/notifications/test-smtp` | Immediate SMTP email test delivery | Bearer JWT |
 | `POST` | `/api/v1/notifications/trigger-daily-report` | Manually dispatch daily report to all enabled channels | Bearer JWT |
+| `GET` | `/api/v1/system/housekeeping` | Check database retention policy, counts & purge status | Bearer JWT |
+| `POST` | `/api/v1/system/cleanup` | Manually trigger database purge of records older than retention threshold | Bearer JWT |
+
+---
+
+## 🧹 Database Retention & Automated Housekeeping
+
+To prevent unbounded database disk usage across hundreds of production servers generating daily backups, BackupPulse features an automated data retention housekeeping policy configurable via `.env`:
+
+```ini
+# Maximum days to retain telemetry and alert send logs (default: 365 days / 1 year)
+DB_RETENTION_DAYS=365
+
+# Enable or disable automated cron retention purge
+ENABLE_HOUSEKEEPING=true
+
+# Schedule for running database cleanup (default: 03:00 AM daily)
+HOUSEKEEPING_CRON="0 3 * * *"
+```
+
+### How Housekeeping Works:
+* **Automated Cron**: Runs daily at 03:00 AM (or your custom `HOUSEKEEPING_CRON`) to purge all records in `backup_reports` and `notification_logs` where `created_at < now - DB_RETENTION_DAYS`.
+* **Alert Delivery Audit Trail**: Every notification attempt (Google Chat webhook or SMTP email, successful or failed) is stored in the `notification_logs` table with delivery status and payloads, and safely pruned when exceeding the retention window.
+* **On-Demand API**: Administrators can check retention metrics via `GET /api/v1/system/housekeeping` or trigger an immediate manual purge via `POST /api/v1/system/cleanup` (with optional custom `days` parameter).
+* **Initial DB Schema Load**: Integrated with `prisma/schema.prisma` and `prisma db push`, ensuring fresh Docker or Kubernetes deployments create the tables automatically without manual migration steps.
 
 ---
 

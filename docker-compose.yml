@@ -64,6 +64,9 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-BackupPulse Central <alerts@backup-pulse.internal>}
       SMTP_TO: ${SMTP_TO:-}
+      DB_RETENTION_DAYS: ${DB_RETENTION_DAYS:-365}
+      ENABLE_HOUSEKEEPING: ${ENABLE_HOUSEKEEPING:-true}
+      HOUSEKEEPING_CRON: ${HOUSEKEEPING_CRON:-0 3 * * *}
     ports:
       - "${PORT:-3000}:3000"
     healthcheck:
