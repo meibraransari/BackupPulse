@@ -62,6 +62,9 @@ cp .env.example .env
 Run Docker Compose to build and start the PostgreSQL database and the unified application container:
 ```bash
 docker compose up -d --build
+
+# View container startup logs & runtime banner
+docker compose logs -f app
 ```
 
 ### 4. Access the Services

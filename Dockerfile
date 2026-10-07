@@ -52,6 +52,10 @@ RUN npx prisma generate
 COPY --from=backend-builder /app/backend/dist ./dist
 COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
 
+# Copy container entrypoint script
+COPY entrypoint.sh /app/backend/entrypoint.sh
+RUN sed -i 's/\r$//' /app/backend/entrypoint.sh && chmod +x /app/backend/entrypoint.sh
+
 # Expose server port
 EXPOSE 3000
 
@@ -59,5 +63,6 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -f http://localhost:3000/health || exit 1
 
-# Start script: run prisma db sync & start node server
-CMD ["sh", "-c", "npx prisma db push --skip-generate && node dist/index.js"]
+ENTRYPOINT ["/app/backend/entrypoint.sh"]
+CMD ["node", "dist/index.js"]
+
