@@ -2,6 +2,7 @@
   "name": "backup-monitor-backend",
   "version": "1.0.0",
   "description": "High performance backup monitoring and reporting API",
+  "license": "MIT",
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",

@@ -363,3 +363,10 @@ chmod +x scripts/load_dummy_data.sh
 - **`[4] 100-Server Fleet Simulation`**: Rapid batch ingestion of 100 server backup events in parallel to test high-throughput performance.
 - **`[5] Change API Target`**: Point the script to any local or remote BackupPulse endpoint.
 
+---
+
+## 📄 License
+
+This project is open-source and free to use under the terms of the [MIT License](LICENSE).
+Feel free to use, adapt, and build upon it for personal, team, or enterprise production environments.
+
