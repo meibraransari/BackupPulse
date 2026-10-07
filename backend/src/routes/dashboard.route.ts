@@ -232,6 +232,10 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
         if (r.isAnomaly) entry.anomalyCount += 1;
       }
 
+      // Fetch server monitoring configurations
+      const serverConfigs = await prisma.serverConfig.findMany();
+      const configMap = new Map(serverConfigs.map((c) => [c.serverId, c]));
+
       // Calculate final statuses and convert to array
       let fleetList = Object.values(fleetMap).map((s) => {
         const timeDiff = now - new Date(s.lastSeenAt).getTime();
@@ -246,6 +250,9 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
         }
 
         const successRate = s.totalBackups > 0 ? Math.round((s.successCount / s.totalBackups) * 100) : 100;
+        const cfg = configMap.get(s.serverId);
+        const isMonitored = cfg ? cfg.isMonitored : true;
+        const muteReason = cfg ? cfg.muteReason : null;
 
         return {
           serverId: s.serverId,
@@ -263,6 +270,8 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
           totalStorageHuman: formatBytes(s.totalStorageBytes),
           projects: Array.from(s.projects),
           status: computedStatus,
+          isMonitored,
+          muteReason,
         };
       });
 
@@ -279,21 +288,30 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
 
       // Status filter
       if (statusFilter && statusFilter !== 'ALL') {
-        fleetList = fleetList.filter((s) => s.status === statusFilter);
+        if (statusFilter === 'MUTED') {
+          fleetList = fleetList.filter((s) => !s.isMonitored);
+        } else {
+          fleetList = fleetList.filter((s) => s.isMonitored && s.status === statusFilter);
+        }
       }
 
-      // Sort: FAILED first, then STALE, then WARNING, then HEALTHY
+      // Sort: FAILED first, then STALE, then WARNING, then HEALTHY, unmonitored at bottom
       const statusWeight: Record<string, number> = { FAILED: 1, STALE: 2, WARNING: 3, HEALTHY: 4 };
-      fleetList.sort((a, b) => (statusWeight[a.status] || 5) - (statusWeight[b.status] || 5));
+      fleetList.sort((a, b) => {
+        if (!a.isMonitored && b.isMonitored) return 1;
+        if (a.isMonitored && !b.isMonitored) return -1;
+        return (statusWeight[a.status] || 5) - (statusWeight[b.status] || 5);
+      });
 
       return reply.send({
         fleet: fleetList,
         summary: {
           totalServers: fleetList.length,
-          healthy: fleetList.filter((s) => s.status === 'HEALTHY').length,
-          failing: fleetList.filter((s) => s.status === 'FAILED').length,
-          warning: fleetList.filter((s) => s.status === 'WARNING').length,
-          stale: fleetList.filter((s) => s.status === 'STALE').length,
+          healthy: fleetList.filter((s) => s.isMonitored && s.status === 'HEALTHY').length,
+          failing: fleetList.filter((s) => s.isMonitored && s.status === 'FAILED').length,
+          warning: fleetList.filter((s) => s.isMonitored && s.status === 'WARNING').length,
+          stale: fleetList.filter((s) => s.isMonitored && s.status === 'STALE').length,
+          muted: fleetList.filter((s) => !s.isMonitored).length,
         },
       });
     }

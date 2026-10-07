@@ -8,13 +8,18 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(uuid())
-  username     String   @unique
-  email        String?  @unique
-  passwordHash String
-  role         String   @default("admin")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id           String         @id @default(uuid())
+  username     String         @unique
+  email        String?        @unique
+  fullName     String?        @map("full_name")
+  avatar       String?
+  passwordHash String         @map("password_hash")
+  role         String         @default("admin") // admin, operator, viewer
+  isActive     Boolean        @default(true) @map("is_active")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  loginLogs    UserLoginLog[]
 
   @@map("users")
 }
@@ -81,5 +86,35 @@ model NotificationLog {
   @@index([status, createdAt(sort: Desc)])
   @@index([createdAt(sort: Desc)])
   @@map("notification_logs")
+}
+
+model UserLoginLog {
+  id            String   @id @default(uuid())
+  userId        String?  @map("user_id")
+  username      String
+  ipAddress     String?  @map("ip_address")
+  userAgent     String?  @map("user_agent")
+  status        String   // SUCCESS, FAILED
+  failureReason String?  @map("failure_reason")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([username, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@map("user_login_logs")
+}
+
+model ServerConfig {
+  id          String   @id @default(uuid())
+  serverId    String   @unique @map("server_id")
+  hostname    String?
+  isMonitored Boolean  @default(true) @map("is_monitored") // When false, excluded from Dead Man's Snitch alerts
+  muteReason  String?  @map("mute_reason")                 // Reason for excluding (e.g. Decommissioned, Test machine)
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("server_configs")
 }
 

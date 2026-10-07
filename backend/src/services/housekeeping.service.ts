@@ -8,10 +8,11 @@ export interface HousekeepingResult {
   cutoffDate?: string;
   deletedBackupReports: number;
   deletedNotificationLogs: number;
+  deletedUserLoginLogs: number;
 }
 
 /**
- * Executes database cleanup to purge backup telemetry and alert logs older than DB_RETENTION_DAYS
+ * Executes database cleanup to purge backup telemetry, alert logs, and user login logs older than DB_RETENTION_DAYS
  */
 export async function runDatabaseHousekeeping(daysOverride?: number): Promise<HousekeepingResult> {
   const retentionDays = daysOverride !== undefined ? Number(daysOverride) : config.DB_RETENTION_DAYS;
@@ -25,6 +26,7 @@ export async function runDatabaseHousekeeping(daysOverride?: number): Promise<Ho
       retentionDays,
       deletedBackupReports: 0,
       deletedNotificationLogs: 0,
+      deletedUserLoginLogs: 0,
     };
   }
 
@@ -53,7 +55,16 @@ export async function runDatabaseHousekeeping(daysOverride?: number): Promise<Ho
       },
     });
 
-    const msg = `[HOUSEKEEPING] Database cleanup successful: Purged ${deletedReports.count} backup report(s) and ${deletedLogs.count} notification log(s) older than ${retentionDays} days.`;
+    // 3. Purge ancient user login tracking logs
+    const deletedLoginLogs = await prisma.userLoginLog.deleteMany({
+      where: {
+        createdAt: {
+          lt: cutoffDate,
+        },
+      },
+    });
+
+    const msg = `[HOUSEKEEPING] Database cleanup successful: Purged ${deletedReports.count} backup report(s), ${deletedLogs.count} notification log(s), and ${deletedLoginLogs.count} user login log(s) older than ${retentionDays} days.`;
     console.log(msg);
 
     return {
@@ -63,6 +74,7 @@ export async function runDatabaseHousekeeping(daysOverride?: number): Promise<Ho
       cutoffDate: cutoffDate.toISOString(),
       deletedBackupReports: deletedReports.count,
       deletedNotificationLogs: deletedLogs.count,
+      deletedUserLoginLogs: deletedLoginLogs.count,
     };
   } catch (error: any) {
     console.error('[HOUSEKEEPING] Database cleanup failed with error:', error.message);
@@ -73,6 +85,7 @@ export async function runDatabaseHousekeeping(daysOverride?: number): Promise<Ho
       cutoffDate: cutoffDate.toISOString(),
       deletedBackupReports: 0,
       deletedNotificationLogs: 0,
+      deletedUserLoginLogs: 0,
     };
   }
 }
@@ -84,11 +97,13 @@ export async function getHousekeepingStatus() {
   const retentionDays = config.DB_RETENTION_DAYS;
   const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
 
-  const [totalReports, eligibleReports, totalLogs, eligibleLogs] = await Promise.all([
+  const [totalReports, eligibleReports, totalLogs, eligibleLogs, totalLoginLogs, eligibleLoginLogs] = await Promise.all([
     prisma.backupReport.count(),
     prisma.backupReport.count({ where: { createdAt: { lt: cutoffDate } } }),
     prisma.notificationLog.count(),
     prisma.notificationLog.count({ where: { createdAt: { lt: cutoffDate } } }),
+    prisma.userLoginLog.count(),
+    prisma.userLoginLog.count({ where: { createdAt: { lt: cutoffDate } } }),
   ]);
 
   return {
@@ -103,6 +118,10 @@ export async function getHousekeepingStatus() {
     notificationLogs: {
       total: totalLogs,
       eligibleForCleanup: eligibleLogs,
+    },
+    userLoginLogs: {
+      total: totalLoginLogs,
+      eligibleForCleanup: eligibleLoginLogs,
     },
   };
 }

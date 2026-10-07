@@ -33,6 +33,13 @@ export async function systemRoutes(fastify: FastifyInstance) {
                   eligibleForCleanup: { type: 'number' },
                 },
               },
+              userLoginLogs: {
+                type: 'object',
+                properties: {
+                  total: { type: 'number' },
+                  eligibleForCleanup: { type: 'number' },
+                },
+              },
             },
           },
         },
@@ -82,6 +89,7 @@ export async function systemRoutes(fastify: FastifyInstance) {
               cutoffDate: { type: 'string' },
               deletedBackupReports: { type: 'number' },
               deletedNotificationLogs: { type: 'number' },
+              deletedUserLoginLogs: { type: 'number' },
             },
           },
           400: {
@@ -92,6 +100,7 @@ export async function systemRoutes(fastify: FastifyInstance) {
               retentionDays: { type: 'number' },
               deletedBackupReports: { type: 'number' },
               deletedNotificationLogs: { type: 'number' },
+              deletedUserLoginLogs: { type: 'number' },
             },
           },
         },

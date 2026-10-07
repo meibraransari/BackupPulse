@@ -2,7 +2,23 @@ export interface User {
   id: string;
   username: string;
   email?: string;
-  role: string;
+  fullName?: string;
+  avatar?: string;
+  role: string; // admin, operator, viewer
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface UserLoginLog {
+  id: string;
+  userId?: string;
+  username: string;
+  ipAddress?: string;
+  userAgent?: string;
+  status: 'SUCCESS' | 'FAILED';
+  failureReason?: string;
+  createdAt: string;
 }
 
 export interface BackupReport {
@@ -101,6 +117,8 @@ export interface ServerFleetItem {
   totalStorageHuman: string;
   projects: string[];
   status: 'HEALTHY' | 'FAILED' | 'WARNING' | 'STALE';
+  isMonitored?: boolean;
+  muteReason?: string;
 }
 
 export interface FleetSummary {
@@ -109,6 +127,16 @@ export interface FleetSummary {
   failing: number;
   warning: number;
   stale: number;
+  muted?: number;
+}
+
+export interface ServerConfigItem {
+  id: string;
+  serverId: string;
+  hostname?: string;
+  isMonitored: boolean;
+  muteReason?: string;
+  updatedAt: string;
 }
 
 export interface HousekeepingStatus {
@@ -118,4 +146,5 @@ export interface HousekeepingStatus {
   housekeepingCron: string;
   backupReports: { total: number; eligibleForCleanup: number };
   notificationLogs: { total: number; eligibleForCleanup: number };
+  userLoginLogs?: { total: number; eligibleForCleanup: number };
 }

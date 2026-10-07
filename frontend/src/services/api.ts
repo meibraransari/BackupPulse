@@ -7,8 +7,10 @@ import {
   NotificationLogItem,
   ProjectBreakdown,
   ServerFleetItem,
+  ServerConfigItem,
   TrendItem,
   User,
+  UserLoginLog,
 } from '../types';
 
 const TOKEN_KEY = 'backup_monitor_auth_token';
@@ -67,6 +69,91 @@ export const api = {
 
   async getCurrentUser(): Promise<{ user: User }> {
     return request<{ user: User }>('/api/v1/auth/me');
+  },
+
+  async updateProfile(data: {
+    fullName?: string;
+    email?: string;
+    avatar?: string;
+    currentPassword?: string;
+    newPassword?: string;
+  }): Promise<{ success: boolean; message: string; user: User }> {
+    return request('/api/v1/auth/profile', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getLoginLogs(params: { page?: number; limit?: number; status?: string; username?: string } = {}): Promise<{
+    data: UserLoginLog[];
+    pagination: { page: number; limit: number; total: number; totalPages: number };
+  }> {
+    const query = new URLSearchParams();
+    if (params.page) query.append('page', String(params.page));
+    if (params.limit) query.append('limit', String(params.limit));
+    if (params.status && params.status !== 'ALL') query.append('status', params.status);
+    if (params.username) query.append('username', params.username);
+    return request(`/api/v1/auth/logins?${query.toString()}`);
+  },
+
+  // User Management (Admin)
+  async getUsers(): Promise<User[]> {
+    return request<User[]>('/api/v1/users');
+  },
+
+  async createUser(data: {
+    username: string;
+    password: string;
+    fullName?: string;
+    email?: string;
+    role?: string;
+    avatar?: string;
+    isActive?: boolean;
+  }): Promise<{ success: boolean; user: User }> {
+    return request('/api/v1/users', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateUser(
+    id: string,
+    data: {
+      fullName?: string;
+      email?: string;
+      role?: string;
+      avatar?: string;
+      isActive?: boolean;
+      newPassword?: string;
+    }
+  ): Promise<{ success: boolean; user: User }> {
+    return request(`/api/v1/users/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteUser(id: string): Promise<{ success: boolean; message: string }> {
+    return request(`/api/v1/users/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Server Monitoring Configs (Dead Man's Snitch Mute/Unmute)
+  async getServerConfigs(): Promise<ServerConfigItem[]> {
+    return request<ServerConfigItem[]>('/api/v1/servers/configs');
+  },
+
+  async updateServerMonitoring(
+    serverId: string,
+    isMonitored: boolean,
+    muteReason?: string,
+    hostname?: string
+  ): Promise<{ success: boolean; message: string; config: ServerConfigItem }> {
+    return request(`/api/v1/servers/${serverId}/monitor`, {
+      method: 'PATCH',
+      body: JSON.stringify({ isMonitored, muteReason, hostname }),
+    });
   },
 
   logout() {

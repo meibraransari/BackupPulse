@@ -27,10 +27,14 @@ A high-performance Node.js & React telemetry platform designed to monitor automa
        │
        ▼
 [BackupPulse Dashboard] (React + Vite + Tailwind CSS)
+       ├──► 🧭 Enterprise Dark Sidebar (Workspaces, Instant Actions, Profile, API Link)
        ├──► Summary KPI Cards (Total Backups, Success Rate, Failed count, Storage)
        ├──► Historical Trends (Clickable 7-30 Days Success vs Failure Charts)
        ├──► 🖥️ Server Fleet Inventory Matrix (100+ Servers Health, Storage, Staleness)
+       ├──► ⏱️ Dead Man’s Snitch Engine (Silent Server Detection >26h & Host Mute Controls)
        ├──► 📉 Backup Size Anomaly Detection (Zero-Byte & Truncation Guard Badges)
+       ├──► 👥 Multi-User Directory (Admin, Operator, Viewer roles & Profile Management)
+       ├──► 🔒 Live User Login Tracker (IP, User-Agent, Success/Failure Audits)
        ├──► 📊 Notification Delivery Audit UI (Google Chat & SMTP History + Payload Inspector)
        ├──► 🧹 Database Storage & Housekeeping Modal (Retention Controls & Force Purge)
        ├──► Advanced Multi-Filter & Resizable Columns (Project, Host, Status, Date)
@@ -191,9 +195,16 @@ TEMP_DIR="/tmp/backup_jobs"
 | `GET` | `/api/v1/notifications/logs` | Query alert send audit logs (channel, recipient, status, payload) | Bearer JWT |
 | `POST` | `/api/v1/notifications/test-gchat` | Immediate Google Chat webhook test card | Bearer JWT |
 | `POST` | `/api/v1/notifications/test-smtp` | Immediate SMTP email test delivery | Bearer JWT |
-| `POST` | `/api/v1/notifications/trigger-daily-report` | Manually dispatch daily report to all enabled channels | Bearer JWT |
 | `GET` | `/api/v1/system/housekeeping` | Check database retention policy, counts & purge status | Bearer JWT |
 | `POST` | `/api/v1/system/cleanup` | Manually trigger database purge of records older than retention threshold | Bearer JWT |
+| `GET` | `/api/v1/servers/configs` | Retrieve fleet monitoring configs & mute statuses | Bearer JWT |
+| `PATCH` | `/api/v1/servers/:serverId/monitor` | Toggle server monitoring (Mute / Unmute with custom reason) | Bearer JWT |
+| `GET` | `/api/v1/auth/logins` | Query paginated authentication login audit tracker | Bearer JWT |
+| `PUT` | `/api/v1/auth/profile` | Self-service user profile update (Name, Email, Avatar, Password) | Bearer JWT |
+| `GET` | `/api/v1/users` | List all system users with role and active status | Bearer JWT (Admin) |
+| `POST` | `/api/v1/users` | Provision a new team user (Username, Password, Role, Email) | Bearer JWT (Admin) |
+| `PUT` | `/api/v1/users/:id` | Update user details, role, active status, or reset password | Bearer JWT (Admin) |
+| `DELETE` | `/api/v1/users/:id` | Delete user account (Admin account protected) | Bearer JWT (Admin) |
 
 ---
 
@@ -247,6 +258,92 @@ HOUSEKEEPING_CRON="0 3 * * *"
 * **Alert Delivery Audit Trail**: Every notification attempt (Google Chat webhook or SMTP email, successful or failed) is stored in the `notification_logs` table with delivery status and payloads, and safely pruned when exceeding the retention window.
 * **On-Demand API**: Administrators can check retention metrics via `GET /api/v1/system/housekeeping` or trigger an immediate manual purge via `POST /api/v1/system/cleanup` (with optional custom `days` parameter).
 * **Initial DB Schema Load**: Integrated with `prisma/schema.prisma` and `prisma db push`, ensuring fresh Docker or Kubernetes deployments create the tables automatically without manual migration steps.
+
+---
+
+## 🚀 Fleet Rollout Automation (`scripts/install_agent.sh`)
+
+Deploying the backup agent to 100+ bare-metal, EC2, or cloud virtual machines is automated with `scripts/install_agent.sh`. The script performs pre-flight dependency audits, downloads the latest agent binary, sets up `/etc/backup_agent.conf` with secure file permissions (`chmod 600`), and configures automated log rotation.
+
+### Interactive Installation (Wizard Mode)
+```bash
+sudo bash -c "$(curl -fsSL https://your-backuppulse-hub.com/scripts/install_agent.sh)"
+```
+The wizard interactively prompts for your central ingestion endpoint, API key, S3 bucket, AWS credentials, and regional settings.
+
+### Silent / Automated Multi-Server Provisioning (Ansible, Puppet, Terraform, Cloud-Init)
+```bash
+sudo ./scripts/install_agent.sh \
+  --hub "https://backup-hub.yourcompany.com/api/v1/backups/report" \
+  --key "bkp_live_secret_key_12345" \
+  --bucket "my-company-backup-vault" \
+  --region "us-east-1" \
+  --access-key "AKIAIOSFODNN7EXAMPLE" \
+  --secret-key "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" \
+  --non-interactive
+```
+
+### Installation Guarantees:
+- **Dependency Checks**: Automatically checks for `curl`, `tar`, `aws-cli`, `sha256sum`, and `cron`, failing fast with actionable advice if prerequisites are missing.
+- **Credential Protection**: `/etc/backup_agent.conf` is written with `chmod 600` and `chown root:root` to prevent non-root users from reading AWS access keys or ingestion API tokens.
+- **Log Rotation**: Automatically provisions `/etc/logrotate.d/backup_agent` to rotate cron output logs weekly, compressing archives and preventing disk bloat.
+
+---
+
+## ⏱️ Dead Man’s Snitch / Stale Server Alert & Host Mute Controls
+
+A critical risk in large infrastructure fleets is a server going completely silent (cron daemon died, machine network disconnected, server powered off). BackupPulse includes a **Dead Man’s Snitch** engine that detects missed backups without requiring inbound probes:
+
+- **26-Hour Staleness Threshold**: Any server that has not transmitted a backup report within 26 hours is automatically flagged as `STALE`.
+- **Daily Executive Digest Warning**: Stale servers are prominently highlighted in daily Google Chat Cards v2 (`⏱️ Dead Man's Snitch: Missing Backups`) and SMTP HTML emails with hostnames, IP addresses, and hours elapsed since last contact.
+- **Host Mute & Exclusion**: When a machine is decommissioned, placed in maintenance, or runs in a development environment, operators can mute it in 1-click via the dashboard or API.
+  - **Custom Mute Reasons**: Choose from preset templates (`Decommissioned / Retired`, `Dev / Staging / Non-prod`, `Temporary maintenance window`) or write custom notes.
+  - **Zero Alert Fatigue**: Muted servers remain visible in the Server Fleet Inventory (badged as `Muted`), but are excluded from the `STALE` count and omitted from daily alert digests.
+  - **1-Click Unmute**: Reactivate monitoring at any time when a server returns to production duty.
+
+---
+
+## 👥 Multi-User Directory, Profile Management & Login Tracker
+
+BackupPulse provides full enterprise identity and role-based access management:
+
+### 1. Multi-User Directory Administration (Admin Console)
+- **Role-Based Access Control**:
+  - `admin`: Full platform control, user directory administration, server mute toggles, manual resolution, and database housekeeping.
+  - `operator`: View all telemetry, manage server mutes, resolve failed backup incidents, and trigger manual reports.
+  - `viewer`: Read-only access to telemetry, charts, and fleet inventory.
+- **Account Controls**: Add team members, update contact emails, assign roles, toggle account active/disabled status, and reset credentials.
+
+### 2. Self-Service User Profile Management
+- Accessible directly from the sidebar footer for all logged-in members.
+- Customize **Full Name**, **Contact Email**, and **Avatar Picture** (custom image URL preview or 1-click preset avatar avatars).
+- Self-service **Password Change** with current password validation.
+
+### 3. Live Login Audit Tracker
+- Every login attempt (successful or rejected) is logged into `user_login_logs` with:
+  - Timestamp, Username, Status (`SUCCESS` / `FAILED`)
+  - Client IP Address and Browser User-Agent
+  - Failure reason (e.g. `Invalid password`, `User account is deactivated`, `User not found`)
+- Live audit tab in User Management view with status filters and pagination.
+- Console logging: Every authentication event prints formatted audit logs to stdout.
+- **Automatic Housekeeping**: Login logs follow the `DB_RETENTION_DAYS` retention policy and are purged automatically during scheduled database cleanups.
+
+---
+
+## 🧭 Persistent Enterprise Sidebar Navigation
+
+The web UI is organized around a persistent, responsive dark sidebar:
+- **Workspace Navigation**:
+  - `Backup Telemetry Records`: Filterable and resizable data grid with inline incident resolution.
+  - `Server Fleet Inventory`: 100+ servers health matrix with grid and table modes, anomaly badges, and host mute toggles.
+  - `Users & Access Directory`: Team member management and real-time login audit tracker.
+- **Quick-Access Actions**:
+  - 💬 **Test Google Chat**: Dispatch live Cards v2 test webhook with delivery feedback.
+  - ✉️ **Test SMTP Email**: Send HTML test message to configured recipients.
+  - 📊 **Notification Audit Logs**: Review transmission receipts and inspection payloads.
+  - 🧹 **Storage & Retention**: Inspect database sizes, configure retention, and trigger immediate housekeeping purge.
+  - 📖 **Interactive Swagger UI**: One-click external link to `/api/docs`.
+- **Profile & Logout Footer**: User avatar, identity chip, role badge, profile modal trigger, and sign-out button.
 
 ---
 

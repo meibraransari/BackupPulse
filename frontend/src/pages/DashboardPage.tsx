@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Navbar } from '../components/Navbar';
+import { Sidebar } from '../components/Sidebar';
 import { StatCards } from '../components/StatCards';
 import { TrendChart } from '../components/TrendChart';
 import { FilterBar } from '../components/FilterBar';
@@ -9,9 +9,11 @@ import { ResolveModal } from '../components/ResolveModal';
 import { FleetView } from '../components/FleetView';
 import { NotificationLogsModal } from '../components/NotificationLogsModal';
 import { HousekeepingModal } from '../components/HousekeepingModal';
+import { UserProfileModal } from '../components/UserProfileModal';
+import { UserManagementView } from '../components/UserManagementView';
 import { api } from '../services/api';
 import { BackupFilters, BackupReport, DashboardStats, ProjectBreakdown, TrendItem, User } from '../types';
-import { RefreshCw, CheckCircle2, Server, Table } from 'lucide-react';
+import { RefreshCw, CheckCircle2, Server, Table, Users } from 'lucide-react';
 
 interface DashboardPageProps {
   user: User | null;
@@ -31,6 +33,13 @@ const initialFilters: BackupFilters = {
 };
 
 export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) => {
+  // Current user state (updates in-place when profile changes)
+  const [currentUser, setCurrentUser] = useState<User | null>(user);
+
+  useEffect(() => {
+    setCurrentUser(user);
+  }, [user]);
+
   // State
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [trends, setTrends] = useState<TrendItem[]>([]);
@@ -51,9 +60,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
   const [actionToast, setActionToast] = useState<string | null>(null);
 
   // View toggle & Modal states
-  const [activeTab, setActiveTab] = useState<'telemetry' | 'fleet'>('telemetry');
+  const [activeTab, setActiveTab] = useState<'telemetry' | 'fleet' | 'users'>('telemetry');
   const [showNotificationLogs, setShowNotificationLogs] = useState<boolean>(false);
   const [showHousekeeping, setShowHousekeeping] = useState<boolean>(false);
+  const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
 
   // Helper to smoothly scroll down to the data table
   const scrollToTable = () => {
@@ -186,85 +196,117 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col">
-      <Navbar
-        user={user}
-        onLogout={onLogout}
+    <div className="min-h-screen bg-slate-950 flex flex-col lg:pl-64">
+      {/* Persistent Enterprise Sidebar */}
+      <Sidebar
+        user={currentUser}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        onOpenProfile={() => setShowProfileModal(true)}
         onOpenNotificationLogs={() => setShowNotificationLogs(true)}
         onOpenHousekeeping={() => setShowHousekeeping(true)}
+        onLogout={onLogout}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        {/* Page Title & Refresh */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        {/* Page Title & View Switcher */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-white">Production Backup Overview</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-white">
+              {activeTab === 'telemetry' && 'Production Backup Overview'}
+              {activeTab === 'fleet' && 'Server Fleet Inventory'}
+              {activeTab === 'users' && 'Access & User Directory'}
+            </h1>
             <p className="text-xs sm:text-sm text-slate-400 mt-1">
-              Live status, cron logs, size anomaly guards, and automated cloud sync reports across 100+ servers.
+              {activeTab === 'telemetry' &&
+                'Live status, cron logs, size anomaly guards, and automated cloud sync reports across 100+ servers.'}
+              {activeTab === 'fleet' &&
+                "100+ servers at-a-glance, Dead Man's Snitch stale server tracking, and alert mute controls."}
+              {activeTab === 'users' &&
+                'Team member profile administration, access roles, and real-time login audit logs.'}
             </p>
           </div>
 
-          <button
-            onClick={handleManualRefresh}
-            disabled={refreshing}
-            className="self-start sm:self-auto flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-medium text-slate-300 bg-slate-900 border border-slate-800 hover:bg-slate-800 transition-colors shadow-sm"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin text-emerald-400' : ''}`} />
-            <span>Refresh Telemetry</span>
-          </button>
-        </div>
-
-        {/* 1. Metric Cards (Clickable: Jumps and filters table) */}
-        <StatCards stats={stats} loading={loadingStats} onSelectFilter={handleCardClick} />
-
-        {/* 2. Visual Charts (Clickable: Jumps and filters by date / project) */}
-        <TrendChart
-          trends={trends}
-          projects={projectBreakdown}
-          loading={loadingStats}
-          onSelectDate={handleDateClick}
-          onSelectProject={handleProjectClick}
-        />
-
-        {/* Anchor section for smooth scroll jump */}
-        <div id="telemetry-table-section" className="space-y-6 pt-2">
-          {/* Main View Tabs Switcher: Telemetry Records vs Server Fleet */}
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <div className="flex items-center space-x-2 bg-slate-900 p-1 rounded-2xl border border-slate-800">
+          <div className="flex flex-wrap items-center gap-3">
+            {/* View Switcher Tabs */}
+            <div className="flex items-center space-x-1 bg-slate-900 p-1 rounded-2xl border border-slate-800">
               <button
                 onClick={() => setActiveTab('telemetry')}
-                className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+                className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
                   activeTab === 'telemetry'
                     ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/30'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                <Table className="h-4 w-4" />
-                <span>Backup Telemetry Records</span>
-                <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full bg-slate-950/60 font-mono">
+                <Table className="h-3.5 w-3.5" />
+                <span>Telemetry</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-950/60 font-mono">
                   {pagination.total}
                 </span>
               </button>
 
               <button
                 onClick={() => setActiveTab('fleet')}
-                className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+                className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
                   activeTab === 'fleet'
                     ? 'bg-indigo-600 text-white shadow-md shadow-indigo-900/30'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                <Server className="h-4 w-4" />
-                <span>Server Fleet Inventory</span>
-                <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full bg-slate-950/60 font-mono">
+                <Server className="h-3.5 w-3.5" />
+                <span>Fleet</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-950/60 font-mono">
                   100+
                 </span>
               </button>
-            </div>
-          </div>
 
-          {activeTab === 'telemetry' ? (
-            <>
+              <button
+                onClick={() => setActiveTab('users')}
+                className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                  activeTab === 'users'
+                    ? 'bg-amber-600 text-white shadow-md shadow-amber-900/30'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Users className="h-3.5 w-3.5" />
+                <span>Users</span>
+                {currentUser?.role === 'admin' && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-mono">
+                    Admin
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {activeTab === 'telemetry' && (
+              <button
+                onClick={handleManualRefresh}
+                disabled={refreshing}
+                className="flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-medium text-slate-300 bg-slate-900 border border-slate-800 hover:bg-slate-800 transition-colors shadow-sm"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin text-emerald-400' : ''}`} />
+                <span>Refresh</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {activeTab === 'telemetry' ? (
+          <>
+            {/* 1. Metric Cards (Clickable: Jumps and filters table) */}
+            <StatCards stats={stats} loading={loadingStats} onSelectFilter={handleCardClick} />
+
+            {/* 2. Visual Charts (Clickable: Jumps and filters by date / project) */}
+            <TrendChart
+              trends={trends}
+              projects={projectBreakdown}
+              loading={loadingStats}
+              onSelectDate={handleDateClick}
+              onSelectProject={handleProjectClick}
+            />
+
+            {/* Anchor section for smooth scroll jump */}
+            <div id="telemetry-table-section" className="space-y-6 pt-2">
               {/* 3. Advanced Filtering Toolbar */}
               <FilterBar
                 filters={filters}
@@ -276,7 +318,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
                 exporting={exporting}
               />
 
-              {/* 4. Telemetry Records Table (With professional resolve modal trigger) */}
+              {/* 4. Telemetry Records Table */}
               <BackupTable
                 data={backups}
                 loading={loadingBackups}
@@ -285,18 +327,21 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
                 onSelectReport={(report) => setSelectedReport(report)}
                 onMarkSuccess={handleOpenResolveModal}
               />
-            </>
-          ) : (
-            /* 5. Server Fleet Inventory View */
-            <FleetView
-              onSelectServer={(serverId) => {
-                setFilters((prev) => ({ ...prev, serverId, page: 1 }));
-                setActiveTab('telemetry');
-                scrollToTable();
-              }}
-            />
-          )}
-        </div>
+            </div>
+          </>
+        ) : activeTab === 'fleet' ? (
+          /* Server Fleet Inventory View */
+          <FleetView
+            onSelectServer={(serverId) => {
+              setFilters((prev) => ({ ...prev, serverId, page: 1 }));
+              setActiveTab('telemetry');
+              scrollToTable();
+            }}
+          />
+        ) : (
+          /* Multi-User Directory & Login Tracker View */
+          <UserManagementView currentUser={currentUser} />
+        )}
       </main>
 
       {/* 5. Detail Modal / Drawer */}
@@ -309,7 +354,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
       {/* 6. Professional Incident Resolution Modal */}
       <ResolveModal
         report={resolvingReport}
-        currentUser={user}
+        currentUser={currentUser}
         isOpen={!!resolvingReport}
         onClose={() => setResolvingReport(null)}
         onConfirm={handleConfirmResolve}
@@ -328,6 +373,18 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
         onCleanupComplete={async () => {
           await Promise.all([loadDashboardData(), loadBackups()]);
           setActionToast('Database housekeeping executed successfully.');
+          setTimeout(() => setActionToast(null), 4000);
+        }}
+      />
+
+      {/* 9. Self-Service User Profile Modal */}
+      <UserProfileModal
+        user={currentUser}
+        isOpen={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+        onProfileUpdated={(updated) => {
+          setCurrentUser(updated);
+          setActionToast('Profile updated successfully.');
           setTimeout(() => setActionToast(null), 4000);
         }}
       />

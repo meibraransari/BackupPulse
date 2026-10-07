@@ -11,15 +11,33 @@ async function main() {
   const hashedPassword = await bcrypt.hash(config.INITIAL_ADMIN_PASSWORD, 10);
   const user = await prisma.user.upsert({
     where: { username: config.INITIAL_ADMIN_USERNAME },
-    update: {},
+    update: {
+      fullName: 'System Administrator',
+    },
     create: {
       username: config.INITIAL_ADMIN_USERNAME,
+      fullName: 'System Administrator',
       email: `${config.INITIAL_ADMIN_USERNAME}@company.internal`,
       passwordHash: hashedPassword,
       role: 'admin',
     },
   });
   console.log(`[SEED] Admin user ensured: ${user.username}`);
+
+  // Seed sample login tracker log
+  const loginLogCount = await prisma.userLoginLog.count();
+  if (loginLogCount === 0) {
+    await prisma.userLoginLog.create({
+      data: {
+        userId: user.id,
+        username: user.username,
+        ipAddress: '127.0.0.1',
+        userAgent: 'BackupPulse System Bootstrap',
+        status: 'SUCCESS',
+      },
+    });
+    console.log('[SEED] Initial bootstrap login log created.');
+  }
 
   // Seed some realistic mock backup reports if empty, to ensure the dashboard has immediate data
   const reportCount = await prisma.backupReport.count();
@@ -80,6 +98,19 @@ async function main() {
         status: 'SUCCESS',
         message: 'Initial system deployment test alert recorded.',
         payload: { initialSetup: true },
+      },
+    });
+  }
+
+  const serverConfigCount = await prisma.serverConfig.count();
+  if (serverConfigCount === 0) {
+    console.log('[SEED] Seeding sample server configuration...');
+    await prisma.serverConfig.create({
+      data: {
+        serverId: 'srv-ap-south-02',
+        hostname: 'srv-ap-south-02.cloud.internal',
+        isMonitored: false,
+        muteReason: 'Dev / Staging / Non-production host',
       },
     });
   }

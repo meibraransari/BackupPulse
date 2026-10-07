@@ -31,6 +31,12 @@ export interface DailySummaryStats {
     backupType: string;
     anomalyReason: string | null;
   }>;
+  staleServers: Array<{
+    serverId: string;
+    hostname: string;
+    lastSeenAt: string;
+    hoursSinceLastBackup: number;
+  }>;
 }
 
 export function formatBytes(bytes: number | bigint): string {
@@ -82,6 +88,46 @@ export async function getDailyStats(): Promise<DailySummaryStats> {
     orderBy: { createdAt: 'desc' },
   });
 
+  // Dead Man's Snitch: Find active servers silent for >26 hours, excluding muted ones
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const twentySixHoursAgo = new Date(Date.now() - 26 * 60 * 60 * 1000);
+
+  const unmonitoredConfigs = await prisma.serverConfig.findMany({
+    where: { isMonitored: false },
+    select: { serverId: true },
+  });
+  const unmonitoredSet = new Set(unmonitoredConfigs.map((c) => c.serverId));
+
+  const allActiveServers = await prisma.backupReport.findMany({
+    where: { createdAt: { gte: thirtyDaysAgo } },
+    select: { serverId: true, hostname: true, createdAt: true },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const latestServerMap = new Map<string, { serverId: string; hostname: string; createdAt: Date }>();
+  for (const s of allActiveServers) {
+    if (!latestServerMap.has(s.serverId)) {
+      latestServerMap.set(s.serverId, s);
+    }
+  }
+
+  const staleServers: Array<{ serverId: string; hostname: string; lastSeenAt: string; hoursSinceLastBackup: number }> = [];
+  const now = Date.now();
+  for (const [srvId, info] of latestServerMap.entries()) {
+    if (unmonitoredSet.has(srvId)) {
+      continue; // Skip muted/unmonitored servers
+    }
+    if (info.createdAt < twentySixHoursAgo) {
+      const hoursAgo = Math.round((now - info.createdAt.getTime()) / (3600 * 1000));
+      staleServers.push({
+        serverId: info.serverId,
+        hostname: info.hostname,
+        lastSeenAt: info.createdAt.toISOString(),
+        hoursSinceLastBackup: hoursAgo,
+      });
+    }
+  }
+
   const successRate = total > 0 ? Math.round((success / total) * 100) : 100;
   const totalBytes = sizeAgg._sum.backupSizeBytes || BigInt(0);
 
@@ -95,6 +141,7 @@ export async function getDailyStats(): Promise<DailySummaryStats> {
     totalSizeHuman: formatBytes(totalBytes),
     failedReports,
     anomalies,
+    staleServers,
   };
 }
 
@@ -136,14 +183,14 @@ export async function sendDailyBackupReportToGoogleChat(): Promise<{ success: bo
     day: 'numeric',
   });
 
-  const hasIssues = stats.failed > 0 || stats.anomaliesCount > 0;
+  const hasIssues = stats.failed > 0 || stats.anomaliesCount > 0 || (stats.staleServers && stats.staleServers.length > 0);
   const statusEmoji = !hasIssues ? '✅' : '⚠️';
 
   const widgets: any[] = [
     {
       decoratedText: {
         topLabel: 'Summary Metrics (Last 24 Hours)',
-        text: `<b>Total Backups:</b> ${stats.total} | <b>Success:</b> ${stats.success} (${stats.successRate}%) | <b>Failed:</b> ${stats.failed}${stats.anomaliesCount > 0 ? ` | <b>Anomalies:</b> ${stats.anomaliesCount}` : ''}`,
+        text: `<b>Total Backups:</b> ${stats.total} | <b>Success:</b> ${stats.success} (${stats.successRate}%) | <b>Failed:</b> ${stats.failed}${stats.anomaliesCount > 0 ? ` | <b>Anomalies:</b> ${stats.anomaliesCount}` : ''}${stats.staleServers.length > 0 ? ` | <b>Stale Hosts:</b> ${stats.staleServers.length}` : ''}`,
         startIcon: { knownIcon: 'DESCRIPTION' },
       },
     },
@@ -155,6 +202,20 @@ export async function sendDailyBackupReportToGoogleChat(): Promise<{ success: bo
       },
     },
   ];
+
+  if (stats.staleServers && stats.staleServers.length > 0) {
+    let staleText = '';
+    stats.staleServers.slice(0, 5).forEach((s, idx) => {
+      staleText += `<b>${idx + 1}. [${s.serverId}]</b> (${s.hostname}) - Silent for <b>${s.hoursSinceLastBackup}h</b><br>`;
+    });
+
+    widgets.push({
+      decoratedText: {
+        topLabel: `⏱️ Dead Man's Snitch: Missing Backups (${stats.staleServers.length} Stale Server${stats.staleServers.length > 1 ? 's' : ''})`,
+        text: staleText,
+      },
+    });
+  }
 
   if (stats.anomalies.length > 0) {
     let anomalyText = '';

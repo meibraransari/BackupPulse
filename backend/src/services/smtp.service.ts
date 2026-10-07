@@ -220,6 +220,40 @@ export async function sendDailyBackupReportEmail(): Promise<{ success: boolean; 
       `;
     }
 
+    let staleServersHtml = '';
+    if (stats.staleServers && stats.staleServers.length > 0) {
+      staleServersHtml = `
+        <div style="margin-top: 20px; padding: 14px; background-color: #451a03; border: 1px solid #7c2d12; border-radius: 8px;">
+          <h3 style="margin: 0 0 10px 0; color: #fb923c; font-size: 13px;">⏱️ Dead Man's Snitch: Missing Expected Backups (>26h)</h3>
+          <p style="margin: 0 0 10px 0; font-size: 11px; color: #fdba74;">The following servers are actively monitored but have not dispatched backup telemetry within the expected schedule:</p>
+          <table style="width: 100%; border-collapse: collapse; font-size: 12px; color: #fed7aa;">
+            <thead>
+              <tr style="border-bottom: 1px solid #7c2d12; text-align: left;">
+                <th style="padding: 6px;">Server ID</th>
+                <th style="padding: 6px;">Hostname</th>
+                <th style="padding: 6px;">Last Backup</th>
+                <th style="padding: 6px;">Duration Silent</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${stats.staleServers
+                .map(
+                  (s) => `
+                <tr style="border-bottom: 1px solid #6c2710;">
+                  <td style="padding: 6px; font-weight: bold; font-family: monospace;">${s.serverId}</td>
+                  <td style="padding: 6px;">${s.hostname}</td>
+                  <td style="padding: 6px; font-family: monospace;">${new Date(s.lastSeenAt).toLocaleString()}</td>
+                  <td style="padding: 6px; color: #f97316; font-weight: bold;">${s.hoursSinceLastBackup} hours ago</td>
+                </tr>
+              `
+                )
+                .join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
     const htmlContent = `
       <!DOCTYPE html>
       <html>
@@ -268,6 +302,7 @@ export async function sendDailyBackupReportEmail(): Promise<{ success: boolean; 
             </div>
 
             ${failedJobsHtml}
+            ${staleServersHtml}
             ${anomaliesHtml}
 
             <div class="btn-container">

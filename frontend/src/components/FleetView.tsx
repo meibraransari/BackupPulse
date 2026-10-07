@@ -15,6 +15,9 @@ import {
   LayoutGrid,
   List,
   Sparkles,
+  BellOff,
+  Bell,
+  X,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { FleetSummary, ServerFleetItem } from '../types';
@@ -23,6 +26,14 @@ interface FleetViewProps {
   onSelectServer?: (serverId: string) => void;
 }
 
+const MUTE_REASONS = [
+  'Decommissioned / Retired server',
+  'Dev / Staging / Non-production host',
+  'Temporary maintenance window',
+  'Migrated to cloud container',
+  'Custom note (specify below)',
+];
+
 export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer }) => {
   const [fleet, setFleet] = useState<ServerFleetItem[]>([]);
   const [summary, setSummary] = useState<FleetSummary | null>(null);
@@ -30,6 +41,12 @@ export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer }) => {
   const [search, setSearch] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [displayMode, setDisplayMode] = useState<'grid' | 'table'>('grid');
+
+  // Mute modal state
+  const [mutingServer, setMutingServer] = useState<ServerFleetItem | null>(null);
+  const [selectedMutePreset, setSelectedMutePreset] = useState<string>(MUTE_REASONS[0]);
+  const [customMuteNote, setCustomMuteNote] = useState<string>('');
+  const [mutingLoading, setMutingLoading] = useState<boolean>(false);
 
   const fetchFleet = useCallback(async () => {
     setLoading(true);
@@ -51,8 +68,58 @@ export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer }) => {
     fetchFleet();
   }, [fetchFleet]);
 
-  const getStatusBadge = (status: ServerFleetItem['status']) => {
-    switch (status) {
+  const handleToggleMonitoring = async (server: ServerFleetItem) => {
+    if (server.isMonitored === false) {
+      // Unmute immediately
+      try {
+        await api.updateServerMonitoring(server.serverId, true, undefined, server.hostname);
+        await fetchFleet();
+      } catch (err: any) {
+        alert(`Failed to unmute server: ${err.message}`);
+      }
+    } else {
+      // Open mute reason modal
+      setMutingServer(server);
+      setSelectedMutePreset(MUTE_REASONS[0]);
+      setCustomMuteNote('');
+    }
+  };
+
+  const handleConfirmMute = async () => {
+    if (!mutingServer) return;
+    setMutingLoading(true);
+    try {
+      const finalReason =
+        selectedMutePreset === 'Custom note (specify below)'
+          ? customMuteNote.trim() || 'Manually muted by operator'
+          : customMuteNote.trim()
+          ? `${selectedMutePreset} — ${customMuteNote.trim()}`
+          : selectedMutePreset;
+
+      await api.updateServerMonitoring(mutingServer.serverId, false, finalReason, mutingServer.hostname);
+      setMutingServer(null);
+      await fetchFleet();
+    } catch (err: any) {
+      alert(`Failed to mute server: ${err.message}`);
+    } finally {
+      setMutingLoading(false);
+    }
+  };
+
+  const getStatusBadge = (server: ServerFleetItem) => {
+    if (server.isMonitored === false) {
+      return (
+        <span
+          className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-800 text-slate-400 border border-slate-700 cursor-help"
+          title={server.muteReason || 'Excluded from Dead Man\'s Snitch daily alerts'}
+        >
+          <BellOff className="h-3 w-3 text-slate-400" />
+          <span>Muted</span>
+        </span>
+      );
+    }
+
+    switch (server.status) {
       case 'HEALTHY':
         return (
           <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-950/80 text-emerald-400 border border-emerald-700/50">
@@ -87,7 +154,7 @@ export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer }) => {
   return (
     <div className="space-y-6">
       {/* 1. Fleet Health Summary Pills */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
         {/* Total Servers */}
         <div
           onClick={() => setStatusFilter('ALL')}
@@ -159,7 +226,7 @@ export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer }) => {
         {/* Stale (>26h) */}
         <div
           onClick={() => setStatusFilter('STALE')}
-          className={`cursor-pointer p-4 rounded-2xl border col-span-2 sm:col-span-1 transition-all ${
+          className={`cursor-pointer p-4 rounded-2xl border transition-all ${
             statusFilter === 'STALE'
               ? 'bg-slate-900 border-orange-500/80 shadow-lg shadow-orange-500/10'
               : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'
@@ -171,6 +238,23 @@ export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer }) => {
           </div>
           <div className="text-2xl font-bold text-orange-400 mt-1.5">{summary?.stale ?? 0}</div>
           <div className="text-[10px] text-orange-500/70 mt-0.5">Missed expected cron</div>
+        </div>
+
+        {/* Muted / Excluded */}
+        <div
+          onClick={() => setStatusFilter('MUTED')}
+          className={`cursor-pointer p-4 rounded-2xl border col-span-2 sm:col-span-1 transition-all ${
+            statusFilter === 'MUTED'
+              ? 'bg-slate-900 border-slate-500 shadow-lg shadow-slate-500/10'
+              : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'
+          }`}
+        >
+          <div className="flex items-center justify-between text-xs text-slate-400">
+            <span>Muted</span>
+            <BellOff className="h-4 w-4 text-slate-400" />
+          </div>
+          <div className="text-2xl font-bold text-slate-300 mt-1.5">{summary?.muted ?? 0}</div>
+          <div className="text-[10px] text-slate-500 mt-0.5">Excluded from alerts</div>
         </div>
       </div>
 
@@ -199,6 +283,7 @@ export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer }) => {
             <option value="FAILED">Failing Only</option>
             <option value="WARNING">Warning / Anomaly</option>
             <option value="STALE">Stale (&gt;26h)</option>
+            <option value="MUTED">Muted (Excluded from Alerts)</option>
           </select>
 
           {/* Grid vs Table toggle */}
@@ -255,7 +340,9 @@ export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer }) => {
             <div
               key={server.serverId}
               className={`bg-slate-900 border rounded-2xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between ${
-                server.status === 'FAILED'
+                server.isMonitored === false
+                  ? 'border-slate-800/80 bg-slate-950/40 opacity-75'
+                  : server.status === 'FAILED'
                   ? 'border-rose-900/60 bg-rose-950/10'
                   : server.status === 'STALE'
                   ? 'border-orange-900/60 bg-orange-950/10'
@@ -280,7 +367,7 @@ export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer }) => {
                       </div>
                     </div>
                   </div>
-                  {getStatusBadge(server.status)}
+                  {getStatusBadge(server)}
                 </div>
 
                 {/* Metrics Grid */}
@@ -301,7 +388,9 @@ export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer }) => {
                     <span className="text-[10px] text-slate-500 uppercase block">Last Seen</span>
                     <strong
                       className={
-                        server.hoursSinceLastBackup > 26 ? 'text-orange-400 font-semibold' : 'text-slate-200'
+                        server.hoursSinceLastBackup > 26 && server.isMonitored !== false
+                          ? 'text-orange-400 font-semibold'
+                          : 'text-slate-200'
                       }
                     >
                       {server.hoursSinceLastBackup === 0
@@ -309,13 +398,25 @@ export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer }) => {
                         : `${server.hoursSinceLastBackup}h ago`}
                     </strong>
                     <div className="text-[10px] text-slate-500">
-                      {server.hoursSinceLastBackup > 26 ? 'STALE' : 'OK'}
+                      {server.isMonitored === false
+                        ? 'MUTED'
+                        : server.hoursSinceLastBackup > 26
+                        ? 'STALE'
+                        : 'OK'}
                     </div>
                   </div>
                 </div>
 
+                {/* Mute Reason Note if unmonitored */}
+                {server.isMonitored === false && server.muteReason && (
+                  <div className="mt-3 p-2 rounded-xl bg-slate-950 border border-slate-800 text-[11px] text-slate-400 flex items-center space-x-1.5">
+                    <BellOff className="h-3 w-3 text-slate-500 shrink-0" />
+                    <span className="truncate">Reason: {server.muteReason}</span>
+                  </div>
+                )}
+
                 {/* Size Anomaly Badge (if any) */}
-                {server.anomalyCount > 0 && (
+                {server.anomalyCount > 0 && server.isMonitored !== false && (
                   <div className="mt-3 p-2 rounded-xl bg-amber-950/60 border border-amber-700/50 flex items-center space-x-1.5 text-xs text-amber-300">
                     <AlertTriangle className="h-3.5 w-3.5 text-amber-400 shrink-0" />
                     <span>
@@ -342,18 +443,44 @@ export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer }) => {
                 </div>
               </div>
 
-              {/* Action Button */}
-              {onSelectServer && (
-                <div className="mt-4 pt-3 border-t border-slate-800 flex justify-end">
+              {/* Action Buttons */}
+              <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between">
+                <button
+                  onClick={() => handleToggleMonitoring(server)}
+                  className={`text-[11px] font-medium transition-colors flex items-center space-x-1 ${
+                    server.isMonitored === false
+                      ? 'text-emerald-400 hover:text-emerald-300'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                  title={
+                    server.isMonitored === false
+                      ? 'Enable Dead Man\'s Snitch alert monitoring'
+                      : 'Exclude host from Dead Man\'s Snitch alerts'
+                  }
+                >
+                  {server.isMonitored === false ? (
+                    <>
+                      <Bell className="h-3 w-3" />
+                      <span>Unmute</span>
+                    </>
+                  ) : (
+                    <>
+                      <BellOff className="h-3 w-3" />
+                      <span>Mute</span>
+                    </>
+                  )}
+                </button>
+
+                {onSelectServer && (
                   <button
                     onClick={() => onSelectServer(server.serverId)}
                     className="flex items-center space-x-1 text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors group"
                   >
-                    <span>Inspect Server Telemetry</span>
+                    <span>Inspect Telemetry</span>
                     <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
                   </button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -371,14 +498,16 @@ export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer }) => {
                   <th className="py-3 px-4">Total Storage</th>
                   <th className="py-3 px-4">Last Telemetry</th>
                   <th className="py-3 px-4">Projects</th>
-                  {onSelectServer && <th className="py-3 px-4 text-right">Actions</th>}
+                  <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
                 {fleet.map((server) => (
                   <tr
                     key={server.serverId}
-                    className="hover:bg-slate-800/40 transition-colors cursor-pointer"
+                    className={`hover:bg-slate-800/40 transition-colors cursor-pointer ${
+                      server.isMonitored === false ? 'opacity-70 bg-slate-950/20' : ''
+                    }`}
                     onClick={() => onSelectServer && onSelectServer(server.serverId)}
                   >
                     <td className="py-3 px-4 font-mono font-semibold text-slate-200 whitespace-nowrap">
@@ -390,7 +519,7 @@ export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer }) => {
                       <div className="text-[11px] font-mono text-slate-500">{server.serverIp}</div>
                     </td>
 
-                    <td className="py-3 px-4 whitespace-nowrap">{getStatusBadge(server.status)}</td>
+                    <td className="py-3 px-4 whitespace-nowrap">{getStatusBadge(server)}</td>
 
                     <td className="py-3 px-4 whitespace-nowrap">
                       <div className="flex items-center space-x-2">
@@ -420,7 +549,9 @@ export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer }) => {
                     <td className="py-3 px-4 whitespace-nowrap">
                       <div
                         className={
-                          server.hoursSinceLastBackup > 26 ? 'text-orange-400 font-semibold' : 'text-slate-300'
+                          server.hoursSinceLastBackup > 26 && server.isMonitored !== false
+                            ? 'text-orange-400 font-semibold'
+                            : 'text-slate-300'
                         }
                       >
                         {server.hoursSinceLastBackup === 0
@@ -439,23 +570,126 @@ export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer }) => {
                       </div>
                     </td>
 
-                    {onSelectServer && (
-                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                    <td className="py-3 px-4 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end space-x-2">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            onSelectServer(server.serverId);
+                            handleToggleMonitoring(server);
                           }}
-                          className="px-2.5 py-1 rounded-lg text-xs font-medium text-indigo-300 bg-indigo-950/70 hover:bg-indigo-900 border border-indigo-700/40 transition-colors"
+                          className={`p-1.5 rounded-lg text-xs font-medium transition-colors ${
+                            server.isMonitored === false
+                              ? 'text-emerald-400 hover:bg-emerald-950/40'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                          }`}
+                          title={
+                            server.isMonitored === false
+                              ? 'Unmute Dead Man\'s Snitch alert monitoring'
+                              : 'Mute alerts for this server'
+                          }
                         >
-                          View Logs
+                          {server.isMonitored === false ? (
+                            <Bell className="h-3.5 w-3.5" />
+                          ) : (
+                            <BellOff className="h-3.5 w-3.5" />
+                          )}
                         </button>
-                      </td>
-                    )}
+                        {onSelectServer && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSelectServer(server.serverId);
+                            }}
+                            className="px-2.5 py-1 rounded-lg text-xs font-medium text-indigo-300 bg-indigo-950/70 hover:bg-indigo-900 border border-indigo-700/40 transition-colors"
+                          >
+                            Logs
+                          </button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MUTE SERVER MODAL ================= */}
+      {mutingServer && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in"
+          onClick={() => setMutingServer(null)}
+        >
+          <div
+            className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between">
+              <div className="flex items-center space-x-2.5">
+                <div className="h-10 w-10 rounded-xl bg-slate-800 flex items-center justify-center text-slate-300">
+                  <BellOff className="h-5 w-5 text-amber-400" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-base">Mute Dead Man's Snitch</h3>
+                  <p className="text-xs text-slate-400 font-mono">Server: {mutingServer.serverId}</p>
+                </div>
+              </div>
+              <button onClick={() => setMutingServer(null)} className="text-slate-400 hover:text-white">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Muting this host excludes it from daily Google Chat and SMTP missing backup alerts. Telemetry reports sent by this host will still be logged.
+            </p>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-300 font-medium mb-1">Reason for Exclusion:</label>
+                <select
+                  value={selectedMutePreset}
+                  onChange={(e) => setSelectedMutePreset(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-amber-500"
+                >
+                  {MUTE_REASONS.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-medium mb-1">Additional Notes (Optional):</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Server decommissioned on ticket DEV-4829"
+                  value={customMuteNote}
+                  onChange={(e) => setCustomMuteNote(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-slate-800 flex items-center justify-end space-x-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setMutingServer(null)}
+                className="px-4 py-2 rounded-xl text-slate-400 bg-slate-800 hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmMute}
+                disabled={mutingLoading}
+                className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-semibold flex items-center space-x-1.5 shadow-md shadow-amber-700/30"
+              >
+                {mutingLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BellOff className="h-3.5 w-3.5" />}
+                <span>Confirm Mute</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
