@@ -89,5 +89,11 @@ export const config = {
   DB_RETENTION_DAYS: parseInt(process.env.DB_RETENTION_DAYS || '365', 10),
   ENABLE_HOUSEKEEPING: process.env.ENABLE_HOUSEKEEPING !== 'false',
   HOUSEKEEPING_CRON: process.env.HOUSEKEEPING_CRON || '0 3 * * *', // Daily at 03:00 AM
+
+  // Swagger Documentation Configuration (can be enabled or disabled in production)
+  ENABLE_SWAGGER:
+    process.env.ENABLE_SWAGGER !== undefined
+      ? process.env.ENABLE_SWAGGER === 'true'
+      : (process.env.NODE_ENV === 'production' ? false : true),
 };
 

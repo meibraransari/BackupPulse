@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Database,
   Table,
@@ -48,6 +48,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [testingSmtp, setTestingSmtp] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [swaggerEnabled, setSwaggerEnabled] = useState<boolean>(true);
+
+  useEffect(() => {
+    api
+      .getHealth()
+      .then((res) => {
+        if (typeof res.swagger === 'boolean') {
+          setSwaggerEnabled(res.swagger);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleTestGChat = async () => {
     setTestingGChat(true);
@@ -171,19 +183,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
           DevOps Operations
         </div>
 
-        {/* Swagger Docs */}
-        <a
-          href="/api/docs"
-          target="_blank"
-          rel="noreferrer"
-          className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800/60 transition-colors group"
-        >
-          <div className="flex items-center space-x-2.5">
-            <BookOpen className="h-4 w-4 text-blue-400" />
-            <span>Swagger API Docs</span>
-          </div>
-          <ExternalLink className="h-3 w-3 text-slate-500 group-hover:text-white" />
-        </a>
+        {/* Swagger Docs (Shown only when Swagger is enabled) */}
+        {swaggerEnabled && (
+          <a
+            href="/api/docs"
+            target="_blank"
+            rel="noreferrer"
+            className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800/60 transition-colors group"
+          >
+            <div className="flex items-center space-x-2.5">
+              <BookOpen className="h-4 w-4 text-blue-400" />
+              <span>Swagger API Docs</span>
+            </div>
+            <ExternalLink className="h-3 w-3 text-slate-500 group-hover:text-white" />
+          </a>
+        )}
 
         {/* Notification Delivery Audit Logs */}
         <button

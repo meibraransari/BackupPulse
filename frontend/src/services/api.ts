@@ -338,4 +338,8 @@ export const api = {
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
   },
+
+  async getHealth(): Promise<{ status: string; uptime: number; database: string; swagger?: boolean }> {
+    return request('/health');
+  },
 };

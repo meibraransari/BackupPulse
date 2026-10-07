@@ -79,32 +79,47 @@ async function bootstrap() {
     });
   }
 
-  // Pre-routing hook to fix Swagger-UI relative paths & aliases
-  fastify.addHook('onRequest', async (request, reply) => {
-    const rawUrl = request.raw.url || '';
+  // Setup Swagger Documentation at /api/docs if enabled
+  if (config.ENABLE_SWAGGER) {
+    // Pre-routing hook to fix Swagger-UI relative paths & aliases
+    fastify.addHook('onRequest', async (request, reply) => {
+      const rawUrl = request.raw.url || '';
 
-    // 1. Fix duplicate /api/api/docs/ prefix if requested
-    if (rawUrl.startsWith('/api/api/docs/')) {
-      const fixedUrl = rawUrl.replace('/api/api/docs/', '/api/docs/');
-      return reply.redirect(302, fixedUrl);
-    }
+      // 1. Fix duplicate /api/api/docs/ prefix if requested
+      if (rawUrl.startsWith('/api/api/docs/')) {
+        const fixedUrl = rawUrl.replace('/api/api/docs/', '/api/docs/');
+        return reply.redirect(302, fixedUrl);
+      }
 
-    // 2. Redirect /api/docs (without trailing slash) to /api/docs/ (with trailing slash)
-    // This is required so Swagger-UI resolves relative assets like ./static/swagger-ui.css correctly
-    if (rawUrl === '/api/docs' || rawUrl.startsWith('/api/docs?')) {
-      const query = rawUrl.includes('?') ? rawUrl.substring(rawUrl.indexOf('?')) : '';
-      return reply.redirect(302, `/api/docs/${query}`);
-    }
+      // 2. Redirect /api/docs (without trailing slash) to /api/docs/ (with trailing slash)
+      // This is required so Swagger-UI resolves relative assets like ./static/swagger-ui.css correctly
+      if (rawUrl === '/api/docs' || rawUrl.startsWith('/api/docs?')) {
+        const query = rawUrl.includes('?') ? rawUrl.substring(rawUrl.indexOf('?')) : '';
+        return reply.redirect(302, `/api/docs/${query}`);
+      }
 
-    // 3. User-friendly alias: /docs or /docs/ redirects to /api/docs/
-    if (rawUrl === '/docs' || rawUrl === '/docs/' || rawUrl.startsWith('/docs?') || rawUrl.startsWith('/docs/?')) {
-      const query = rawUrl.includes('?') ? rawUrl.substring(rawUrl.indexOf('?')) : '';
-      return reply.redirect(302, `/api/docs/${query}`);
-    }
-  });
+      // 3. User-friendly alias: /docs or /docs/ redirects to /api/docs/
+      if (rawUrl === '/docs' || rawUrl === '/docs/' || rawUrl.startsWith('/docs?') || rawUrl.startsWith('/docs/?')) {
+        const query = rawUrl.includes('?') ? rawUrl.substring(rawUrl.indexOf('?')) : '';
+        return reply.redirect(302, `/api/docs/${query}`);
+      }
+    });
 
-  // Setup Swagger Documentation at /api/docs
-  await setupSwagger(fastify);
+    await setupSwagger(fastify);
+  } else {
+    // When Swagger is disabled in production, block /api/docs and /docs with 404
+    const handleDisabledDocs = async (_request: FastifyRequest, reply: FastifyReply) => {
+      return reply.status(404).send({
+        error: 'Not Found',
+        message: 'Swagger API documentation is disabled in this environment (ENABLE_SWAGGER=false).',
+      });
+    };
+
+    fastify.get('/api/docs', handleDisabledDocs);
+    fastify.get('/api/docs/*', handleDisabledDocs);
+    fastify.get('/docs', handleDisabledDocs);
+    fastify.get('/docs/*', handleDisabledDocs);
+  }
 
   // Register API Routes
   await fastify.register(healthRoutes);
@@ -150,7 +165,7 @@ async function bootstrap() {
     console.log(`====================================================`);
     console.log(`🚀 BackupPulse Monitoring Server is LIVE!`);
     console.log(`📍 Web Dashboard: http://${config.HOST}:${config.PORT}`);
-    console.log(`📖 Swagger API Docs: http://${config.HOST}:${config.PORT}/api/docs/`);
+    console.log(`📖 Swagger API Docs: ${config.ENABLE_SWAGGER ? `http://${config.HOST}:${config.PORT}/api/docs/` : 'DISABLED (ENABLE_SWAGGER=false)'}`);
     console.log(`💓 Health Check: http://${config.HOST}:${config.PORT}/health`);
     console.log(`📝 Console Logging: ${config.ENABLE_CONSOLE_LOG ? 'ENABLED (' + config.LOG_LEVEL + ')' : 'DISABLED'}`);
     console.log(`====================================================`);

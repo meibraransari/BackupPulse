@@ -1,12 +1,13 @@
 import { FastifyInstance } from 'fastify';
 import { prisma } from '../db/prisma';
+import { config } from '../config/env';
 
 export async function healthRoutes(fastify: FastifyInstance) {
   fastify.get(
     '/health',
     {
       schema: {
-        description: 'Check service health and database connectivity',
+        description: 'Check service health, database connectivity, and swagger status',
         tags: ['System'],
         response: {
           200: {
@@ -16,6 +17,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
               uptime: { type: 'number' },
               timestamp: { type: 'string' },
               database: { type: 'string' },
+              swagger: { type: 'boolean' },
             },
           },
           500: {
@@ -36,6 +38,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
           uptime: process.uptime(),
           timestamp: new Date().toISOString(),
           database: 'connected',
+          swagger: config.ENABLE_SWAGGER,
         });
       } catch (err: any) {
         return reply.status(500).send({

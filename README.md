@@ -71,7 +71,7 @@ docker compose logs -f app
 * **Web Dashboard**: [http://localhost:3000](http://localhost:3000)
   * Default Username: `admin`
   * Default Password: `Admin@123456`
-* **Swagger OpenAPI Docs**: [http://localhost:3000/api/docs](http://localhost:3000/api/docs)
+* **Swagger OpenAPI Docs**: [http://localhost:3000/api/docs](http://localhost:3000/api/docs) (Toggle with `ENABLE_SWAGGER=false` in production)
 * **Health Check**: [http://localhost:3000/health](http://localhost:3000/health)
 
 ---
@@ -231,8 +231,8 @@ TEMP_DIR="/tmp/backup_jobs"
 
 | Method | Endpoint | Description | Auth |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/health` | Server uptime & DB connection check | None |
-| `GET` | `/api/docs` | Interactive Swagger UI sandbox | None |
+| `GET` | `/health` | Server uptime & DB connection check (includes `swagger` enabled flag) | None |
+| `GET` | `/api/docs` | Interactive Swagger UI sandbox (enabled when `ENABLE_SWAGGER=true`) | None |
 | `POST` | `/api/v1/backups/report` | Telemetry ingestion from shell script (with anomaly detection) | `x-api-key` |
 | `POST` | `/api/v1/auth/login` | Admin login | None |
 | `GET` | `/api/v1/auth/me` | Current session user | Bearer JWT |
