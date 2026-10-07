@@ -16,6 +16,7 @@ export interface DailySummaryStats {
   success: number;
   failed: number;
   warning: number;
+  anomaliesCount: number;
   successRate: number;
   totalSizeHuman: string;
   failedReports: Array<{
@@ -23,6 +24,12 @@ export interface DailySummaryStats {
     serverId: string;
     backupType: string;
     errorMessage: string | null;
+  }>;
+  anomalies: Array<{
+    projectName: string;
+    serverId: string;
+    backupType: string;
+    anomalyReason: string | null;
   }>;
 }
 
@@ -38,11 +45,12 @@ export function formatBytes(bytes: number | bigint): string {
 export async function getDailyStats(): Promise<DailySummaryStats> {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-  const [total, success, failed, warning] = await Promise.all([
+  const [total, success, failed, warning, anomaliesCount] = await Promise.all([
     prisma.backupReport.count({ where: { createdAt: { gte: since } } }),
     prisma.backupReport.count({ where: { createdAt: { gte: since }, status: 'SUCCESS' } }),
     prisma.backupReport.count({ where: { createdAt: { gte: since }, status: 'FAILED' } }),
     prisma.backupReport.count({ where: { createdAt: { gte: since }, status: 'WARNING' } }),
+    prisma.backupReport.count({ where: { createdAt: { gte: since }, isAnomaly: true } }),
   ]);
 
   const sizeAgg = await prisma.backupReport.aggregate({
@@ -62,6 +70,18 @@ export async function getDailyStats(): Promise<DailySummaryStats> {
     orderBy: { createdAt: 'desc' },
   });
 
+  const anomalies = await prisma.backupReport.findMany({
+    where: { createdAt: { gte: since }, isAnomaly: true },
+    select: {
+      projectName: true,
+      serverId: true,
+      backupType: true,
+      anomalyReason: true,
+    },
+    take: 5,
+    orderBy: { createdAt: 'desc' },
+  });
+
   const successRate = total > 0 ? Math.round((success / total) * 100) : 100;
   const totalBytes = sizeAgg._sum.backupSizeBytes || BigInt(0);
 
@@ -70,9 +90,11 @@ export async function getDailyStats(): Promise<DailySummaryStats> {
     success,
     failed,
     warning,
+    anomaliesCount,
     successRate,
     totalSizeHuman: formatBytes(totalBytes),
     failedReports,
+    anomalies,
   };
 }
 
@@ -114,14 +136,14 @@ export async function sendDailyBackupReportToGoogleChat(): Promise<{ success: bo
     day: 'numeric',
   });
 
-  const statusEmoji = stats.failed === 0 ? '✅' : '⚠️';
-  const statusColor = stats.failed === 0 ? '#22c55e' : '#ef4444';
+  const hasIssues = stats.failed > 0 || stats.anomaliesCount > 0;
+  const statusEmoji = !hasIssues ? '✅' : '⚠️';
 
   const widgets: any[] = [
     {
       decoratedText: {
         topLabel: 'Summary Metrics (Last 24 Hours)',
-        text: `<b>Total Backups:</b> ${stats.total} | <b>Success:</b> ${stats.success} (${stats.successRate}%) | <b>Failed:</b> ${stats.failed}`,
+        text: `<b>Total Backups:</b> ${stats.total} | <b>Success:</b> ${stats.success} (${stats.successRate}%) | <b>Failed:</b> ${stats.failed}${stats.anomaliesCount > 0 ? ` | <b>Anomalies:</b> ${stats.anomaliesCount}` : ''}`,
         startIcon: { knownIcon: 'DESCRIPTION' },
       },
     },
@@ -133,6 +155,20 @@ export async function sendDailyBackupReportToGoogleChat(): Promise<{ success: bo
       },
     },
   ];
+
+  if (stats.anomalies.length > 0) {
+    let anomalyText = '';
+    stats.anomalies.forEach((a, idx) => {
+      anomalyText += `<b>${idx + 1}. [${a.projectName}]</b> on <i>${a.serverId}</i>: ${a.anomalyReason || 'Significant size drop detected'}<br>`;
+    });
+
+    widgets.push({
+      decoratedText: {
+        topLabel: '⚠️ Size Anomalies Detected (Potential Truncation)',
+        text: anomalyText,
+      },
+    });
+  }
 
   if (stats.failedReports.length > 0) {
     let failureText = '';

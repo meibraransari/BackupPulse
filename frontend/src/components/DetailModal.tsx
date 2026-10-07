@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Copy, Check, Terminal, AlertCircle, HardDrive, CheckCircle2 } from 'lucide-react';
+import { X, Copy, Check, Terminal, AlertCircle, HardDrive, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { BackupReport } from '../types';
 
 interface DetailModalProps {
@@ -74,6 +74,19 @@ export const DetailModal: React.FC<DetailModalProps> = ({ report, onClose, onMar
                   {report.errorMessage}
                 </p>
               )}
+            </div>
+          )}
+
+          {/* Anomaly Warning Banner (if size anomaly detected) */}
+          {report.isAnomaly && (
+            <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-800/60 text-amber-200 space-y-1.5">
+              <div className="flex items-center space-x-2 text-sm font-semibold text-amber-400">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                <span>Backup Size Anomaly Guard</span>
+              </div>
+              <p className="text-xs font-mono bg-amber-950/80 p-2.5 rounded-lg border border-amber-900/50 text-amber-300">
+                {report.anomalyReason || 'Significant size drop (>70%) or zero-byte backup archive detected.'}
+              </p>
             </div>
           )}
 

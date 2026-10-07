@@ -29,10 +29,13 @@ A high-performance Node.js & React telemetry platform designed to monitor automa
 [BackupPulse Dashboard] (React + Vite + Tailwind CSS)
        ├──► Summary KPI Cards (Total Backups, Success Rate, Failed count, Storage)
        ├──► Historical Trends (Clickable 7-30 Days Success vs Failure Charts)
-       ├──► Advanced Multi-Filter (Project, Server Host, Status, Type, Date Range)
-       ├──► Detail Drawer & Modal (Resolve/Mark Success manually with audit trail)
-       ├──► Instant Test Actions (Test Google Chat, Test SMTP Email)
-       └──► Export Reports to CSV & JSON
+       ├──► 🖥️ Server Fleet Inventory Matrix (100+ Servers Health, Storage, Staleness)
+       ├──► 📉 Backup Size Anomaly Detection (Zero-Byte & Truncation Guard Badges)
+       ├──► 📊 Notification Delivery Audit UI (Google Chat & SMTP History + Payload Inspector)
+       ├──► 🧹 Database Storage & Housekeeping Modal (Retention Controls & Force Purge)
+       ├──► Advanced Multi-Filter & Resizable Columns (Project, Host, Status, Date)
+       ├──► Detail Drawer & Professional Incident Resolution Modal
+       └──► Instant Test Actions (Test Google Chat, Test SMTP Email, Export CSV/JSON)
 ```
 
 ---
@@ -174,14 +177,15 @@ TEMP_DIR="/tmp/backup_jobs"
 | :--- | :--- | :--- | :--- |
 | `GET` | `/health` | Server uptime & DB connection check | None |
 | `GET` | `/api/docs` | Interactive Swagger UI sandbox | None |
-| `POST` | `/api/v1/backups/report` | Telemetry ingestion from shell script | `x-api-key` |
+| `POST` | `/api/v1/backups/report` | Telemetry ingestion from shell script (with anomaly detection) | `x-api-key` |
 | `POST` | `/api/v1/auth/login` | Admin login | None |
 | `GET` | `/api/v1/auth/me` | Current session user | Bearer JWT |
 | `GET` | `/api/v1/dashboard/stats` | 24h & all-time summary KPIs | Bearer JWT |
 | `GET` | `/api/v1/dashboard/trends` | Daily trends for charts (last 7-30 days) | Bearer JWT |
-| `GET` | `/api/v1/backups` | Filtered & paginated backup records | Bearer JWT |
+| `GET` | `/api/v1/dashboard/fleet` | Aggregated 100+ servers fleet health, storage, and staleness matrix | Bearer JWT |
+| `GET` | `/api/v1/backups` | Filtered & paginated backup records (supports `isAnomaly` filter) | Bearer JWT |
 | `GET` | `/api/v1/backups/:id` | Full details, logs, and S3 paths | Bearer JWT |
-| `PUT` | `/api/v1/backups/:id/status` | Manually mark failed backup as SUCCESS with notes | Bearer JWT |
+| `PATCH` | `/api/v1/backups/:id/status` | Manually mark failed backup as SUCCESS with resolution notes | Bearer JWT |
 | `GET` | `/api/v1/backups/export` | Export filtered records to CSV or JSON | Bearer JWT |
 | `GET` | `/api/v1/notifications/status` | Check active status of Google Chat & SMTP channels | Bearer JWT |
 | `GET` | `/api/v1/notifications/logs` | Query alert send audit logs (channel, recipient, status, payload) | Bearer JWT |
@@ -190,6 +194,35 @@ TEMP_DIR="/tmp/backup_jobs"
 | `POST` | `/api/v1/notifications/trigger-daily-report` | Manually dispatch daily report to all enabled channels | Bearer JWT |
 | `GET` | `/api/v1/system/housekeeping` | Check database retention policy, counts & purge status | Bearer JWT |
 | `POST` | `/api/v1/system/cleanup` | Manually trigger database purge of records older than retention threshold | Bearer JWT |
+
+---
+
+## 🖥️ Server Fleet Inventory View (100+ Servers At-A-Glance)
+
+Managing backups across hundreds of servers is effortless with the built-in **Fleet Inventory Matrix**:
+- **Consolidated Health Status**: Dynamically categorizes each server into `HEALTHY` (all backups passed), `FAILED` (active backup failure), `WARNING` (size anomaly or warning), or `STALE` (missed cron run: `>26 hours` without telemetry).
+- **Dual Display Modes**: Switch between **Responsive Card Grid** and a **Dense Matrix Table** designed for rapidly auditing 100+ servers on high-resolution screens.
+- **Drill-Down Telemetry Filtering**: One click on "Inspect Server Telemetry" jumps to the primary telemetry table filtered specifically for that machine.
+- **Live Search & Status Filtering**: Instant client-side and server-side filtering by Server ID, Hostname, IP address, and hosted project names.
+
+---
+
+## 📉 Backup Size Anomaly Detection (Zero-Byte & Truncation Guard)
+
+Silent backup failures (e.g. database dump tool exiting cleanly with 0 bytes due to a bad argument, or disk exhaustion truncating an archive by 90%) are notoriously difficult to catch:
+- **Zero-Byte & Empty Archive Guard**: If a backup reports `SUCCESS` but has an archive size `<= 512 bytes`, BackupPulse automatically flags it as an **Anomaly**, overrides the status to `WARNING`, and attaches an explanatory reason.
+- **Historical Size Drop Analysis**: Compares incoming backup size against recent successful runs (>5MB threshold). If the size drops by **>70%** (i.e. `< 30%` of historical average), it is immediately flagged with `isAnomaly = true` and detailed drop metrics.
+- **Visual Badges & Multi-Channel Alerts**: Size anomalies display distinct amber badges (`⚠️ Drop` / `⚠️ Anomaly`) across the Telemetry Table, Drawer Inspector, Daily Google Chat Cards, and SMTP HTML emails.
+- **Dedicated Filter**: Quick-toggle button in the filter bar to isolate all size anomalies in seconds.
+
+---
+
+## 📊 Notification Delivery Audit UI
+
+Every dispatch attempt to Google Chat and SMTP is tracked in real-time in the `notification_logs` table:
+- **Delivery Receipts**: Audit timestamps, channels, event types (`DAILY_SUMMARY`, `TEST_MESSAGE`, `ALERT`), and recipients (email addresses or webhook URLs).
+- **Status Badges**: Visual indicator of `SUCCESS` vs `FAILED` dispatches with full error messages on failure (e.g. SMTP connection timeout or invalid webhook credentials).
+- **Interactive Payload Viewer**: Inspect the exact JSON card structure or email metadata sent to recipients, with a one-click copy button.
 
 ---
 
@@ -210,6 +243,7 @@ HOUSEKEEPING_CRON="0 3 * * *"
 
 ### How Housekeeping Works:
 * **Automated Cron**: Runs daily at 03:00 AM (or your custom `HOUSEKEEPING_CRON`) to purge all records in `backup_reports` and `notification_logs` where `created_at < now - DB_RETENTION_DAYS`.
+* **Dashboard Storage Control**: Dedicated modal in the navbar displaying total database rows, eligible purge counts, and cutoff date, with an on-demand "Run Cleanup Now" trigger.
 * **Alert Delivery Audit Trail**: Every notification attempt (Google Chat webhook or SMTP email, successful or failed) is stored in the `notification_logs` table with delivery status and payloads, and safely pruned when exceeding the retention window.
 * **On-Demand API**: Administrators can check retention metrics via `GET /api/v1/system/housekeeping` or trigger an immediate manual purge via `POST /api/v1/system/cleanup` (with optional custom `days` parameter).
 * **Initial DB Schema Load**: Integrated with `prisma/schema.prisma` and `prisma db push`, ensuring fresh Docker or Kubernetes deployments create the tables automatically without manual migration steps.

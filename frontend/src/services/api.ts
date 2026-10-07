@@ -1,4 +1,15 @@
-import { BackupFilters, BackupReport, DashboardStats, ProjectBreakdown, TrendItem, User } from '../types';
+import {
+  BackupFilters,
+  BackupReport,
+  DashboardStats,
+  FleetSummary,
+  HousekeepingStatus,
+  NotificationLogItem,
+  ProjectBreakdown,
+  ServerFleetItem,
+  TrendItem,
+  User,
+} from '../types';
 
 const TOKEN_KEY = 'backup_monitor_auth_token';
 
@@ -75,6 +86,16 @@ export const api = {
     return request<ProjectBreakdown[]>('/api/v1/dashboard/projects');
   },
 
+  async getFleetData(params: { search?: string; status?: string } = {}): Promise<{
+    fleet: ServerFleetItem[];
+    summary: FleetSummary;
+  }> {
+    const query = new URLSearchParams();
+    if (params.search) query.append('search', params.search);
+    if (params.status && params.status !== 'ALL') query.append('status', params.status);
+    return request<{ fleet: ServerFleetItem[]; summary: FleetSummary }>(`/api/v1/dashboard/fleet?${query.toString()}`);
+  },
+
   // Backups
   async getBackups(filters: Partial<BackupFilters>): Promise<{
     data: BackupReport[];
@@ -88,6 +109,7 @@ export const api = {
     if (filters.status) params.append('status', filters.status);
     if (filters.backupType) params.append('backupType', filters.backupType);
     if (filters.search) params.append('search', filters.search);
+    if (filters.isAnomaly !== undefined) params.append('isAnomaly', String(filters.isAnomaly));
     if (filters.startDate) params.append('startDate', filters.startDate);
     if (filters.endDate) params.append('endDate', filters.endDate);
 
@@ -158,16 +180,7 @@ export const api = {
   },
 
   async getNotificationLogs(params: { page?: number; limit?: number; channel?: string; status?: string; eventType?: string } = {}): Promise<{
-    data: Array<{
-      id: string;
-      channel: string;
-      eventType: string;
-      recipient: string;
-      status: string;
-      message: string;
-      payload?: any;
-      createdAt: string;
-    }>;
+    data: NotificationLogItem[];
     pagination: { page: number; limit: number; total: number; totalPages: number };
   }> {
     const query = new URLSearchParams();
@@ -180,15 +193,8 @@ export const api = {
   },
 
   // Housekeeping & Retention
-  async getHousekeepingStatus(): Promise<{
-    enabled: boolean;
-    retentionDays: number;
-    cutoffDate: string;
-    housekeepingCron: string;
-    backupReports: { total: number; eligibleForCleanup: number };
-    notificationLogs: { total: number; eligibleForCleanup: number };
-  }> {
-    return request('/api/v1/system/housekeeping');
+  async getHousekeepingStatus(): Promise<HousekeepingStatus> {
+    return request<HousekeepingStatus>('/api/v1/system/housekeeping');
   },
 
   async triggerCleanup(days?: number): Promise<{
@@ -214,6 +220,7 @@ export const api = {
     if (filters.serverId) params.append('serverId', filters.serverId);
     if (filters.status) params.append('status', filters.status);
     if (filters.backupType) params.append('backupType', filters.backupType);
+    if (filters.isAnomaly !== undefined) params.append('isAnomaly', String(filters.isAnomaly));
     if (filters.startDate) params.append('startDate', filters.startDate);
     if (filters.endDate) params.append('endDate', filters.endDate);
 

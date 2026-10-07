@@ -249,9 +249,12 @@ export const BackupTable: React.FC<BackupTableProps> = ({
         );
       case 'WARNING':
         return (
-          <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-950/80 text-amber-400 border border-amber-800/50 shrink-0">
+          <span
+            className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-950/80 text-amber-400 border border-amber-800/50 shrink-0 cursor-help"
+            title={report.anomalyReason || 'Warning: Potential backup issue detected'}
+          >
             <AlertTriangle className="h-3 w-3" />
-            <span>Warning</span>
+            <span>{report.isAnomaly ? 'Anomaly' : 'Warning'}</span>
           </span>
         );
       default:
@@ -457,7 +460,17 @@ export const BackupTable: React.FC<BackupTableProps> = ({
 
                       {/* Size */}
                       <td className="py-3.5 px-3.5 font-mono text-xs overflow-hidden truncate">
-                        {report.backupSizeHuman || '0 B'}
+                        <div className="flex items-center space-x-1.5 truncate">
+                          <span>{report.backupSizeHuman || '0 B'}</span>
+                          {report.isAnomaly && (
+                            <span
+                              className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-950 text-amber-300 border border-amber-600/50 cursor-help shrink-0"
+                              title={report.anomalyReason || 'Anomaly: Backup size dropped sharply or is zero-byte'}
+                            >
+                              ⚠️ Drop
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Duration */}
@@ -608,6 +621,19 @@ export const BackupTable: React.FC<BackupTableProps> = ({
                                 </button>
                               </div>
                             </div>
+
+                            {/* Anomaly Alert Banner (if size anomaly detected) */}
+                            {report.isAnomaly && (
+                              <div className="p-3.5 rounded-xl bg-amber-950/40 border border-amber-800/60 text-amber-200 space-y-1.5">
+                                <div className="flex items-center space-x-2 text-xs font-semibold text-amber-400">
+                                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                                  <span>Backup Size Anomaly Guard Flagged This Job</span>
+                                </div>
+                                <p className="text-xs text-amber-300 font-mono">
+                                  {report.anomalyReason || 'Significant backup size drop (>70%) or zero-byte archive detected.'}
+                                </p>
+                              </div>
+                            )}
 
                             {/* Failure Alert Banner (if failed) */}
                             {report.status === 'FAILED' && (

@@ -82,6 +82,53 @@ export async function backupRoutes(fastify: FastifyInstance) {
       const backupSizeBytes = BigInt(body.backup_size_bytes || 0);
       const backupSizeHuman = body.backup_size_human || formatBytes(backupSizeBytes);
 
+      let isAnomaly = false;
+      let anomalyReason: string | null = null;
+      let reportStatus = body.status.toUpperCase();
+
+      // Anomaly Check 1: Zero-byte or near-empty archive on supposedly successful backup
+      if (reportStatus === 'SUCCESS' && backupSizeBytes <= BigInt(512)) {
+        isAnomaly = true;
+        anomalyReason = `Zero-byte or near-empty archive detected (${formatBytes(backupSizeBytes)}). Potential truncation or missing database dump.`;
+        reportStatus = 'WARNING';
+      } else if (reportStatus === 'SUCCESS' && backupSizeBytes > BigInt(0)) {
+        // Anomaly Check 2: Significant size plummet compared to recent successful runs
+        try {
+          const recentReports = await prisma.backupReport.findMany({
+            where: {
+              projectName: body.project_name,
+              backupType: body.backup_type,
+              status: 'SUCCESS',
+              backupSizeBytes: { gt: BigInt(1024 * 1024) }, // At least 1MB to avoid skewing
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 5,
+            select: { backupSizeBytes: true },
+          });
+
+          if (recentReports.length >= 2) {
+            const sumBytes = recentReports.reduce((acc, r) => acc + Number(r.backupSizeBytes), 0);
+            const avgBytes = sumBytes / recentReports.length;
+            const currentSize = Number(backupSizeBytes);
+
+            // If current backup is less than 30% of average (>70% drop)
+            if (avgBytes > 5 * 1024 * 1024 && currentSize < avgBytes * 0.3) {
+              const dropPercent = Math.round(((avgBytes - currentSize) / avgBytes) * 100);
+              isAnomaly = true;
+              anomalyReason = `Significant backup size drop detected: ${formatBytes(backupSizeBytes)} is ${dropPercent}% smaller than historical average (${formatBytes(avgBytes)}). Possible data loss or partial dump.`;
+              reportStatus = 'WARNING';
+            }
+          }
+        } catch (err: any) {
+          console.warn('[ANOMALY] Error calculating size average:', err.message);
+        }
+      }
+
+      const mergedMetadata = {
+        ...(body.metadata || {}),
+        ...(isAnomaly ? { anomaly: { detected: true, reason: anomalyReason } } : {}),
+      };
+
       const report = await prisma.backupReport.create({
         data: {
           serverId: body.server_id,
@@ -90,7 +137,7 @@ export async function backupRoutes(fastify: FastifyInstance) {
           projectName: body.project_name,
           environment: body.environment || 'production',
           backupType: body.backup_type,
-          status: body.status.toUpperCase(),
+          status: reportStatus,
           startTime,
           endTime,
           durationSeconds,
@@ -102,17 +149,21 @@ export async function backupRoutes(fastify: FastifyInstance) {
           checksum: body.checksum || null,
           zipFilename: body.zip_filename,
           exitCode: body.exit_code !== undefined ? body.exit_code : 0,
-          errorMessage: body.error_message || null,
+          errorMessage: body.error_message || (isAnomaly ? anomalyReason : null),
           stdoutLog: body.stdout_log ? body.stdout_log.slice(0, 65535) : null,
           stderrLog: body.stderr_log ? body.stderr_log.slice(0, 65535) : null,
-          metadata: body.metadata || null,
+          metadata: mergedMetadata,
+          isAnomaly,
+          anomalyReason,
         },
       });
 
       return reply.status(201).send({
         success: true,
         id: report.id,
-        message: 'Backup report received and stored successfully',
+        isAnomaly,
+        anomalyReason,
+        message: isAnomaly ? `Backup ingested with ANOMALY warning: ${anomalyReason}` : 'Backup report received and stored successfully',
       });
     }
   );
@@ -136,6 +187,7 @@ export async function backupRoutes(fastify: FastifyInstance) {
             status: { type: 'string' },
             backupType: { type: 'string' },
             search: { type: 'string' },
+            isAnomaly: { type: 'boolean', description: 'Filter only anomalous/truncated backups' },
             startDate: { type: 'string' },
             endDate: { type: 'string' },
             sortBy: { type: 'string', default: 'createdAt' },
@@ -166,6 +218,10 @@ export async function backupRoutes(fastify: FastifyInstance) {
 
       if (query.backupType && query.backupType !== 'ALL') {
         where.backupType = query.backupType.toLowerCase();
+      }
+
+      if (query.isAnomaly !== undefined && query.isAnomaly !== '') {
+        where.isAnomaly = query.isAnomaly === 'true' || query.isAnomaly === true;
       }
 
       if (query.startDate || query.endDate) {

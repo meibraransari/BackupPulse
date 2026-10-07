@@ -138,4 +138,165 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       );
     }
   );
+
+  // 4. Server Fleet Inventory View (100+ Servers Aggregated Status)
+  fastify.get(
+    '/api/v1/dashboard/fleet',
+    {
+      preValidation: [(fastify as any).authenticate],
+      schema: {
+        description: 'Get comprehensive server fleet health and inventory status across all 100+ servers',
+        tags: ['Dashboard'],
+        security: [{ bearerAuth: [] }],
+        querystring: {
+          type: 'object',
+          properties: {
+            search: { type: 'string', description: 'Filter by serverId, hostname, or IP' },
+            status: { type: 'string', description: 'Filter by status: HEALTHY, WARNING, FAILED, STALE, ALL' },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const query = request.query as any;
+      const search = query.search?.trim().toLowerCase();
+      const statusFilter = query.status?.toUpperCase() || 'ALL';
+
+      // Find all reports with server metadata
+      const allReports = await prisma.backupReport.findMany({
+        orderBy: { createdAt: 'desc' },
+        select: {
+          serverId: true,
+          hostname: true,
+          serverIp: true,
+          projectName: true,
+          status: true,
+          isAnomaly: true,
+          backupSizeBytes: true,
+          createdAt: true,
+        },
+      });
+
+      // Group by serverId
+      const fleetMap: Record<
+        string,
+        {
+          serverId: string;
+          hostname: string;
+          serverIp: string;
+          lastSeenAt: string;
+          hoursSinceLastBackup: number;
+          totalBackups: number;
+          successCount: number;
+          failedCount: number;
+          warningCount: number;
+          anomalyCount: number;
+          totalStorageBytes: number;
+          projects: Set<string>;
+          status: 'HEALTHY' | 'FAILED' | 'WARNING' | 'STALE';
+        }
+      > = {};
+
+      const now = Date.now();
+      const staleThresholdMs = 26 * 60 * 60 * 1000; // 26 hours without backup = stale
+
+      for (const r of allReports) {
+        if (!fleetMap[r.serverId]) {
+          const hoursAgo = Math.max(0, Math.round((now - r.createdAt.getTime()) / (3600 * 1000)));
+          fleetMap[r.serverId] = {
+            serverId: r.serverId,
+            hostname: r.hostname,
+            serverIp: r.serverIp || '127.0.0.1',
+            lastSeenAt: r.createdAt.toISOString(),
+            hoursSinceLastBackup: hoursAgo,
+            totalBackups: 0,
+            successCount: 0,
+            failedCount: 0,
+            warningCount: 0,
+            anomalyCount: 0,
+            totalStorageBytes: 0,
+            projects: new Set<string>(),
+            status: 'HEALTHY',
+          };
+        }
+
+        const entry = fleetMap[r.serverId];
+        entry.totalBackups += 1;
+        entry.projects.add(r.projectName);
+        entry.totalStorageBytes += Number(r.backupSizeBytes);
+
+        if (r.status === 'SUCCESS') entry.successCount += 1;
+        else if (r.status === 'FAILED') entry.failedCount += 1;
+        else if (r.status === 'WARNING') entry.warningCount += 1;
+
+        if (r.isAnomaly) entry.anomalyCount += 1;
+      }
+
+      // Calculate final statuses and convert to array
+      let fleetList = Object.values(fleetMap).map((s) => {
+        const timeDiff = now - new Date(s.lastSeenAt).getTime();
+        let computedStatus: 'HEALTHY' | 'FAILED' | 'WARNING' | 'STALE' = 'HEALTHY';
+
+        if (timeDiff > staleThresholdMs) {
+          computedStatus = 'STALE';
+        } else if (s.failedCount > 0) {
+          computedStatus = 'FAILED';
+        } else if (s.warningCount > 0 || s.anomalyCount > 0) {
+          computedStatus = 'WARNING';
+        }
+
+        const successRate = s.totalBackups > 0 ? Math.round((s.successCount / s.totalBackups) * 100) : 100;
+
+        return {
+          serverId: s.serverId,
+          hostname: s.hostname,
+          serverIp: s.serverIp,
+          lastSeenAt: s.lastSeenAt,
+          hoursSinceLastBackup: s.hoursSinceLastBackup,
+          totalBackups: s.totalBackups,
+          successCount: s.successCount,
+          failedCount: s.failedCount,
+          warningCount: s.warningCount,
+          anomalyCount: s.anomalyCount,
+          successRate,
+          totalStorageBytes: s.totalStorageBytes,
+          totalStorageHuman: formatBytes(s.totalStorageBytes),
+          projects: Array.from(s.projects),
+          status: computedStatus,
+        };
+      });
+
+      // Search filter
+      if (search) {
+        fleetList = fleetList.filter(
+          (s) =>
+            s.serverId.toLowerCase().includes(search) ||
+            s.hostname.toLowerCase().includes(search) ||
+            s.serverIp.toLowerCase().includes(search) ||
+            s.projects.some((p) => p.toLowerCase().includes(search))
+        );
+      }
+
+      // Status filter
+      if (statusFilter && statusFilter !== 'ALL') {
+        fleetList = fleetList.filter((s) => s.status === statusFilter);
+      }
+
+      // Sort: FAILED first, then STALE, then WARNING, then HEALTHY
+      const statusWeight: Record<string, number> = { FAILED: 1, STALE: 2, WARNING: 3, HEALTHY: 4 };
+      fleetList.sort((a, b) => (statusWeight[a.status] || 5) - (statusWeight[b.status] || 5));
+
+      return reply.send({
+        fleet: fleetList,
+        summary: {
+          totalServers: fleetList.length,
+          healthy: fleetList.filter((s) => s.status === 'HEALTHY').length,
+          failing: fleetList.filter((s) => s.status === 'FAILED').length,
+          warning: fleetList.filter((s) => s.status === 'WARNING').length,
+          stale: fleetList.filter((s) => s.status === 'STALE').length,
+        },
+      });
+    }
+  );
 }
+

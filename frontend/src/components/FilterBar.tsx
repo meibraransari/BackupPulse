@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, Filter, Download, RotateCcw, Calendar, FileText } from 'lucide-react';
+import { Search, Filter, Download, RotateCcw, Calendar, FileText, AlertTriangle } from 'lucide-react';
 import { BackupFilters } from '../types';
 
 interface FilterBarProps {
@@ -46,6 +46,20 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           >
             <RotateCcw className="h-3.5 w-3.5" />
             <span>Reset</span>
+          </button>
+
+          {/* Anomaly Filter Toggle */}
+          <button
+            onClick={() => onFilterChange({ isAnomaly: filters.isAnomaly ? undefined : true, page: 1 })}
+            className={`flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-colors border ${
+              filters.isAnomaly
+                ? 'bg-amber-950 text-amber-300 border-amber-600/60 shadow-sm'
+                : 'text-slate-400 bg-slate-800 hover:bg-slate-700 hover:text-amber-400 border-slate-700'
+            }`}
+            title="Filter records flagged with size drops or zero-byte anomalies"
+          >
+            <AlertTriangle className={`h-3.5 w-3.5 ${filters.isAnomaly ? 'text-amber-400' : 'text-slate-400'}`} />
+            <span>Anomalies</span>
           </button>
 
           {/* Export CSV */}

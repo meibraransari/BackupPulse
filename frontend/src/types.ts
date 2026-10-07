@@ -29,6 +29,8 @@ export interface BackupReport {
   stdoutLog?: string;
   stderrLog?: string;
   metadata?: Record<string, any>;
+  isAnomaly?: boolean;
+  anomalyReason?: string;
   createdAt: string;
 }
 
@@ -62,11 +64,58 @@ export interface ProjectBreakdown {
 export interface BackupFilters {
   page: number;
   limit: number;
-  projectName: string;
+  projectName?: string;
+  serverId?: string;
+  status?: string;
+  backupType?: string;
+  search?: string;
+  isAnomaly?: boolean;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface NotificationLogItem {
+  id: string;
+  channel: 'GOOGLE_CHAT' | 'SMTP';
+  eventType: string;
+  recipient: string;
+  status: 'SUCCESS' | 'FAILED';
+  message: string;
+  payload?: any;
+  createdAt: string;
+}
+
+export interface ServerFleetItem {
   serverId: string;
-  status: string;
-  backupType: string;
-  search: string;
-  startDate: string;
-  endDate: string;
+  hostname: string;
+  serverIp: string;
+  lastSeenAt: string;
+  hoursSinceLastBackup: number;
+  totalBackups: number;
+  successCount: number;
+  failedCount: number;
+  warningCount: number;
+  anomalyCount: number;
+  successRate: number;
+  totalStorageBytes: number;
+  totalStorageHuman: string;
+  projects: string[];
+  status: 'HEALTHY' | 'FAILED' | 'WARNING' | 'STALE';
+}
+
+export interface FleetSummary {
+  totalServers: number;
+  healthy: number;
+  failing: number;
+  warning: number;
+  stale: number;
+}
+
+export interface HousekeepingStatus {
+  enabled: boolean;
+  retentionDays: number;
+  cutoffDate: string;
+  housekeepingCron: string;
+  backupReports: { total: number; eligibleForCleanup: number };
+  notificationLogs: { total: number; eligibleForCleanup: number };
 }

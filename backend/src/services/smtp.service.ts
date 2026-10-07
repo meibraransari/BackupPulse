@@ -187,6 +187,39 @@ export async function sendDailyBackupReportEmail(): Promise<{ success: boolean; 
       `;
     }
 
+    let anomaliesHtml = '';
+    if (stats.anomalies && stats.anomalies.length > 0) {
+      anomaliesHtml = `
+        <div style="margin-top: 20px; padding: 14px; background-color: #422006; border: 1px solid #854d0e; border-radius: 8px;">
+          <h3 style="margin: 0 0 10px 0; color: #facc15; font-size: 13px;">⚠️ Size Anomalies Detected (Potential Truncation)</h3>
+          <table style="width: 100%; border-collapse: collapse; font-size: 12px; color: #fef08a;">
+            <thead>
+              <tr style="border-bottom: 1px solid #854d0e; text-align: left;">
+                <th style="padding: 6px;">Project</th>
+                <th style="padding: 6px;">Server</th>
+                <th style="padding: 6px;">Type</th>
+                <th style="padding: 6px;">Anomaly Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${stats.anomalies
+                .map(
+                  (a) => `
+                <tr style="border-bottom: 1px solid #713f12;">
+                  <td style="padding: 6px; font-weight: bold;">${a.projectName}</td>
+                  <td style="padding: 6px; font-family: monospace;">${a.serverId}</td>
+                  <td style="padding: 6px; text-transform: uppercase;">${a.backupType}</td>
+                  <td style="padding: 6px; color: #fef9c3;">${a.anomalyReason || 'Significant size drop detected'}</td>
+                </tr>
+              `
+                )
+                .join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
     const htmlContent = `
       <!DOCTYPE html>
       <html>
@@ -235,6 +268,7 @@ export async function sendDailyBackupReportEmail(): Promise<{ success: boolean; 
             </div>
 
             ${failedJobsHtml}
+            ${anomaliesHtml}
 
             <div class="btn-container">
               <a href="${config.APP_BASE_URL}" class="button" target="_blank">Open BackupPulse Dashboard</a>

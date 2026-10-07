@@ -1,14 +1,21 @@
 import React, { useState } from 'react';
-import { Database, Bell, Mail, BookOpen, LogOut, ShieldCheck, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { Database, Bell, Mail, BookOpen, LogOut, ShieldCheck, CheckCircle2, AlertCircle, Loader2, Send, Trash2 } from 'lucide-react';
 import { api } from '../services/api';
 import { User } from '../types';
 
 interface NavbarProps {
   user: User | null;
   onLogout: () => void;
+  onOpenNotificationLogs?: () => void;
+  onOpenHousekeeping?: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ user, onLogout }) => {
+export const Navbar: React.FC<NavbarProps> = ({
+  user,
+  onLogout,
+  onOpenNotificationLogs,
+  onOpenHousekeeping,
+}) => {
   const [testingGChat, setTestingGChat] = useState(false);
   const [testingSmtp, setTestingSmtp] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -104,6 +111,30 @@ export const Navbar: React.FC<NavbarProps> = ({ user, onLogout }) => {
               )}
               <span className="hidden sm:inline">Test Email</span>
             </button>
+
+            {/* Notification Audit Logs */}
+            {onOpenNotificationLogs && (
+              <button
+                onClick={onOpenNotificationLogs}
+                className="flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium text-indigo-300 bg-indigo-950/60 hover:bg-indigo-900/80 transition-colors border border-indigo-600/30"
+                title="View Notification Delivery Audit Logs"
+              >
+                <Send className="h-3.5 w-3.5 text-indigo-400" />
+                <span className="hidden lg:inline">Audit Logs</span>
+              </button>
+            )}
+
+            {/* Database Storage & Housekeeping */}
+            {onOpenHousekeeping && (
+              <button
+                onClick={onOpenHousekeeping}
+                className="flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium text-amber-300 bg-amber-950/60 hover:bg-amber-900/80 transition-colors border border-amber-600/30"
+                title="View Database Storage Retention and Run Housekeeping"
+              >
+                <Database className="h-3.5 w-3.5 text-amber-400" />
+                <span className="hidden lg:inline">Storage</span>
+              </button>
+            )}
 
             {/* User Profile & Logout */}
             <div className="flex items-center space-x-3 pl-3 border-l border-slate-800">

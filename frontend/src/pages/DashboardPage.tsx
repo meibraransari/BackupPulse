@@ -6,9 +6,12 @@ import { FilterBar } from '../components/FilterBar';
 import { BackupTable } from '../components/BackupTable';
 import { DetailModal } from '../components/DetailModal';
 import { ResolveModal } from '../components/ResolveModal';
+import { FleetView } from '../components/FleetView';
+import { NotificationLogsModal } from '../components/NotificationLogsModal';
+import { HousekeepingModal } from '../components/HousekeepingModal';
 import { api } from '../services/api';
 import { BackupFilters, BackupReport, DashboardStats, ProjectBreakdown, TrendItem, User } from '../types';
-import { RefreshCw, CheckCircle2 } from 'lucide-react';
+import { RefreshCw, CheckCircle2, Server, Table } from 'lucide-react';
 
 interface DashboardPageProps {
   user: User | null;
@@ -46,6 +49,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
   const [exporting, setExporting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [actionToast, setActionToast] = useState<string | null>(null);
+
+  // View toggle & Modal states
+  const [activeTab, setActiveTab] = useState<'telemetry' | 'fleet'>('telemetry');
+  const [showNotificationLogs, setShowNotificationLogs] = useState<boolean>(false);
+  const [showHousekeeping, setShowHousekeeping] = useState<boolean>(false);
 
   // Helper to smoothly scroll down to the data table
   const scrollToTable = () => {
@@ -179,7 +187,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col">
-      <Navbar user={user} onLogout={onLogout} />
+      <Navbar
+        user={user}
+        onLogout={onLogout}
+        onOpenNotificationLogs={() => setShowNotificationLogs(true)}
+        onOpenHousekeeping={() => setShowHousekeeping(true)}
+      />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
         {/* Page Title & Refresh */}
@@ -187,7 +200,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-white">Production Backup Overview</h1>
             <p className="text-xs sm:text-sm text-slate-400 mt-1">
-              Live status, cron logs, and automated cloud sync reports across 100+ servers.
+              Live status, cron logs, size anomaly guards, and automated cloud sync reports across 100+ servers.
             </p>
           </div>
 
@@ -215,26 +228,74 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
 
         {/* Anchor section for smooth scroll jump */}
         <div id="telemetry-table-section" className="space-y-6 pt-2">
-          {/* 3. Advanced Filtering Toolbar */}
-          <FilterBar
-            filters={filters}
-            projects={projectsList}
-            servers={serversList}
-            onFilterChange={handleFilterChange}
-            onReset={handleResetFilters}
-            onExport={handleExport}
-            exporting={exporting}
-          />
+          {/* Main View Tabs Switcher: Telemetry Records vs Server Fleet */}
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div className="flex items-center space-x-2 bg-slate-900 p-1 rounded-2xl border border-slate-800">
+              <button
+                onClick={() => setActiveTab('telemetry')}
+                className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+                  activeTab === 'telemetry'
+                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/30'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Table className="h-4 w-4" />
+                <span>Backup Telemetry Records</span>
+                <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full bg-slate-950/60 font-mono">
+                  {pagination.total}
+                </span>
+              </button>
 
-          {/* 4. Telemetry Records Table (With professional resolve modal trigger) */}
-          <BackupTable
-            data={backups}
-            loading={loadingBackups}
-            pagination={pagination}
-            onPageChange={handlePageChange}
-            onSelectReport={(report) => setSelectedReport(report)}
-            onMarkSuccess={handleOpenResolveModal}
-          />
+              <button
+                onClick={() => setActiveTab('fleet')}
+                className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+                  activeTab === 'fleet'
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-900/30'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Server className="h-4 w-4" />
+                <span>Server Fleet Inventory</span>
+                <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full bg-slate-950/60 font-mono">
+                  100+
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {activeTab === 'telemetry' ? (
+            <>
+              {/* 3. Advanced Filtering Toolbar */}
+              <FilterBar
+                filters={filters}
+                projects={projectsList}
+                servers={serversList}
+                onFilterChange={handleFilterChange}
+                onReset={handleResetFilters}
+                onExport={handleExport}
+                exporting={exporting}
+              />
+
+              {/* 4. Telemetry Records Table (With professional resolve modal trigger) */}
+              <BackupTable
+                data={backups}
+                loading={loadingBackups}
+                pagination={pagination}
+                onPageChange={handlePageChange}
+                onSelectReport={(report) => setSelectedReport(report)}
+                onMarkSuccess={handleOpenResolveModal}
+              />
+            </>
+          ) : (
+            /* 5. Server Fleet Inventory View */
+            <FleetView
+              onSelectServer={(serverId) => {
+                setFilters((prev) => ({ ...prev, serverId, page: 1 }));
+                setActiveTab('telemetry');
+                scrollToTable();
+              }}
+            />
+          )}
         </div>
       </main>
 
@@ -252,6 +313,23 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
         isOpen={!!resolvingReport}
         onClose={() => setResolvingReport(null)}
         onConfirm={handleConfirmResolve}
+      />
+
+      {/* 7. Notification Delivery Audit Modal */}
+      <NotificationLogsModal
+        isOpen={showNotificationLogs}
+        onClose={() => setShowNotificationLogs(false)}
+      />
+
+      {/* 8. Housekeeping & Retention Control Modal */}
+      <HousekeepingModal
+        isOpen={showHousekeeping}
+        onClose={() => setShowHousekeeping(false)}
+        onCleanupComplete={async () => {
+          await Promise.all([loadDashboardData(), loadBackups()]);
+          setActionToast('Database housekeeping executed successfully.');
+          setTimeout(() => setActionToast(null), 4000);
+        }}
       />
 
       {/* Floating Action Toast */}
