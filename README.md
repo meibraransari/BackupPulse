@@ -123,7 +123,33 @@ SMTP_TO="devops@yourdomain.com,team-lead@yourdomain.com"
 
 ## 💻 Client Shell Script Setup (For 100+ Servers)
 
-Deploy `scripts/backup_agent.sh` to `/usr/local/bin/backup_agent.sh` on your servers.
+### ⚡ Option A: Quick Integration for Existing Backup Scripts (Single `curl`)
+
+If your admin team already has established backup scripts (running `mysqldump`, `pg_dump`, `tar`, `aws s3 cp`) and simply needs to push a single telemetry entry to BackupPulse, use [`scripts/send_backup_telemetry.sh`](scripts/send_backup_telemetry.sh) or add this single `curl` call directly at the end of your existing script:
+
+```bash
+# Standalone execution test:
+./scripts/send_backup_telemetry.sh "my-database" "db" "SUCCESS" "db_backup.tar.gz"
+
+# Or embed directly in your existing script:
+curl -s -X POST "http://your-backuppulse-hub:3000/api/v1/backups/report" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: bkp_live_secret_key_12345" \
+  -d "{
+    \"server_id\": \"$(hostname -s)\",
+    \"hostname\": \"$(hostname -f)\",
+    \"project_name\": \"ecommerce-db\",
+    \"backup_type\": \"db\",
+    \"status\": \"SUCCESS\",
+    \"start_time\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\",
+    \"end_time\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\",
+    \"zip_filename\": \"ecommerce-db_backup.tar.gz\"
+  }"
+```
+
+### 🛠️ Option B: Full Automated Backup Agent (`backup_agent.sh`)
+
+Deploy `scripts/backup_agent.sh` to `/usr/local/bin/backup_agent.sh` on your servers for end-to-end compression, S3 upload, and checksum generation.
 
 ### 1. Permissions
 ```bash
