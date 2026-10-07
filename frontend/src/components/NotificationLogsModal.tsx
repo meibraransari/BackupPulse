@@ -136,7 +136,7 @@ export const NotificationLogsModal: React.FC<NotificationLogsModalProps> = ({
                   channel === 'ALL' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                All Channels
+                All
               </button>
               <button
                 onClick={() => handleChannelChange('GOOGLE_CHAT')}
@@ -154,7 +154,25 @@ export const NotificationLogsModal: React.FC<NotificationLogsModalProps> = ({
                 }`}
               >
                 <Mail className="h-3 w-3" />
-                <span>SMTP Email</span>
+                <span>SMTP</span>
+              </button>
+              <button
+                onClick={() => handleChannelChange('SENDGRID')}
+                className={`px-2.5 py-1 rounded-lg font-medium transition-colors flex items-center space-x-1.5 ${
+                  channel === 'SENDGRID' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Mail className="h-3 w-3" />
+                <span>SendGrid</span>
+              </button>
+              <button
+                onClick={() => handleChannelChange('AWS_SES')}
+                className={`px-2.5 py-1 rounded-lg font-medium transition-colors flex items-center space-x-1.5 ${
+                  channel === 'AWS_SES' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Mail className="h-3 w-3" />
+                <span>AWS SES</span>
               </button>
             </div>
 
@@ -245,6 +263,16 @@ export const NotificationLogsModal: React.FC<NotificationLogsModalProps> = ({
                           <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-700/50">
                             <Bell className="h-3 w-3 text-emerald-400" />
                             <span>Google Chat</span>
+                          </span>
+                        ) : item.channel === 'SENDGRID' ? (
+                          <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-sky-950/80 text-sky-300 border border-sky-700/50">
+                            <Mail className="h-3 w-3 text-sky-400" />
+                            <span>SendGrid</span>
+                          </span>
+                        ) : item.channel === 'AWS_SES' ? (
+                          <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-950/80 text-amber-300 border border-amber-700/50">
+                            <Mail className="h-3 w-3 text-amber-400" />
+                            <span>AWS SES</span>
                           </span>
                         ) : (
                           <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-950/80 text-indigo-300 border border-indigo-700/50">

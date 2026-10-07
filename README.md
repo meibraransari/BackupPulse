@@ -82,9 +82,9 @@ BackupPulse includes a flexible multi-channel notification engine. Depending on 
 
 | Mode | `ENABLE_GOOGLE_CHAT` | `ENABLE_SMTP` | Dispatch Behavior |
 | :--- | :---: | :---: | :--- |
-| **Both Channels** | `true` | `true` | Scheduled cron delivers to both Google Chat Space & SMTP Mail recipients. |
-| **Chat Only** | `true` | `false` | Dispatches Google Chat Cards v2 only; SMTP is completely dormant. |
-| **Email Only** | `false` | `true` | Dispatches rich HTML email reports only; Google Chat is dormant. |
+| **Both Channels** | `true` | `true` | Scheduled cron delivers to both Google Chat Space & Email recipients (SMTP, SendGrid, or AWS SES). |
+| **Chat Only** | `true` | `false` | Dispatches Google Chat Cards v2 only; Email channel is completely dormant. |
+| **Email Only** | `false` | `true` | Dispatches rich HTML email reports only via configured provider; Google Chat is dormant. |
 | **Disabled** | `false` | `false` | Automated reporter cron does not run. Telemetry is saved in DB only. |
 
 ### Notification Settings in `.env`
@@ -97,8 +97,17 @@ REPORT_CRON="0 9 * * *"
 ENABLE_GOOGLE_CHAT=true
 GOOGLE_CHAT_WEBHOOK_URL="https://chat.googleapis.com/v1/spaces/YOUR_SPACE/messages?key=...&token=..."
 
-# --- Channel 2: SMTP Email Delivery ---
+# --- Channel 2: Email Reporting (SMTP / SendGrid / AWS SES) ---
 ENABLE_SMTP=true
+
+# Provider selector: 'smtp' | 'sendgrid' | 'ses' (default: smtp)
+EMAIL_PROVIDER=smtp
+
+# Common Email Target (Recipient & Sender)
+EMAIL_FROM="BackupPulse Central <alerts@yourdomain.com>"
+EMAIL_TO="devops@yourdomain.com,team-lead@yourdomain.com"
+
+# --- Provider Option 1: Standard SMTP Relay ---
 SMTP_HOST="smtp.gmail.com"
 SMTP_PORT=587
 SMTP_SECURE=false
@@ -106,13 +115,27 @@ SMTP_USER="alerts@yourdomain.com"
 SMTP_PASSWORD="your-app-password"
 SMTP_FROM="BackupPulse Central <alerts@yourdomain.com>"
 SMTP_TO="devops@yourdomain.com,team-lead@yourdomain.com"
+
+# --- Provider Option 2: SendGrid Web API v3 ---
+SENDGRID_API_KEY="SG.your_sendgrid_api_key_here"
+SENDGRID_FROM="BackupPulse Central <alerts@yourdomain.com>"
+
+# --- Provider Option 3: AWS SES (Simple Email Service) ---
+AWS_SES_REGION="us-east-1"
+# Optional explicit credentials (leave blank to use AWS IAM instance profiles / ECS / EKS task roles):
+AWS_SES_ACCESS_KEY_ID="AKIAIOSFODNN7EXAMPLE"
+AWS_SES_SECRET_ACCESS_KEY="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+AWS_SES_FROM="BackupPulse Central <alerts@yourdomain.com>"
 ```
 
-### ✉️ Email Report Features
-- Responsive dark-mode HTML template designed for mobile and desktop mail clients.
-- Executive KPIs: Total Backups, 24h Success Rate %, Failed Count, Total Vault Storage.
+### ✉️ Email Report Features (SMTP / SendGrid / AWS SES)
+- **Multi-Provider Support**: Seamlessly route emails through traditional SMTP, high-deliverability SendGrid Web API, or cost-effective AWS SES with automatic IAM role fallback.
+- **Responsive Dark-Mode Template**: Optimized for mobile and desktop mail clients with corporate visual hierarchy.
+- **Executive KPIs**: Total Backups, 24h Success Rate %, Failed Count, Total Vault Storage.
 - **Dedicated Failure Table**: Lists failed jobs with project, server hostname, backup type, and error traces.
-- One-click CTA button to jump directly into the live BackupPulse web dashboard.
+- **Dead Man’s Snitch Warning Table**: Alerts team to servers missing expected cron runs (`>26h`).
+- **Anomaly Detection Table**: Highlights size truncations and zero-byte archives.
+- **One-Click CTA**: Jump directly into the live BackupPulse web dashboard from your inbox.
 
 ### 💬 Google Chat Features
 - Google Chat **Cards v2** with color badges (green for 100% healthy, red for failures).
@@ -220,10 +243,11 @@ TEMP_DIR="/tmp/backup_jobs"
 | `GET` | `/api/v1/backups/:id` | Full details, logs, and S3 paths | Bearer JWT |
 | `PATCH` | `/api/v1/backups/:id/status` | Manually mark failed backup as SUCCESS with resolution notes | Bearer JWT |
 | `GET` | `/api/v1/backups/export` | Export filtered records to CSV or JSON | Bearer JWT |
-| `GET` | `/api/v1/notifications/status` | Check active status of Google Chat & SMTP channels | Bearer JWT |
+| `GET` | `/api/v1/notifications/status` | Check active status of Google Chat & Email channels (SMTP/SendGrid/SES) | Bearer JWT |
 | `GET` | `/api/v1/notifications/logs` | Query alert send audit logs (channel, recipient, status, payload) | Bearer JWT |
 | `POST` | `/api/v1/notifications/test-gchat` | Immediate Google Chat webhook test card | Bearer JWT |
-| `POST` | `/api/v1/notifications/test-smtp` | Immediate SMTP email test delivery | Bearer JWT |
+| `POST` | `/api/v1/notifications/test-email` | Immediate test email delivery (via active provider: SMTP, SendGrid, or AWS SES) | Bearer JWT |
+| `POST` | `/api/v1/notifications/test-smtp` | Test email delivery alias (backward compatibility) | Bearer JWT |
 | `GET` | `/api/v1/system/housekeeping` | Check database retention policy, counts & purge status | Bearer JWT |
 | `POST` | `/api/v1/system/cleanup` | Manually trigger database purge of records older than retention threshold | Bearer JWT |
 | `GET` | `/api/v1/servers/configs` | Retrieve fleet monitoring configs & mute statuses | Bearer JWT |

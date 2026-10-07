@@ -1,10 +1,33 @@
 import nodemailer from 'nodemailer';
+import sgMail from '@sendgrid/mail';
+import { SESClient, SendEmailCommand, GetSendQuotaCommand } from '@aws-sdk/client-ses';
 import { config } from '../config/env';
 import { getDailyStats } from './gchat.service';
 import { recordNotificationLog } from './notification-log.service';
 
 /**
- * Creates and returns configured Nodemailer transport
+ * Splits comma-separated email list into clean trimmed array
+ */
+function parseEmailRecipients(raw: string): string[] {
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Extracts { name, email } for strictly compliant API payloads (SendGrid)
+ */
+function parseEmailSender(raw: string): { email: string; name?: string } {
+  const match = raw.match(/^(.*?)\s*<(.+?)>$/);
+  if (match) {
+    return { name: match[1].trim(), email: match[2].trim() };
+  }
+  return { email: raw.trim() };
+}
+
+/**
+ * Creates and returns configured Nodemailer transport for standard SMTP
  */
 export function getMailTransporter() {
   if (!config.SMTP_HOST) {
@@ -28,119 +51,311 @@ export function getMailTransporter() {
 }
 
 /**
- * Sends a test email to verify SMTP configuration
+ * Sends an email using standard SMTP via Nodemailer
  */
-export async function sendTestEmailNotification(): Promise<{ success: boolean; message: string }> {
-  if (!config.ENABLE_SMTP) {
-    return {
-      success: false,
-      message: 'SMTP reporting is disabled. Set ENABLE_SMTP=true in .env to enable.',
+export async function sendViaSmtp(options: {
+  from: string;
+  to: string;
+  subject: string;
+  html: string;
+}): Promise<{ messageId: string }> {
+  const transporter = getMailTransporter();
+  const info = await transporter.sendMail({
+    from: options.from,
+    to: options.to,
+    subject: options.subject,
+    html: options.html,
+  });
+
+  return { messageId: info.messageId || `smtp-${Date.now()}` };
+}
+
+/**
+ * Sends an email using SendGrid Web API v3 (@sendgrid/mail)
+ */
+export async function sendViaSendGrid(options: {
+  from: string;
+  to: string;
+  subject: string;
+  html: string;
+}): Promise<{ messageId: string }> {
+  if (!config.SENDGRID_API_KEY) {
+    throw new Error('SENDGRID_API_KEY is not configured in environment variables (.env).');
+  }
+
+  sgMail.setApiKey(config.SENDGRID_API_KEY);
+
+  const recipients = parseEmailRecipients(options.to);
+  if (recipients.length === 0) {
+    throw new Error('No valid recipients found in email destination address.');
+  }
+
+  const sender = parseEmailSender(options.from);
+
+  const msg = {
+    to: recipients,
+    from: sender,
+    subject: options.subject,
+    html: options.html,
+  };
+
+  const [response] = await sgMail.send(msg as any);
+  const messageId =
+    (response.headers && (response.headers['x-message-id'] as string)) ||
+    `sg-${Date.now()}`;
+
+  return { messageId };
+}
+
+/**
+ * Returns configured AWS SES client
+ */
+export function getSesClient(): SESClient {
+  const clientOptions: any = {
+    region: config.AWS_SES_REGION || 'us-east-1',
+  };
+
+  if (config.AWS_SES_ACCESS_KEY_ID && config.AWS_SES_SECRET_ACCESS_KEY) {
+    clientOptions.credentials = {
+      accessKeyId: config.AWS_SES_ACCESS_KEY_ID,
+      secretAccessKey: config.AWS_SES_SECRET_ACCESS_KEY,
     };
   }
 
-  if (!config.SMTP_HOST || !config.SMTP_TO) {
+  return new SESClient(clientOptions);
+}
+
+/**
+ * Sends an email using AWS SES (@aws-sdk/client-ses)
+ */
+export async function sendViaAwsSes(options: {
+  from: string;
+  to: string;
+  subject: string;
+  html: string;
+}): Promise<{ messageId: string }> {
+  const sesClient = getSesClient();
+  const recipients = parseEmailRecipients(options.to);
+  if (recipients.length === 0) {
+    throw new Error('No valid recipients found in email destination address.');
+  }
+
+  const command = new SendEmailCommand({
+    Source: options.from,
+    Destination: {
+      ToAddresses: recipients,
+    },
+    Message: {
+      Subject: {
+        Data: options.subject,
+        Charset: 'UTF-8',
+      },
+      Body: {
+        Html: {
+          Data: options.html,
+          Charset: 'UTF-8',
+        },
+      },
+    },
+  });
+
+  const response = await sesClient.send(command);
+  return { messageId: response.MessageId || `ses-${Date.now()}` };
+}
+
+/**
+ * Unified Email Dispatcher: dynamically routes to SMTP, SendGrid, or AWS SES
+ */
+export async function dispatchEmail(options: {
+  from?: string;
+  to?: string;
+  subject: string;
+  html: string;
+}): Promise<{ messageId: string; provider: 'SMTP' | 'SENDGRID' | 'AWS_SES' }> {
+  const provider = (config.EMAIL_PROVIDER || 'smtp').toLowerCase();
+  const from = options.from || config.EMAIL_FROM || config.SMTP_FROM;
+  const to = options.to || config.EMAIL_TO || config.SMTP_TO;
+
+  if (!to) {
+    throw new Error('No recipient specified. Configure EMAIL_TO or SMTP_TO in .env.');
+  }
+
+  if (provider === 'sendgrid') {
+    const res = await sendViaSendGrid({ from, to, subject: options.subject, html: options.html });
+    return { messageId: res.messageId, provider: 'SENDGRID' };
+  } else if (provider === 'ses' || provider === 'aws_ses' || provider === 'aws-ses') {
+    const res = await sendViaAwsSes({ from, to, subject: options.subject, html: options.html });
+    return { messageId: res.messageId, provider: 'AWS_SES' };
+  } else {
+    const res = await sendViaSmtp({ from, to, subject: options.subject, html: options.html });
+    return { messageId: res.messageId, provider: 'SMTP' };
+  }
+}
+
+/**
+ * Sends a test email to verify configured email channel (SMTP, SendGrid, or AWS SES)
+ */
+export async function sendTestEmailNotification(): Promise<{
+  success: boolean;
+  message: string;
+  provider?: string;
+}> {
+  if (!config.ENABLE_SMTP && !config.ENABLE_EMAIL) {
     return {
       success: false,
-      message: 'SMTP_HOST and SMTP_TO must be configured in environment variables (.env).',
+      message: 'Email reporting is disabled. Set ENABLE_SMTP=true (or ENABLE_EMAIL=true) in .env to enable.',
     };
   }
+
+  const provider = (config.EMAIL_PROVIDER || 'smtp').toLowerCase();
+  const recipient = config.EMAIL_TO || config.SMTP_TO;
+
+  if (!recipient) {
+    return {
+      success: false,
+      message: 'Email recipient (EMAIL_TO or SMTP_TO) must be configured in environment variables (.env).',
+    };
+  }
+
+  // Pre-flight checks per provider
+  if (provider === 'sendgrid') {
+    if (!config.SENDGRID_API_KEY) {
+      return {
+        success: false,
+        message: 'SENDGRID_API_KEY is not configured in .env. Please provide a valid SendGrid API key.',
+      };
+    }
+  } else if (provider === 'ses' || provider === 'aws_ses' || provider === 'aws-ses') {
+    if (!config.AWS_SES_REGION) {
+      return {
+        success: false,
+        message: 'AWS_SES_REGION is not configured in .env. Please specify AWS SES region (e.g. us-east-1).',
+      };
+    }
+  } else {
+    if (!config.SMTP_HOST) {
+      return {
+        success: false,
+        message: 'SMTP_HOST must be configured in environment variables (.env) for SMTP provider.',
+      };
+    }
+  }
+
+  const providerTitle =
+    provider === 'sendgrid' ? 'SendGrid API' :
+    provider === 'ses' || provider === 'aws_ses' || provider === 'aws-ses' ? 'AWS SES' :
+    'SMTP Relay';
+
+  const providerChannel =
+    provider === 'sendgrid' ? 'SENDGRID' :
+    provider === 'ses' || provider === 'aws_ses' || provider === 'aws-ses' ? 'AWS_SES' :
+    'SMTP';
+
+  const providerConfigInfo =
+    provider === 'sendgrid' ? `SendGrid API Key Verified (SG.***)` :
+    provider === 'ses' || provider === 'aws_ses' || provider === 'aws-ses' ? `AWS SES Region: ${config.AWS_SES_REGION}` :
+    `SMTP Server: ${config.SMTP_HOST}:${config.SMTP_PORT}`;
 
   try {
-    const transporter = getMailTransporter();
-
-    // Verify SMTP connection
-    await transporter.verify();
-
+    const from = config.EMAIL_FROM || config.SMTP_FROM;
     const timestamp = new Date().toISOString();
-    const info = await transporter.sendMail({
-      from: config.SMTP_FROM,
-      to: config.SMTP_TO,
-      subject: `[Test] BackupPulse — SMTP Connection Verified (${timestamp})`,
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0f172a; color: #f8fafc; padding: 20px; }
-            .card { background-color: #1e293b; border-radius: 12px; border: 1px solid #334155; padding: 24px; max-width: 600px; margin: 0 auto; }
-            .badge { background-color: #064e3b; color: #34d399; padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: 600; display: inline-block; }
-            .title { font-size: 20px; font-weight: bold; margin-top: 12px; color: #ffffff; }
-            .content { font-size: 14px; color: #94a3b8; line-height: 1.6; margin-top: 12px; }
-            .footer { margin-top: 24px; font-size: 12px; color: #64748b; border-top: 1px solid #334155; pt: 16px; }
-            .button { display: inline-block; background-color: #10b981; color: #ffffff; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: 600; margin-top: 16px; }
-          </style>
-        </head>
-        <body>
-          <div class="card">
-            <span class="badge">SMTP SUCCESS</span>
-            <div class="title">🚀 BackupPulse Email Channel Connected</div>
-            <p class="content">
-              This is a test notification confirming that your SMTP server (<b>${config.SMTP_HOST}:${config.SMTP_PORT}</b>) 
-              is properly configured and delivering automated reports to: <br>
-              <code>${config.SMTP_TO}</code>
-            </p>
-            <a href="${config.APP_BASE_URL}" class="button" target="_blank">Open Backup Dashboard</a>
-            <div class="footer">
-              Dispatched at ${timestamp} • BackupPulse Automated Telemetry
-            </div>
+
+    const subject = `[Test] BackupPulse — ${providerTitle} Delivery Verified (${timestamp})`;
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0f172a; color: #f8fafc; padding: 20px; }
+          .card { background-color: #1e293b; border-radius: 12px; border: 1px solid #334155; padding: 24px; max-width: 600px; margin: 0 auto; }
+          .badge { background-color: #064e3b; color: #34d399; padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: 600; display: inline-block; }
+          .title { font-size: 20px; font-weight: bold; margin-top: 12px; color: #ffffff; }
+          .content { font-size: 14px; color: #94a3b8; line-height: 1.6; margin-top: 12px; }
+          .footer { margin-top: 24px; font-size: 12px; color: #64748b; border-top: 1px solid #334155; padding-top: 16px; }
+          .button { display: inline-block; background-color: #10b981; color: #ffffff; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: 600; margin-top: 16px; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <span class="badge">${providerTitle.toUpperCase()} SUCCESS</span>
+          <div class="title">🚀 BackupPulse Email Channel Connected</div>
+          <p class="content">
+            This is a test notification confirming that your <b>${providerTitle}</b> channel is properly configured and delivering automated reports.<br><br>
+            <b>Provider:</b> ${providerTitle}<br>
+            <b>Target Endpoint:</b> ${providerConfigInfo}<br>
+            <b>Recipient(s):</b> <code>${recipient}</code>
+          </p>
+          <a href="${config.APP_BASE_URL}" class="button" target="_blank">Open Backup Dashboard</a>
+          <div class="footer">
+            Dispatched at ${timestamp} • BackupPulse Automated Telemetry
           </div>
-        </body>
-        </html>
-      `,
-    });
+        </div>
+      </body>
+      </html>
+    `;
+
+    const result = await dispatchEmail({ from, to: recipient, subject, html });
 
     await recordNotificationLog({
-      channel: 'SMTP',
+      channel: result.provider,
       eventType: 'TEST_NOTIFICATION',
-      recipient: config.SMTP_TO,
+      recipient,
       status: 'SUCCESS',
-      message: `Test email successfully dispatched to ${config.SMTP_TO} (Message ID: ${info.messageId})`,
-      payload: { messageId: info.messageId },
+      message: `Test email successfully dispatched via ${providerTitle} to ${recipient} (ID: ${result.messageId})`,
+      payload: { messageId: result.messageId, provider: result.provider },
     });
+
+    console.log(`[EMAIL] [${result.provider}] Test email delivered to ${recipient} (ID: ${result.messageId})`);
 
     return {
       success: true,
-      message: `Test email successfully dispatched to ${config.SMTP_TO} (Message ID: ${info.messageId})`,
+      message: `Test email successfully dispatched via ${providerTitle} to ${recipient} (ID: ${result.messageId})`,
+      provider: result.provider,
     };
   } catch (error: any) {
-    console.error('[SMTP] Error sending test email:', error.message);
+    console.error(`[EMAIL] [${providerChannel}] Error sending test email:`, error.message);
 
     await recordNotificationLog({
-      channel: 'SMTP',
+      channel: providerChannel,
       eventType: 'TEST_NOTIFICATION',
-      recipient: config.SMTP_TO || 'Unconfigured',
+      recipient: recipient || 'Unconfigured',
       status: 'FAILED',
-      message: `SMTP delivery failed: ${error.message}`,
+      message: `${providerTitle} delivery failed: ${error.message}`,
     });
 
     return {
       success: false,
-      message: `SMTP delivery failed: ${error.message}`,
+      message: `${providerTitle} delivery failed: ${error.message}`,
+      provider: providerChannel,
     };
   }
 }
 
 /**
- * Generates and dispatches daily summary backup report via SMTP
+ * Generates and dispatches daily summary backup report via the configured Email Provider (SMTP, SendGrid, or AWS SES)
  */
-export async function sendDailyBackupReportEmail(): Promise<{ success: boolean; message: string }> {
-  if (!config.ENABLE_SMTP) {
+export async function sendDailyBackupReportEmail(): Promise<{ success: boolean; message: string; provider?: string }> {
+  if (!config.ENABLE_SMTP && !config.ENABLE_EMAIL) {
     return {
       success: false,
-      message: 'SMTP reporting is disabled. Set ENABLE_SMTP=true in .env to enable.',
+      message: 'Email reporting is disabled. Set ENABLE_SMTP=true (or ENABLE_EMAIL=true) in .env to enable.',
     };
   }
 
-  if (!config.SMTP_HOST || !config.SMTP_TO) {
+  const recipient = config.EMAIL_TO || config.SMTP_TO;
+  const from = config.EMAIL_FROM || config.SMTP_FROM;
+  const provider = (config.EMAIL_PROVIDER || 'smtp').toLowerCase();
+
+  if (!recipient) {
     return {
       success: false,
-      message: 'SMTP_HOST and SMTP_TO must be configured in environment variables.',
+      message: 'Email recipient (EMAIL_TO or SMTP_TO) must be configured in environment variables.',
     };
   }
 
   try {
-    const transporter = getMailTransporter();
     const stats = await getDailyStats();
 
     const dateStr = new Date().toLocaleDateString('en-US', {
@@ -254,6 +469,11 @@ export async function sendDailyBackupReportEmail(): Promise<{ success: boolean; 
       `;
     }
 
+    const providerTitle =
+      provider === 'sendgrid' ? 'SendGrid' :
+      provider === 'ses' || provider === 'aws_ses' || provider === 'aws-ses' ? 'AWS SES' :
+      'SMTP';
+
     const htmlContent = `
       <!DOCTYPE html>
       <html>
@@ -310,7 +530,7 @@ export async function sendDailyBackupReportEmail(): Promise<{ success: boolean; 
             </div>
           </div>
           <div class="footer">
-            Automated scheduled report sent by BackupPulse Central to ${config.SMTP_TO}.
+            Automated scheduled report sent by BackupPulse Central via ${providerTitle} to ${recipient}.
           </div>
         </div>
       </body>
@@ -319,48 +539,56 @@ export async function sendDailyBackupReportEmail(): Promise<{ success: boolean; 
 
     const subject = `[BackupPulse] Daily Summary: ${stats.successRate}% Success (${stats.total} Total, ${stats.failed} Failed) — ${dateStr}`;
 
-    const info = await transporter.sendMail({
-      from: config.SMTP_FROM,
-      to: config.SMTP_TO,
+    const result = await dispatchEmail({
+      from,
+      to: recipient,
       subject,
       html: htmlContent,
     });
 
-    console.log(`[SMTP] Daily backup report email dispatched successfully to ${config.SMTP_TO} (ID: ${info.messageId})`);
+    console.log(`[EMAIL] [${result.provider}] Daily backup report email dispatched successfully to ${recipient} (ID: ${result.messageId})`);
 
     await recordNotificationLog({
-      channel: 'SMTP',
+      channel: result.provider,
       eventType: 'DAILY_REPORT',
-      recipient: config.SMTP_TO,
+      recipient,
       status: 'SUCCESS',
-      message: `Daily report email sent to ${config.SMTP_TO} (ID: ${info.messageId})`,
+      message: `Daily report email sent via ${result.provider} to ${recipient} (ID: ${result.messageId})`,
       payload: {
         total: stats.total,
         successRate: stats.successRate,
         failed: stats.failed,
         totalSizeHuman: stats.totalSizeHuman,
         subject,
+        provider: result.provider,
       },
     });
 
     return {
       success: true,
-      message: `Daily report email sent to ${config.SMTP_TO}`,
+      message: `Daily report email sent via ${result.provider} to ${recipient}`,
+      provider: result.provider,
     };
   } catch (error: any) {
-    console.error('[SMTP] Failed to send daily report email:', error.message);
+    const fallbackProvider =
+      provider === 'sendgrid' ? 'SENDGRID' :
+      provider === 'ses' || provider === 'aws_ses' || provider === 'aws-ses' ? 'AWS_SES' :
+      'SMTP';
+
+    console.error(`[EMAIL] [${fallbackProvider}] Failed to send daily report email:`, error.message);
 
     await recordNotificationLog({
-      channel: 'SMTP',
+      channel: fallbackProvider,
       eventType: 'DAILY_REPORT',
-      recipient: config.SMTP_TO || 'Unconfigured',
+      recipient: recipient || 'Unconfigured',
       status: 'FAILED',
       message: `Failed to dispatch daily email: ${error.message}`,
     });
 
     return {
       success: false,
-      message: `Failed to dispatch daily email: ${error.message}`,
+      message: `Failed to dispatch daily email via ${fallbackProvider}: ${error.message}`,
+      provider: fallbackProvider,
     };
   }
 }

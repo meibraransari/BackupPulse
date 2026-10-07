@@ -1,8 +1,8 @@
 import { prisma } from '../db/prisma';
 
 export interface RecordNotificationLogInput {
-  channel: 'GOOGLE_CHAT' | 'SMTP';
-  eventType: 'DAILY_REPORT' | 'TEST_NOTIFICATION' | 'FAILURE_ALERT';
+  channel: 'GOOGLE_CHAT' | 'SMTP' | 'SENDGRID' | 'AWS_SES' | string;
+  eventType: 'DAILY_REPORT' | 'TEST_NOTIFICATION' | 'FAILURE_ALERT' | string;
   recipient: string;
   status: 'SUCCESS' | 'FAILED';
   message: string;

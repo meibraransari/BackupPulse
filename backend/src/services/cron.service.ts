@@ -30,24 +30,25 @@ export function initCronJobs(): void {
           }
         }
 
-        // 2. Dispatch SMTP Email report if enabled
+        // 2. Dispatch Email report if enabled (SMTP, SendGrid, or AWS SES)
         if (config.ENABLE_SMTP) {
           try {
             const res = await sendDailyBackupReportEmail();
+            const providerTag = (res.provider || config.EMAIL_PROVIDER || 'EMAIL').toUpperCase();
             if (res.success) {
-              console.log('[CRON] [SMTP] Daily report email sent successfully.');
+              console.log(`[CRON] [${providerTag}] Daily report email sent successfully.`);
             } else {
-              console.warn('[CRON] [SMTP] Skipped or failed:', res.message);
+              console.warn(`[CRON] [${providerTag}] Skipped or failed:`, res.message);
             }
           } catch (err: any) {
-            console.error('[CRON] [SMTP] Unhandled error:', err.message);
+            console.error(`[CRON] [${(config.EMAIL_PROVIDER || 'EMAIL').toUpperCase()}] Unhandled error:`, err.message);
           }
         }
       });
 
       const activeChannels: string[] = [];
       if (isGchatEnabled) activeChannels.push('Google Chat');
-      if (isSmtpEnabled) activeChannels.push('SMTP Email');
+      if (isSmtpEnabled) activeChannels.push(`Email (${(config.EMAIL_PROVIDER || 'smtp').toUpperCase()})`);
 
       console.log(
         `[CRON] Scheduled daily reporter active for [${activeChannels.join(' & ')}] with cron: "${config.REPORT_CRON}"`

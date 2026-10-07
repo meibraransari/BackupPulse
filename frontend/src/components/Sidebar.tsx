@@ -223,18 +223,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <span>Test Google Chat</span>
         </button>
 
-        {/* Test SMTP Email */}
+        {/* Test Email Delivery (SMTP / SendGrid / AWS SES) */}
         <button
           onClick={handleTestSmtp}
           disabled={testingSmtp}
           className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-sky-300 hover:text-white hover:bg-sky-950/40 transition-colors disabled:opacity-50"
+          title="Send test email via active provider (SMTP, SendGrid, or AWS SES)"
         >
           {testingSmtp ? (
             <Loader2 className="h-4 w-4 animate-spin text-sky-400" />
           ) : (
             <Mail className="h-4 w-4 text-sky-400" />
           )}
-          <span>Test SMTP Email</span>
+          <span>Test Email Delivery</span>
         </button>
       </div>
 

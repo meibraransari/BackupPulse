@@ -237,6 +237,13 @@ export const api = {
     });
   },
 
+  async testEmail(): Promise<{ success: boolean; message: string }> {
+    return request<{ success: boolean; message: string }>('/api/v1/notifications/test-email', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  },
+
   async getNotificationStatus(): Promise<{
     googleChat: { enabled: boolean; configured: boolean };
     smtp: { enabled: boolean; configured: boolean; host: string; port: number; from: string; to: string };

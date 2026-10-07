@@ -11,7 +11,7 @@ export async function notificationRoutes(fastify: FastifyInstance) {
     {
       preValidation: [(fastify as any).authenticate],
       schema: {
-        description: 'Get current status and active configuration of notification channels (Google Chat and SMTP)',
+        description: 'Get current status and active configuration of notification channels (Google Chat, SMTP, SendGrid, AWS SES)',
         tags: ['Notifications'],
         security: [{ bearerAuth: [] }],
         response: {
@@ -25,11 +25,22 @@ export async function notificationRoutes(fastify: FastifyInstance) {
                   configured: { type: 'boolean' },
                 },
               },
+              email: {
+                type: 'object',
+                properties: {
+                  enabled: { type: 'boolean' },
+                  configured: { type: 'boolean' },
+                  provider: { type: 'string' },
+                  from: { type: 'string' },
+                  to: { type: 'string' },
+                },
+              },
               smtp: {
                 type: 'object',
                 properties: {
                   enabled: { type: 'boolean' },
                   configured: { type: 'boolean' },
+                  provider: { type: 'string' },
                   host: { type: 'string' },
                   port: { type: 'number' },
                   from: { type: 'string' },
@@ -50,20 +61,40 @@ export async function notificationRoutes(fastify: FastifyInstance) {
     },
     async (_request: any, reply: any) => {
       const isGchatConfigured = Boolean(config.GOOGLE_CHAT_WEBHOOK_URL && config.GOOGLE_CHAT_WEBHOOK_URL.trim().length > 0);
-      const isSmtpConfigured = Boolean(config.SMTP_HOST && config.SMTP_TO);
+      const provider = (config.EMAIL_PROVIDER || 'smtp').toLowerCase();
+      let isEmailConfigured = false;
+
+      if (provider === 'sendgrid') {
+        isEmailConfigured = Boolean(config.SENDGRID_API_KEY && (config.EMAIL_TO || config.SMTP_TO));
+      } else if (provider === 'ses' || provider === 'aws_ses' || provider === 'aws-ses') {
+        isEmailConfigured = Boolean(config.AWS_SES_REGION && (config.EMAIL_TO || config.SMTP_TO));
+      } else {
+        isEmailConfigured = Boolean(config.SMTP_HOST && (config.EMAIL_TO || config.SMTP_TO));
+      }
+
+      const emailFrom = config.EMAIL_FROM || config.SMTP_FROM;
+      const emailTo = config.EMAIL_TO || config.SMTP_TO || '';
 
       return reply.send({
         googleChat: {
           enabled: config.ENABLE_GOOGLE_CHAT,
           configured: isGchatConfigured,
         },
+        email: {
+          enabled: config.ENABLE_SMTP,
+          configured: isEmailConfigured,
+          provider: config.EMAIL_PROVIDER,
+          from: emailFrom,
+          to: emailTo,
+        },
         smtp: {
           enabled: config.ENABLE_SMTP,
-          configured: isSmtpConfigured,
+          configured: isEmailConfigured,
+          provider: config.EMAIL_PROVIDER,
           host: config.SMTP_HOST || '',
           port: config.SMTP_PORT,
-          from: config.SMTP_FROM,
-          to: config.SMTP_TO || '',
+          from: emailFrom,
+          to: emailTo,
         },
         cron: {
           expression: config.REPORT_CRON,
@@ -143,7 +174,7 @@ export async function notificationRoutes(fastify: FastifyInstance) {
     {
       preValidation: [(fastify as any).authenticate],
       schema: {
-        description: 'Send an instant test notification email to the configured recipient via SMTP',
+        description: 'Send an instant test notification email to the configured recipient via active provider (SMTP, SendGrid, or AWS SES)',
         tags: ['Notifications'],
         security: [{ bearerAuth: [] }],
         body: {
@@ -177,7 +208,55 @@ export async function notificationRoutes(fastify: FastifyInstance) {
     {
       preValidation: [(fastify as any).authenticate],
       schema: {
-        description: 'Send an instant test notification email to the configured recipient via SMTP (GET alias)',
+        description: 'Send an instant test notification email to the configured recipient via active provider (SMTP, SendGrid, or AWS SES) (GET alias)',
+        tags: ['Notifications'],
+        security: [{ bearerAuth: [] }],
+      },
+    },
+    testSmtpHandler
+  );
+
+  // Alias endpoints for generic test-email
+  fastify.post(
+    '/api/v1/notifications/test-email',
+    {
+      preValidation: [(fastify as any).authenticate],
+      schema: {
+        description: 'Send an instant test notification email via active provider (SMTP, SendGrid, or AWS SES)',
+        tags: ['Notifications'],
+        security: [{ bearerAuth: [] }],
+        body: {
+          type: 'object',
+          properties: {},
+          additionalProperties: true,
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              message: { type: 'string' },
+            },
+          },
+          400: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              message: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+    testSmtpHandler
+  );
+
+  fastify.get(
+    '/api/v1/notifications/test-email',
+    {
+      preValidation: [(fastify as any).authenticate],
+      schema: {
+        description: 'Send an instant test notification email via active provider (SMTP, SendGrid, or AWS SES) (GET alias)',
         tags: ['Notifications'],
         security: [{ bearerAuth: [] }],
       },
