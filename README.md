@@ -227,6 +227,92 @@ TEMP_DIR="/tmp/backup_jobs"
 
 ---
 
+### 🐘 Option C: Dedicated PostgreSQL S3 Backup & Pruning Agent (`postgres_s3_backup.sh`)
+
+For dedicated PostgreSQL database servers dumping to AWS S3 with automatic archive retention pruning (e.g. keep max 30 archives in S3 bucket) and minimum file-size anomaly checking, deploy [`scripts/postgres_s3_backup.sh`](scripts/postgres_s3_backup.sh):
+
+```bash
+# 1. Install system tools
+sudo apt update && sudo apt install -y postgresql-client zip unzip jq awscli curl
+
+# 2. Make executable
+chmod +x scripts/postgres_s3_backup.sh
+
+# 3. Test execution (Dry run simulation)
+./scripts/postgres_s3_backup.sh --dry-run --backup-path /tmp/pg_test
+
+# 4. Production Cron Entry (e.g., daily at 23:59)
+59 23 * * * /opt/scripts/postgres_s3_backup.sh >> /var/log/postgres_backup.log 2>&1
+```
+
+**Key Capabilities:**
+- **Automated `pg_dump` & Zip Compression**: Exports PostgreSQL database with custom/compressed format into `.zip`.
+- **Threshold Anomaly Detection**: Warns if backup size drops below threshold (`MIN_FILE_SIZE`, default 35KB) and flags `WARNING`/anomaly in BackupPulse.
+- **S3 Sync & Historical Pruning**: Synchronizes archives to AWS S3 and automatically prunes oldest archives when total exceeds `MAX_FILES` (default 30).
+- **Direct Central API Telemetry**: Completely eliminates external direct webhook dependencies (Google Chat webhooks replaced by central hub API). The BackupPulse server records the run, updates real-time fleet health, triggers alerts, and logs audit events.
+
+---
+
+### 🐬 Option D: Dedicated MySQL / MariaDB S3 Backup & Pruning Agent (`mysql_s3_backup.sh`)
+
+For dedicated MySQL or MariaDB database servers dumping to AWS S3 with non-blocking online snapshots (`--single-transaction`), automatic archive retention pruning (e.g. keep max 30 archives in S3 bucket), and minimum file-size anomaly checking, deploy [`scripts/mysql_s3_backup.sh`](scripts/mysql_s3_backup.sh):
+
+```bash
+# 1. Install system tools
+# Debian / Ubuntu:
+sudo apt update && sudo apt install -y default-mysql-client zip unzip jq awscli curl
+# RHEL / CentOS:
+sudo yum install -y mysql zip unzip jq awscli curl
+
+# 2. Make executable
+chmod +x scripts/mysql_s3_backup.sh
+
+# 3. Test execution (Dry run simulation)
+./scripts/mysql_s3_backup.sh --dry-run --backup-path /tmp/mysql_test
+
+# 4. Production Cron Entry (e.g., daily at 02:00 AM)
+0 2 * * * /opt/scripts/mysql_s3_backup.sh >> /var/log/mysql_backup.log 2>&1
+```
+
+**Key Capabilities:**
+- **Online Non-Blocking `mysqldump`**: Uses `--single-transaction --quick --routines --triggers` for consistent InnoDB dumps without table locking.
+- **Single DB or All Databases**: Backs up a targeted database (`--db-name`) or entire cluster (`--all-databases`).
+- **Threshold Anomaly Detection**: Flags `WARNING` status if backup archive size is smaller than expected threshold (`MIN_FILE_SIZE`, default 35KB).
+- **S3 Sync & Automatic Pruning**: Pushes backups to AWS S3 and purges oldest archives when bucket folder count exceeds `MAX_FILES` (default 30).
+- **Real-Time Central Telemetry**: Sends execution logs, duration, S3 keys, SHA256 checksums, and exit statuses directly to BackupPulse.
+
+---
+
+### 🗜️ Option E: Dedicated Directory & File Zip to S3 Agent (`zip_s3_backup.sh`)
+
+For application source code directories, uploads, assets, or arbitrary file paths that need automated zip archiving, AWS S3 upload, retention pruning, and BackupPulse telemetry, deploy [`scripts/zip_s3_backup.sh`](scripts/zip_s3_backup.sh):
+
+```bash
+# 1. Install system tools
+# Debian / Ubuntu:
+sudo apt update && sudo apt install -y zip unzip jq awscli curl
+# RHEL / CentOS:
+sudo yum install -y zip unzip jq awscli curl
+
+# 2. Make executable
+chmod +x scripts/zip_s3_backup.sh
+
+# 3. Test execution (Dry run simulation)
+./scripts/zip_s3_backup.sh --dry-run --source-path /var/www/html --backup-path /tmp/zip_test
+
+# 4. Production Cron Entry (e.g., daily at 01:00 AM)
+0 1 * * * /opt/scripts/zip_s3_backup.sh --source-path "/var/www/html" --project "ecommerce-web" >> /var/log/zip_backup.log 2>&1
+```
+
+**Key Capabilities:**
+- **Directory & File Archiving**: Automatically zips entire source directory or individual files with exclusions (e.g. `node_modules/*`, `.git/*`, `tmp/*`).
+- **Clean Relative Paths**: Packages files relative to the parent directory for clean extraction.
+- **Anomaly Sizing Check**: Automatically flags size plummet anomalies or zero-byte archives (`< MIN_FILE_SIZE`, default 35KB) as `WARNING` in BackupPulse.
+- **S3 Sync & Historical Retention**: Syncs archives to AWS S3 and purges oldest files when total exceeds `MAX_FILES` (default 30).
+- **Full Central Telemetry**: Dispatches real-time status, checksums, logs, durations, and S3 keys to the BackupPulse API.
+
+---
+
 ## 📡 Backend API Reference
 
 | Method | Endpoint | Description | Auth |
