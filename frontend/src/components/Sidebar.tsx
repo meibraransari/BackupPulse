@@ -21,6 +21,7 @@ import {
   Menu,
   X,
   HardDrive,
+  Github,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { User } from '../types';
@@ -199,6 +200,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </a>
         )}
 
+        {/* GitHub Repository */}
+        <a
+          href="https://github.com/meibraransari/BackupPulse.git"
+          target="_blank"
+          rel="noreferrer"
+          className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800/60 transition-colors group"
+        >
+          <div className="flex items-center space-x-2.5">
+            <Github className="h-4 w-4 text-emerald-400" />
+            <span>GitHub Repo</span>
+          </div>
+          <ExternalLink className="h-3 w-3 text-slate-500 group-hover:text-white" />
+        </a>
+
         {/* Notification Delivery Audit Logs */}
         <button
           onClick={() => {
@@ -312,7 +327,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <aside className="hidden lg:block fixed inset-y-0 left-0 z-30">{sidebarContent}</aside>
 
       {/* Mobile Top Header with Hamburger Toggle */}
-      <div className="lg:hidden bg-slate-900 border-b border-slate-800 sticky top-0 z-40 px-4 py-3 flex items-center justify-between">
+      <div className="lg:hidden bg-slate-900 border-b border-slate-800 sticky top-0 z-40 px-4 py-3 flex items-center justify-between pr-28">
         <div className="flex items-center space-x-2.5">
           <button
             onClick={() => setMobileOpen(true)}

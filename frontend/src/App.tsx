@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { GitHubCorner } from './components/GitHubCorner';
 import { api, authStorage } from './services/api';
 import { User } from './types';
 
@@ -47,19 +48,22 @@ export function App() {
     setUser(null);
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin" />
-      </div>
-    );
-  }
+  return (
+    <>
+      {/* Top Corner GitHub Repository Link (Always visible without login and after login) */}
+      <GitHubCorner />
 
-  if (!isAuthenticated) {
-    return <LoginPage onLoginSuccess={handleLoginSuccess} />;
-  }
-
-  return <DashboardPage user={user} onLogout={handleLogout} />;
+      {loading ? (
+        <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+          <div className="w-8 h-8 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin" />
+        </div>
+      ) : !isAuthenticated ? (
+        <LoginPage onLoginSuccess={handleLoginSuccess} />
+      ) : (
+        <DashboardPage user={user} onLogout={handleLogout} />
+      )}
+    </>
+  );
 }
 
 export default App;
