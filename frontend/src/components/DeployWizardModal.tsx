@@ -21,6 +21,8 @@ import {
   RefreshCw,
   Layers,
   Archive,
+  HardDrive,
+  ChevronDown,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { ApiKeyItem } from '../types';
@@ -32,6 +34,7 @@ import {
   generateCrontabLine,
   generateInstallCommands,
   GeneratorConfig,
+  StorageDestination,
 } from '../utils/scriptGenerator';
 
 interface DeployWizardModalProps {
@@ -54,6 +57,9 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
   // Workload selection
   const [backupType, setBackupType] = useState<'postgres' | 'mysql' | 'zip' | 'curl'>('postgres');
 
+  // Storage Destination selection: s3 | local | shared_drive
+  const [storageDestination, setStorageDestination] = useState<StorageDestination>('s3');
+
   // Form Configuration State
   const [apiUrl, setApiUrl] = useState<string>(defaultApiEndpoint);
   const [apiKey, setApiKey] = useState<string>('');
@@ -61,13 +67,15 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
   const [serverId, setServerId] = useState<string>(initialServerId || '');
   const [environment, setEnvironment] = useState<string>('production');
 
-  // S3 & Retention State
+  // Storage Target State
   const [s3Bucket, setS3Bucket] = useState<string>('my-company-backup-vault');
   const [s3Folder, setS3Folder] = useState<string>('ecommerce-prod_db_backup');
+  const [localBackupDir, setLocalBackupDir] = useState<string>('/var/backups/postgres');
+  const [sharedDrivePath, setSharedDrivePath] = useState<string>('/mnt/backup_share');
+  const [backupPath, setBackupPath] = useState<string>('/var/backups/postgres');
   const [retentionDays, setRetentionDays] = useState<number>(30);
   const [maxFiles, setMaxFiles] = useState<number>(30);
   const [minSizeKb, setMinSizeKb] = useState<number>(35);
-  const [backupPath, setBackupPath] = useState<string>('/var/backups/postgres');
 
   // Database specific
   const [dbUser, setDbUser] = useState<string>('postgres');
@@ -111,12 +119,15 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
       setDbUser('postgres');
       setDbPort('5432');
       setBackupPath('/var/backups/postgres');
+      setLocalBackupDir('/var/backups/postgres');
     } else if (backupType === 'mysql') {
       setDbUser('root');
       setDbPort('3306');
       setBackupPath('/var/backups/mysql');
+      setLocalBackupDir('/var/backups/mysql');
     } else if (backupType === 'zip') {
       setBackupPath('/var/backups/zip');
+      setLocalBackupDir('/var/backups/zip');
     }
   }, [backupType]);
 
@@ -127,13 +138,10 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
         .getApiKeys()
         .then((res) => {
           setExistingKeys(res.data.filter((k) => k.isActive));
-          if (!apiKey && res.data.length > 0) {
-            // Suggest the first active token's prefix if token isn't entered
-          }
         })
         .catch(() => {});
     }
-  }, [isOpen, apiKey]);
+  }, [isOpen]);
 
   // 1-Click Generate Fresh API Key directly from within wizard
   const handleGenerateFreshToken = async () => {
@@ -165,6 +173,7 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
 
   const currentConfig: GeneratorConfig = {
     backupType,
+    storageDestination,
     apiUrl: apiUrl.trim() || defaultApiEndpoint,
     apiKey: apiKey.trim() || 'bkp_live_secret_key_12345',
     projectName: projectName.trim() || 'demo_project',
@@ -176,6 +185,8 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
     s3Bucket: s3Bucket.trim() || 'my-backup-vault',
     s3Folder: s3Folder.trim() || 'backups',
     backupPath: backupPath.trim() || '/var/backups',
+    localBackupDir: localBackupDir.trim() || '/var/backups',
+    sharedDrivePath: sharedDrivePath.trim() || '/mnt/backup_share',
     dbUser,
     dbPassword,
     dbHost,
@@ -186,36 +197,51 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
     cronSchedule,
   };
 
-  // Generate code outputs
+  // Generate code outputs based on backupType and storageDestination
   let generatedScript = '';
   let defaultScriptName = 'backup.sh';
+  const destTag = storageDestination === 's3' ? 's3' : storageDestination === 'local' ? 'local' : 'shared';
+
   if (backupType === 'postgres') {
     generatedScript = generatePostgresScript(currentConfig);
-    defaultScriptName = `postgres_s3_backup_${projectName || 'db'}.sh`;
+    defaultScriptName = `postgres_${destTag}_backup_${projectName || 'db'}.sh`;
   } else if (backupType === 'mysql') {
     generatedScript = generateMysqlScript(currentConfig);
-    defaultScriptName = `mysql_s3_backup_${projectName || 'db'}.sh`;
+    defaultScriptName = `mysql_${destTag}_backup_${projectName || 'db'}.sh`;
   } else if (backupType === 'zip') {
     generatedScript = generateZipScript(currentConfig);
-    defaultScriptName = `zip_s3_backup_${projectName || 'files'}.sh`;
+    defaultScriptName = `zip_${destTag}_backup_${projectName || 'files'}.sh`;
   } else {
     generatedScript = generateCurlSnippet(currentConfig);
     defaultScriptName = 'send_backup_telemetry.sh';
   }
 
-  // 1-Liner CLI Execution Command
+  // 1-Liner CLI Execution Command with storage-aware flags
   const targetScriptPath = `/opt/scripts/${defaultScriptName}`;
+  const destArg =
+    storageDestination === 's3'
+      ? `--destination "s3" --s3-bucket "${s3Bucket}"`
+      : storageDestination === 'local'
+      ? `--destination "local" --local-dir "${localBackupDir}"`
+      : `--destination "shared_drive" --shared-dir "${sharedDrivePath}"`;
+
   const generatedCliCommand =
     backupType === 'postgres'
-      ? `bash ${targetScriptPath} --project "${projectName}" --db-name "${dbName}" --s3-bucket "${s3Bucket}" --retention-days ${retentionDays}`
+      ? `bash ${targetScriptPath} --project "${projectName}" --db-name "${dbName}" ${destArg} --retention-days ${retentionDays}`
       : backupType === 'mysql'
-      ? `bash ${targetScriptPath} --project "${projectName}" --db-name "${dbName}" --s3-bucket "${s3Bucket}" --retention-days ${retentionDays}`
+      ? `bash ${targetScriptPath} --project "${projectName}" --db-name "${dbName}" ${destArg} --retention-days ${retentionDays}`
       : backupType === 'zip'
-      ? `bash ${targetScriptPath} --project "${projectName}" --source-path "${sourcePath}" --s3-bucket "${s3Bucket}" --retention-days ${retentionDays}`
+      ? `bash ${targetScriptPath} --project "${projectName}" --source-path "${sourcePath}" ${destArg} --retention-days ${retentionDays}`
       : `bash ${targetScriptPath}`;
 
   const generatedCrontab = generateCrontabLine(targetScriptPath, cronSchedule);
-  const installCommands = generateInstallCommands(backupType, backupPath);
+  const effectiveTargetDir =
+    storageDestination === 'local'
+      ? localBackupDir
+      : storageDestination === 'shared_drive'
+      ? sharedDrivePath
+      : backupPath;
+  const installCommands = generateInstallCommands(backupType, backupPath, storageDestination, effectiveTargetDir);
 
   // Trigger browser file download of .sh script
   const handleDownloadScript = () => {
@@ -288,7 +314,7 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                     <span className="font-bold text-xs text-white">PostgreSQL</span>
                   </div>
                   <span className="text-[10px] text-slate-400 leading-tight">
-                    pg_dump + .zip + S3 + Retention Pruning
+                    pg_dump + .zip compression + Telemetry
                   </span>
                 </button>
 
@@ -306,7 +332,7 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                     <span className="font-bold text-xs text-white">MySQL / MariaDB</span>
                   </div>
                   <span className="text-[10px] text-slate-400 leading-tight">
-                    mysqldump online snapshot + S3 Sync
+                    mysqldump online snapshot + Telemetry
                   </span>
                 </button>
 
@@ -324,7 +350,7 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                     <span className="font-bold text-xs text-white">Directory Zip</span>
                   </div>
                   <span className="text-[10px] text-slate-400 leading-tight">
-                    Code / Assets directory + S3 Archiving
+                    Code / Assets directory + Telemetry
                   </span>
                 </button>
 
@@ -487,7 +513,7 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                           type="text"
                           value={dbPort}
                           onChange={(e) => setDbPort(e.target.value)}
-                          placeholder="5432"
+                          placeholder={backupType === 'postgres' ? '5432' : '3306'}
                           className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
                         />
                       </div>
@@ -531,34 +557,126 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
               </div>
             )}
 
-            {/* Step 4: AWS S3 & Retention Policy */}
+            {/* Step 4: Storage Destination & Retention Policy */}
             {backupType !== 'curl' && (
               <div className="space-y-3 pt-2 border-t border-slate-800/80">
-                <label className="block text-slate-300 font-semibold">4. AWS S3 Target & Retention Policy</label>
+                <label className="block text-slate-300 font-semibold">4. Backup Destination & Storage Target *</label>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-slate-400 mb-1">AWS S3 Bucket *</label>
-                    <input
-                      type="text"
-                      value={s3Bucket}
-                      onChange={(e) => setS3Bucket(e.target.value)}
-                      placeholder="ljs-backup"
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-slate-400 mb-1">S3 Folder Prefix</label>
-                    <input
-                      type="text"
-                      value={s3Folder}
-                      onChange={(e) => setS3Folder(e.target.value)}
-                      placeholder="ljs-backup"
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
-                    />
-                  </div>
+                {/* Destination Dropdown */}
+                <div className="relative">
+                  <select
+                    value={storageDestination}
+                    onChange={(e) => setStorageDestination(e.target.value as StorageDestination)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white font-semibold focus:outline-none focus:border-emerald-500 text-xs cursor-pointer appearance-none"
+                  >
+                    <option value="s3">☁️ AWS S3 Bucket (Cloud Object Storage)</option>
+                    <option value="local">💻 Local Server Path (Store on Same Server)</option>
+                    <option value="shared_drive">📁 Mapped Shared Drive / NFS / CIFS Mount</option>
+                  </select>
+                  <ChevronDown className="h-4 w-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
                 </div>
 
+                {/* Conditional Destination Specific Inputs */}
+                {storageDestination === 's3' && (
+                  <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-slate-400 mb-1">AWS S3 Bucket *</label>
+                        <input
+                          type="text"
+                          value={s3Bucket}
+                          onChange={(e) => setS3Bucket(e.target.value)}
+                          placeholder="my-company-backup-vault"
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-400 mb-1">S3 Folder Prefix</label>
+                        <input
+                          type="text"
+                          value={s3Folder}
+                          onChange={(e) => setS3Folder(e.target.value)}
+                          placeholder={`${projectName}_backup`}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 mb-1">Local Staging Directory (Temporary)</label>
+                      <input
+                        type="text"
+                        value={backupPath}
+                        onChange={(e) => setBackupPath(e.target.value)}
+                        placeholder="/var/backups"
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {storageDestination === 'local' && (
+                  <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-3">
+                    <div>
+                      <label className="block text-slate-400 mb-1">Target Local Storage Directory *</label>
+                      <input
+                        type="text"
+                        value={localBackupDir}
+                        onChange={(e) => setLocalBackupDir(e.target.value)}
+                        placeholder={
+                          backupType === 'postgres'
+                            ? '/var/backups/postgres'
+                            : backupType === 'mysql'
+                            ? '/var/backups/mysql'
+                            : '/var/backups/zip'
+                        }
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                      />
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-emerald-950/40 border border-emerald-800/30 text-emerald-300 text-[11px] flex items-center space-x-2">
+                      <HardDrive className="h-4 w-4 text-emerald-400 shrink-0" />
+                      <span>
+                        No AWS S3 required! Backups are compressed and stored permanently in this directory on the same server, with automatic local retention pruning.
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {storageDestination === 'shared_drive' && (
+                  <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-3">
+                    <div>
+                      <label className="block text-slate-400 mb-1">Target Mapped Shared Drive Path *</label>
+                      <input
+                        type="text"
+                        value={sharedDrivePath}
+                        onChange={(e) => setSharedDrivePath(e.target.value)}
+                        placeholder="/mnt/backup_share or /mnt/nfs_backups"
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 mb-1">Local Staging Temp Directory</label>
+                      <input
+                        type="text"
+                        value={backupPath}
+                        onChange={(e) => setBackupPath(e.target.value)}
+                        placeholder="/tmp/backup_staging"
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                      />
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-cyan-950/40 border border-cyan-800/30 text-cyan-300 text-[11px] flex items-center space-x-2">
+                      <FolderGit2 className="h-4 w-4 text-cyan-400 shrink-0" />
+                      <span>
+                        Archives are compressed locally and copied directly to your mounted NFS, SMB, or CIFS network storage drive.
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Common Retention & Anomaly Controls */}
                 <div className="grid grid-cols-3 gap-2">
                   <div>
                     <label className="block text-slate-400 mb-1">Retention (Days)</label>
@@ -571,7 +689,13 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-slate-400 mb-1">Max Archives in S3</label>
+                    <label className="block text-slate-400 mb-1">
+                      {storageDestination === 's3'
+                        ? 'Max Files in S3'
+                        : storageDestination === 'local'
+                        ? 'Max Local Files'
+                        : 'Max Shared Files'}
+                    </label>
                     <input
                       type="number"
                       min={1}
@@ -590,17 +714,6 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
                     />
                   </div>
-                </div>
-
-                <div>
-                  <label className="block text-slate-400 mb-1">Local Staging Path</label>
-                  <input
-                    type="text"
-                    value={backupPath}
-                    onChange={(e) => setBackupPath(e.target.value)}
-                    placeholder="/var/backups"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
-                  />
                 </div>
               </div>
             )}
@@ -688,7 +801,7 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                         ? generatedCliCommand
                         : outputTab === 'crontab'
                         ? generatedCrontab
-                        : `${installCommands.debian}\n\n${installCommands.prep}`;
+                        : `${installCommands.debian}\n\n${installCommands.prep}\n\n# ${installCommands.storageTitle}\n${installCommands.storageCommand}`;
                     copyText(toCopy, outputTab);
                   }}
                   className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-md shadow-emerald-950/40"
@@ -717,7 +830,16 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                       <FileCode className="h-4 w-4 text-emerald-400" />
                       <span className="text-white font-semibold">{defaultScriptName}</span>
                     </span>
-                    <span>Ready for production deployment</span>
+                    <span className="px-2 py-0.5 rounded-md bg-slate-800 text-[10px] text-slate-300">
+                      Destination:{' '}
+                      <strong className="text-emerald-400">
+                        {storageDestination === 's3'
+                          ? 'AWS S3'
+                          : storageDestination === 'local'
+                          ? 'Local Storage'
+                          : 'Shared Drive'}
+                      </strong>
+                    </span>
                   </div>
                   <pre className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-slate-300 overflow-x-auto text-[11px] leading-relaxed select-all">
                     {generatedScript}
@@ -742,7 +864,7 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                       <span>Simulate with Dry-Run Mode</span>
                     </div>
                     <p className="text-[11px] text-slate-400">
-                      Add <code className="text-emerald-400">--dry-run</code> to the command above to test arguments and connectivity without executing real dumps or S3 uploads.
+                      Add <code className="text-emerald-400">--dry-run</code> to the command above to test arguments and connectivity without executing real dumps or copying files.
                     </p>
                   </div>
                 </div>
@@ -818,7 +940,7 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
 
                   <div>
                     <h4 className="text-white font-semibold text-xs mb-1.5 flex items-center space-x-1.5">
-                      <span>📁 3. Staging Directory Setup & Permissions</span>
+                      <span>📁 3. Storage Directory Setup & Permissions</span>
                     </h4>
                     <pre className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-emerald-400 overflow-x-auto text-xs select-all">
                       {installCommands.prep}
@@ -827,13 +949,13 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
 
                   <div>
                     <h4 className="text-white font-semibold text-xs mb-1.5 flex items-center space-x-1.5">
-                      <span>☁️ 4. AWS S3 Credentials Configuration</span>
+                      <span>{installCommands.storageTitle}</span>
                     </h4>
                     <p className="text-[11px] text-slate-400 mb-2 leading-relaxed">
-                      Make sure AWS credentials with S3 read/write permissions are configured on the client machine via IAM Instance Profile, or run:
+                      {installCommands.storageHelp}
                     </p>
                     <pre className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-amber-300 overflow-x-auto text-xs select-all">
-                      aws configure
+                      {installCommands.storageCommand}
                     </pre>
                   </div>
                 </div>
@@ -845,8 +967,14 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
               <div className="flex items-center space-x-2 text-slate-400">
                 <ShieldCheck className="h-4 w-4 text-emerald-400" />
                 <span>
-                  Configured for project <strong className="text-white font-mono">{projectName}</strong> • Endpoint:{' '}
-                  <span className="text-emerald-400 font-mono truncate max-w-xs">{apiUrl}</span>
+                  Project <strong className="text-white font-mono">{projectName}</strong> • Target:{' '}
+                  <strong className="text-emerald-400 font-mono">
+                    {storageDestination === 's3'
+                      ? `s3://${s3Bucket}`
+                      : storageDestination === 'local'
+                      ? localBackupDir
+                      : sharedDrivePath}
+                  </strong>
                 </span>
               </div>
 
