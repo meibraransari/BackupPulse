@@ -187,16 +187,48 @@ If your admin team already has established backup scripts (running `mysqldump`, 
 curl -s -X POST "http://your-backuppulse-hub:3000/api/v1/backups/report" \
   -H "Content-Type: application/json" \
   -H "x-api-key: bkp_live_secret_key_12345" \
-  -d "{
-    \"server_id\": \"$(hostname -s)\",
-    \"hostname\": \"$(hostname -f)\",
-    \"project_name\": \"ecommerce-db\",
-    \"backup_type\": \"db\",
-    \"status\": \"SUCCESS\",
-    \"start_time\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\",
-    \"end_time\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\",
-    \"zip_filename\": \"ecommerce-db_backup.tar.gz\"
-  }"
+  -d '{
+    "server_id": "dummy-server-01",
+    "hostname": "dummy-server-01.example.com",
+    "server_ip": "192.168.1.100",
+    "project_name": "ecommerce-db",
+    "environment": "production",
+    "backup_type": "db",
+    "status": "SUCCESS",
+    "start_time": "2026-10-08T10:00:00Z",
+    "end_time": "2026-10-08T10:05:32Z",
+    "duration_seconds": 332,
+    "backup_size_bytes": 52428800,
+    "backup_size_human": "50 MB",
+    "s3_bucket": "backup-demo-dbbackup",
+    "s3_key": "demo_db_backup/ecommerce-db-08-Oct-2026_10-00.zip",
+    "s3_url": "s3://backup-demo-dbbackup/demo_db_backup/ecommerce-db-08-Oct-2026_10-00.zip",
+    "checksum": "a3f5c8e7d91b4c2a6f8e1234567890abcdef1234567890abcdef1234567890ab",
+    "zip_filename": "ecommerce-db-08-Oct-2026_10-00.zip",
+    "exit_code": 0,
+    "retention_days": 30,
+    "error_message": null,
+    "stdout_log": "pg_dump completed successfully. zip completed successfully. upload completed successfully.",
+    "stderr_log": null,
+    "metadata": {
+      "agent_name": "postgres_s3_backup",
+      "db_engine": "postgresql",
+      "db_host": "172.31.6.60",
+      "db_port": "5432",
+      "db_name": "demo_prod",
+      "db_user": "localuser",
+      "s3_folder": "demo_db_backup",
+      "min_size_threshold_bytes": 35840,
+      "max_files_retention": 30,
+      "retention_days": 30,
+      "s3_total_files": 25,
+      "s3_files_pruned": 0,
+      "anomaly_detected": false,
+      "status_summary": "ecommerce-db backup completed successfully and uploaded to S3.",
+      "pruned_files_history": []
+    }
+  }' \
+  -w '\n\nHTTP_STATUS: %{http_code}\n'
 ```
 
 ### 🛠️ Option B: Full Automated Backup Agent (`backup_agent.sh`)
