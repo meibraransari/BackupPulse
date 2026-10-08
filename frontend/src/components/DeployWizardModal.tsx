@@ -36,6 +36,7 @@ import {
   GeneratorConfig,
   StorageDestination,
 } from '../utils/scriptGenerator';
+import { CrontabBuilder } from './CrontabBuilder';
 
 interface DeployWizardModalProps {
   isOpen: boolean;
@@ -871,51 +872,11 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
               )}
 
               {outputTab === 'crontab' && (
-                <div className="space-y-4">
-                  <div className="text-slate-400 text-xs">
-                    Choose your backup frequency and paste into your server's crontab (
-                    <code className="text-emerald-400 font-semibold">crontab -e</code>):
-                  </div>
-
-                  {/* Schedule Presets */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {[
-                      { label: 'Daily (23:59)', cron: '59 23 * * *' },
-                      { label: 'Daily (02:00 AM)', cron: '0 2 * * *' },
-                      { label: 'Every 6 Hours', cron: '0 */6 * * *' },
-                      { label: 'Hourly', cron: '0 * * * *' },
-                    ].map((p, idx) => (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => setCronSchedule(p.cron)}
-                        className={`p-2.5 rounded-xl border text-left transition-all ${
-                          cronSchedule === p.cron
-                            ? 'bg-purple-950/70 border-purple-500 text-white'
-                            : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        <div className="text-xs font-semibold text-white">{p.label}</div>
-                        <div className="text-[10px] text-slate-500 font-mono mt-0.5">{p.cron}</div>
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="mt-2">
-                    <label className="block text-slate-400 mb-1 text-xs">Custom Cron Expression</label>
-                    <input
-                      type="text"
-                      value={cronSchedule}
-                      onChange={(e) => setCronSchedule(e.target.value)}
-                      placeholder="59 23 * * *"
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono text-xs"
-                    />
-                  </div>
-
-                  <pre className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-purple-300 overflow-x-auto text-xs select-all">
-                    {generatedCrontab}
-                  </pre>
-                </div>
+                <CrontabBuilder
+                  value={cronSchedule}
+                  onChange={setCronSchedule}
+                  scriptPath={targetScriptPath}
+                />
               )}
 
               {outputTab === 'prereq' && (
