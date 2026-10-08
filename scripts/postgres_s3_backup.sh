@@ -14,8 +14,8 @@
 #
 # Setup Instructions:
 #   1. Create the backup directory and set appropriate permissions:
-#      sudo mkdir -p /lbizz_postgres_backup
-#      sudo chmod 777 /lbizz_postgres_backup
+#      sudo mkdir -p /demo_postgres_backup
+#      sudo chmod 777 /demo_postgres_backup
 #
 #   2. Ensure AWS credentials are configured (IAM role, ~/.aws/credentials, or ENV).
 #
@@ -27,7 +27,7 @@
 #
 # Usage:
 #   ./postgres_s3_backup.sh [OPTIONS]
-#   ./postgres_s3_backup.sh --project "Lbizz" --db-name "lbizz_prod"
+#   ./postgres_s3_backup.sh --project "demo" --db-name "demo_prod"
 # ==============================================================================
 
 set -uo pipefail
@@ -44,22 +44,22 @@ HUB_API_KEY="${BACKUP_API_KEY:-bkp_live_secret_key_12345}"
 ENVIRONMENT="${ENVIRONMENT:-production}"
 
 # Project & Database Configuration
-PROJECT_NAME="${PROJECT_NAME:-Lbizz}"
+PROJECT_NAME="${PROJECT_NAME:-demo}"
 DB_USER="${PGUSER:-${DB_USER:-localuser}}"
 DB_PASSWORD="${PGPASSWORD:-${DB_PASSWORD:-LKS#@LPS}}"
 DB_HOST="${PGHOST:-${DB_HOST:-172.31.6.60}}"
 DB_PORT="${PGPORT:-${DB_PORT:-5432}}"
-DB_NAME="${PGDATABASE:-${DB_NAME:-lbizz_prod}}"
-S3_FOLDER_NAME="${S3_FOLDER_NAME:-Lbizz_db_backup}"
+DB_NAME="${PGDATABASE:-${DB_NAME:-demo_prod}}"
+S3_FOLDER_NAME="${S3_FOLDER_NAME:-demo_db_backup}"
 
 # AWS S3 Storage & Retention Policy
-S3_BUCKET="${S3_BUCKET:-lapso-lbizz-dbbackup}"
+S3_BUCKET="${S3_BUCKET:-lapso-demo-dbbackup}"
 MAX_FILES="${MAX_FILES:-30}"
 RETENTION_DAYS="${RETENTION_DAYS:-30}"
 MIN_FILE_SIZE="${MIN_FILE_SIZE:-$((35 * 1024))}" # 35KB Minimum Threshold
 
 # Local Storage Path
-BACKUP_PATH="${BACKUP_PATH:-/lbizz_postgres_backup}"
+BACKUP_PATH="${BACKUP_PATH:-/demo_postgres_backup}"
 
 # Runtime Flags
 DRY_RUN=false
@@ -95,18 +95,18 @@ while [[ "$#" -gt 0 ]]; do
       echo "BackupPulse PostgreSQL S3 Backup & Telemetry Client"
       echo ""
       echo "Usage: $0 [options]"
-      echo "  --project <name>        Project name (default: Lbizz)"
+      echo "  --project <name>        Project name (default: demo)"
       echo "  --db-user <user>        PostgreSQL username (default: localuser)"
       echo "  --db-password <pass>    PostgreSQL password"
       echo "  --db-host <host>        PostgreSQL host (default: 172.31.6.60)"
       echo "  --db-port <port>        PostgreSQL port (default: 5432)"
-      echo "  --db-name <name>        PostgreSQL database name (default: lbizz_prod)"
-      echo "  --s3-bucket <bucket>    AWS S3 Bucket name (default: lapso-lbizz-dbbackup)"
-      echo "  --s3-folder <folder>    S3 Destination Folder (default: Lbizz_db_backup)"
+      echo "  --db-name <name>        PostgreSQL database name (default: demo_prod)"
+      echo "  --s3-bucket <bucket>    AWS S3 Bucket name (default: lapso-demo-dbbackup)"
+      echo "  --s3-folder <folder>    S3 Destination Folder (default: demo_db_backup)"
       echo "  --max-files <count>     Maximum files to retain in S3 (default: 30)"
       echo "  --retention-days <days> Retention period in days for availability tracking (default: 30)"
       echo "  --min-size-kb <kb>      Minimum file size threshold in KB (default: 35)"
-      echo "  --backup-path <path>    Local dump staging path (default: /lbizz_postgres_backup)"
+      echo "  --backup-path <path>    Local dump staging path (default: /demo_postgres_backup)"
       echo "  --api-url <url>         BackupPulse API Endpoint"
       echo "  --api-key <key>         BackupPulse Ingestion API Key"
       echo "  --server-id <id>        Override server ID (default: hostname -s)"
