@@ -140,11 +140,11 @@ AWS_SES_SECRET_ACCESS_KEY="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
 
 # --- Channel 3: Slack (Block Kit) ---
 ENABLE_SLACK=true
-SLACK_WEBHOOK_URL="https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
+SLACK_WEBHOOK_URL="https://hooks.slack.com/services"
 
 # --- Channel 4: Discord (Rich Embeds) ---
 ENABLE_DISCORD=true
-DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/000000000000000000/XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks"
 
 # --- Channel 5: Telegram Bot ---
 ENABLE_TELEGRAM=true
