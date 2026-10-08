@@ -18,16 +18,25 @@ A high-performance Node.js & React telemetry platform designed to monitor automa
 [BackupPulse Backend] (Fastify + TypeScript)
        │
        ├──► Live Swagger UI: /api/docs
+       ├──► Prometheus Metrics Endpoint: /metrics
        ├──► Health Check: /health
-       ├──► Stores Telemetry in PostgreSQL
+       ├──► Rate-Limiting Guard: @fastify/rate-limit (Brute-force & Cron spam protection)
+       ├──► Scoped Token Validator: Master API Key or Per-Server/Per-Project Scoped Tokens
+       ├──► Stores Telemetry in PostgreSQL (Versioned Prisma Migrations)
+       ├──► Real-Time Instant Failure Alert Dispatcher (INSTANT_ALERT_ON_FAILURE)
        └──► Automated Scheduled Reporter (Cron: REPORT_CRON)
               │
               ├──► Channel 1: [Google Chat Webhook (Cards v2)]
-              └──► Channel 2: [SMTP Email (Responsive Dark HTML)]
+              ├──► Channel 2: [SMTP / SendGrid / AWS SES Email (Responsive Dark HTML)]
+              ├──► Channel 3: [Slack Webhook (Block Kit with Color Sidebars)]
+              ├──► Channel 4: [Discord Webhook (Rich Embeds with Fields)]
+              └──► Channel 5: [Telegram Bot (Formatted HTML Alerts)]
        │
        ▼
 [BackupPulse Dashboard] (React + Vite + Tailwind CSS)
        ├──► 🧭 Enterprise Dark Sidebar (Workspaces, Instant Actions, Profile, API Link)
+       ├──► 🌐 Timezone Display Switcher (Persistent 1-Click Toggle: UTC vs Local Browser Time)
+       ├──► 🔑 Per-Server & Per-Project API Tokens Modal (1-Click Revocation & Copy Secret)
        ├──► Summary KPI Cards (Total Backups, Success Rate, Failed count, Storage)
        ├──► Historical Trends (Clickable 7-30 Days Success vs Failure Charts)
        ├──► 🖥️ Server Fleet Inventory Matrix (100+ Servers Health, Storage, Staleness)
@@ -35,11 +44,11 @@ A high-performance Node.js & React telemetry platform designed to monitor automa
        ├──► 📉 Backup Size Anomaly Detection (Zero-Byte & Truncation Guard Badges)
        ├──► 👥 Multi-User Directory (Admin, Operator, Viewer roles & Profile Management)
        ├──► 🔒 Live User Login Tracker (IP, User-Agent, Success/Failure Audits)
-       ├──► 📊 Notification Delivery Audit UI (Google Chat & SMTP History + Payload Inspector)
+       ├──► 📊 Notification Delivery Audit UI (Multi-Channel History + Payload Inspector)
        ├──► 🧹 Database Storage & Housekeeping Modal (Retention Controls & Force Purge)
        ├──► Advanced Multi-Filter & Resizable Columns (Project, Host, Status, Date)
        ├──► Detail Drawer & Professional Incident Resolution Modal
-       └──► Instant Test Actions (Test Google Chat, Test SMTP Email, Export CSV/JSON)
+       └──► Instant Test Actions (Test Google Chat, Email, Slack, Discord, Telegram, Export CSV/JSON)
 ```
 
 ---
@@ -76,21 +85,31 @@ docker compose logs -f app
 
 ---
 
-## 🔔 Automated Daily Reporting & Notification Matrix
+## 🔔 Multi-Channel Alert Engine & Instant Failure Dispatch
 
-BackupPulse includes a flexible multi-channel notification engine. Depending on your team's workflow, you can choose to enable **both channels**, **only one**, or **disable both** completely via `.env`:
+BackupPulse includes an enterprise multi-channel notification and alert dispatcher. Alerts can be dispatched **immediately upon failure** (`INSTANT_ALERT_ON_FAILURE=true`) and/or as a **consolidated daily health report** (`REPORT_CRON`).
 
-| Mode | `ENABLE_GOOGLE_CHAT` | `ENABLE_SMTP` | Dispatch Behavior |
-| :--- | :---: | :---: | :--- |
-| **Both Channels** | `true` | `true` | Scheduled cron delivers to both Google Chat Space & Email recipients (SMTP, SendGrid, or AWS SES). |
-| **Chat Only** | `true` | `false` | Dispatches Google Chat Cards v2 only; Email channel is completely dormant. |
-| **Email Only** | `false` | `true` | Dispatches rich HTML email reports only via configured provider; Google Chat is dormant. |
-| **Disabled** | `false` | `false` | Automated reporter cron does not run. Telemetry is saved in DB only. |
+### Supported Channels Matrix
+
+| Channel | Protocol | Message Format | Instant Alerts | Daily Digest |
+| :--- | :--- | :--- | :---: | :---: |
+| **Google Chat** | Webhook | Cards v2 with dynamic color badges & deep link buttons | ✅ | ✅ |
+| **Email (SMTP/SendGrid/SES)** | SMTP Relay / Web API | Responsive Dark-Mode HTML template | ✅ | ✅ |
+| **Slack** | Incoming Webhook | Block Kit with color-coded sidebars & fields | ✅ | ✅ |
+| **Discord** | Webhook | Rich Embeds with color status & execution details | ✅ | ✅ |
+| **Telegram** | Bot API | Formatted HTML messages with monospace traces | ✅ | ✅ |
+
+### ⚡ Real-Time Instant Failure Dispatch (`INSTANT_ALERT_ON_FAILURE=true`)
+When enabled, the exact second any backup reports `status === 'FAILED'` or is flagged with a critical size drop anomaly (`isAnomaly === true`), high-priority alerts are immediately dispatched to **all enabled channels** (Google Chat, Email, Slack, Discord, Telegram) without waiting for the scheduled morning digest.
+- **5-Minute Deduplication Cooldown**: Automatically prevents alert spam from rapid or broken cron loops on individual servers while recording every run in the database.
 
 ### Notification Settings in `.env`
 
 ```ini
-# Schedule expression (default: 9:00 AM daily)
+# --- Real-Time Instant Alerts ---
+INSTANT_ALERT_ON_FAILURE=true
+
+# --- Scheduled Summary Digest Cron (default: 9:00 AM daily) ---
 REPORT_CRON="0 9 * * *"
 
 # --- Channel 1: Google Chat ---
@@ -99,33 +118,38 @@ GOOGLE_CHAT_WEBHOOK_URL="https://chat.googleapis.com/v1/spaces/YOUR_SPACE/messag
 
 # --- Channel 2: Email Reporting (SMTP / SendGrid / AWS SES) ---
 ENABLE_SMTP=true
-
-# Provider selector: 'smtp' | 'sendgrid' | 'ses' (default: smtp)
-EMAIL_PROVIDER=smtp
-
-# Common Email Target (Recipient & Sender)
+EMAIL_PROVIDER=smtp  # 'smtp' | 'sendgrid' | 'ses'
 EMAIL_FROM="BackupPulse Central <alerts@yourdomain.com>"
 EMAIL_TO="devops@yourdomain.com,team-lead@yourdomain.com"
 
-# --- Provider Option 1: Standard SMTP Relay ---
+# Standard SMTP Relay (e.g. Gmail, Postfix, Office 365)
 SMTP_HOST="smtp.gmail.com"
 SMTP_PORT=587
 SMTP_SECURE=false
 SMTP_USER="alerts@yourdomain.com"
 SMTP_PASSWORD="your-app-password"
-SMTP_FROM="BackupPulse Central <alerts@yourdomain.com>"
-SMTP_TO="devops@yourdomain.com,team-lead@yourdomain.com"
 
-# --- Provider Option 2: SendGrid Web API v3 ---
+# SendGrid Web API v3
 SENDGRID_API_KEY="SG.your_sendgrid_api_key_here"
-SENDGRID_FROM="BackupPulse Central <alerts@yourdomain.com>"
 
-# --- Provider Option 3: AWS SES (Simple Email Service) ---
+# AWS SES (Simple Email Service)
 AWS_SES_REGION="us-east-1"
-# Optional explicit credentials (leave blank to use AWS IAM instance profiles / ECS / EKS task roles):
+# Optional explicit credentials (omit to use AWS IAM instance profiles / ECS / EKS roles):
 AWS_SES_ACCESS_KEY_ID="AKIAIOSFODNN7EXAMPLE"
 AWS_SES_SECRET_ACCESS_KEY="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
-AWS_SES_FROM="BackupPulse Central <alerts@yourdomain.com>"
+
+# --- Channel 3: Slack (Block Kit) ---
+ENABLE_SLACK=true
+SLACK_WEBHOOK_URL="https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
+
+# --- Channel 4: Discord (Rich Embeds) ---
+ENABLE_DISCORD=true
+DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/000000000000000000/XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+
+# --- Channel 5: Telegram Bot ---
+ENABLE_TELEGRAM=true
+TELEGRAM_BOT_TOKEN="123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
+TELEGRAM_CHAT_ID="-1001234567890"
 ```
 
 ### ✉️ Email Report Features (SMTP / SendGrid / AWS SES)
@@ -139,8 +163,13 @@ AWS_SES_FROM="BackupPulse Central <alerts@yourdomain.com>"
 
 ### 💬 Google Chat Features
 - Google Chat **Cards v2** with color badges (green for 100% healthy, red for failures).
-- Highlighted crash reasons and hostnames.
+- Highlighted crash reasons, hostnames, duration, and archive sizes.
 - Interactive deep link button to inspect the incident in BackupPulse.
+
+### 🤖 Slack, Discord & Telegram Features
+- **Slack Block Kit**: Clean structured blocks with color status sidebars, key-value grids, and markdown error callouts.
+- **Discord Rich Embeds**: Branded embeds with severity colors (green, red, amber), server hostname, size, and error fields.
+- **Telegram HTML**: Fast, compact mobile alerts with emoji indicators, project tags, and formatted error snippets.
 
 ---
 
@@ -318,10 +347,11 @@ chmod +x scripts/zip_s3_backup.sh
 | Method | Endpoint | Description | Auth |
 | :--- | :--- | :--- | :--- |
 | `GET` | `/health` | Server uptime & DB connection check (includes `swagger` enabled flag) | None |
+| `GET` | `/metrics` | Standard Prometheus metrics exposition (counters, gauges, memory, uptime) | None |
 | `GET` | `/api/docs` | Interactive Swagger UI sandbox (enabled when `ENABLE_SWAGGER=true`) | None |
-| `POST` | `/api/v1/backups/report` | Telemetry ingestion from shell script (with anomaly detection, `retention_days` & expiry calculation) | `x-api-key` |
-| `POST` | `/api/v1/auth/login` | Admin login | None |
-| `GET` | `/api/v1/auth/me` | Current session user | Bearer JWT |
+| `POST` | `/api/v1/backups/report` | Telemetry ingestion from shell script (rate limit: 120/min, scoped/master key) | `x-api-key` |
+| `POST` | `/api/v1/auth/login` | Admin/Operator/Viewer authentication (rate limit: 10/min) | None |
+| `GET` | `/api/v1/auth/me` | Current session user profile & permissions | Bearer JWT |
 | `GET` | `/api/v1/dashboard/stats` | 24h & all-time summary KPIs | Bearer JWT |
 | `GET` | `/api/v1/dashboard/trends` | Daily trends for charts (last 7-30 days) | Bearer JWT |
 | `GET` | `/api/v1/dashboard/fleet` | Aggregated 100+ servers fleet health, storage, and staleness matrix | Bearer JWT |
@@ -329,11 +359,18 @@ chmod +x scripts/zip_s3_backup.sh
 | `GET` | `/api/v1/backups/:id` | Full details, logs, S3 paths, retention days, and availability status | Bearer JWT |
 | `PATCH` | `/api/v1/backups/:id/status` | Manually mark failed backup as SUCCESS with resolution notes | Bearer JWT |
 | `GET` | `/api/v1/backups/export` | Export filtered records to CSV or JSON (includes retention days & availability status) | Bearer JWT |
-| `GET` | `/api/v1/notifications/status` | Check active status of Google Chat & Email channels (SMTP/SendGrid/SES) | Bearer JWT |
+| `GET` | `/api/v1/notifications/status` | Active status of Google Chat, Email, Slack, Discord, Telegram channels | Bearer JWT |
 | `GET` | `/api/v1/notifications/logs` | Query alert send audit logs (channel, recipient, status, payload) | Bearer JWT |
 | `POST` | `/api/v1/notifications/test-gchat` | Immediate Google Chat webhook test card | Bearer JWT |
 | `POST` | `/api/v1/notifications/test-email` | Immediate test email delivery (via active provider: SMTP, SendGrid, or AWS SES) | Bearer JWT |
 | `POST` | `/api/v1/notifications/test-smtp` | Test email delivery alias (backward compatibility) | Bearer JWT |
+| `POST` | `/api/v1/notifications/test-slack` | Immediate Slack Block Kit test message | Bearer JWT |
+| `POST` | `/api/v1/notifications/test-discord` | Immediate Discord Rich Embed test message | Bearer JWT |
+| `POST` | `/api/v1/notifications/test-telegram` | Immediate Telegram Bot test alert | Bearer JWT |
+| `POST` | `/api/v1/notifications/trigger-daily-report` | Manually dispatch the daily summary report to all enabled channels | Bearer JWT |
+| `GET` | `/api/v1/api-keys` | List all provisioned per-server and per-project API tokens | Bearer JWT (Admin) |
+| `POST` | `/api/v1/api-keys` | Provision a new scoped API key (`bkp_<hash>`) with optional expiration & constraints | Bearer JWT (Admin) |
+| `DELETE` | `/api/v1/api-keys/:id` | Immediately revoke an API key token | Bearer JWT (Admin) |
 | `GET` | `/api/v1/system/housekeeping` | Check database retention policy, counts & purge status | Bearer JWT |
 | `POST` | `/api/v1/system/cleanup` | Manually trigger database purge of records older than retention threshold | Bearer JWT |
 | `GET` | `/api/v1/servers/configs` | Retrieve fleet monitoring configs & mute statuses | Bearer JWT |
@@ -500,6 +537,102 @@ The web UI is organized around a persistent, responsive dark sidebar:
   - 🧹 **Storage & Retention**: Inspect database sizes, configure retention, and trigger immediate housekeeping purge.
   - 📖 **Interactive Swagger UI**: One-click external link to `/api/docs`.
 - **Profile & Logout Footer**: User avatar, identity chip, role badge, profile modal trigger, and sign-out button.
+
+---
+
+## 🔑 Per-Server & Per-Project Scoped API Tokens
+
+Previously, all remote servers shared a single central `BACKUP_API_KEY`. In large production environments with 100+ servers, compromising or retiring one machine risked exposing the master key. BackupPulse introduces **granular scoped API tokens**:
+
+- **Scoped Key Generation**: Administrators can generate tokens directly from the dashboard (**DevOps Operations → API Ingestion Tokens**) or via `POST /api/v1/api-keys`.
+- **Granular Restrictions**:
+  - **Server-Scoped**: Restricts token strictly to a matching `server_id` (e.g. `prod-db-master-01`).
+  - **Project-Scoped**: Restricts token strictly to a matching `project_name` (e.g. `billing-postgres`).
+  - **Expiration Timers**: Automatically expire keys after a specified number of days (e.g., 90 or 365 days).
+- **Security & Hashing**: Keys are generated using cryptographically secure random bytes (`bkp_<hex>`), hashed with SHA-256 before storage in PostgreSQL, and displayed **only once** upon generation with a copy-to-clipboard modal.
+- **1-Click Immediate Revocation**: Instantly revoke any compromised token with a single click without affecting other servers.
+- **Master Key Backward Compatibility**: The central `BACKUP_API_KEY` defined in `.env` continues to work seamlessly across all existing backup scripts.
+
+---
+
+## 🛡️ API Rate Limiting & Anti-Abuse Protection
+
+To protect the platform against credential brute-forcing and runaway cron spam, BackupPulse implements `@fastify/rate-limit`:
+
+- **Authentication Endpoint (`POST /api/v1/auth/login`)**:
+  - **Limit**: Max **10 attempts per minute** per client IP.
+  - **Defense**: Thwarts automated dictionary and brute-force attacks against administrative user accounts. Returns HTTP `429 Too Many Requests` when exceeded.
+- **Telemetry Ingestion Endpoint (`POST /api/v1/backups/report`)**:
+  - **Limit**: Max **120 requests per minute** per client IP.
+  - **Defense**: Protects against misconfigured client cron loops (e.g. running every second instead of every hour) from overwhelming the PostgreSQL database.
+- **Rate-Limit Headers**: Standard RFC draft headers (`x-ratelimit-limit`, `x-ratelimit-remaining`, `x-ratelimit-reset`) are returned with every response.
+
+---
+
+## 📈 Prometheus Metrics Telemetry (`/metrics`)
+
+BackupPulse natively exports production-grade Prometheus metrics via `prom-client` on the `/metrics` endpoint for integration into Grafana, Datadog, Prometheus Server, or VictoriaMetrics:
+
+### Available Metric Gauges & Counters
+
+| Metric | Type | Description |
+| :--- | :--- | :--- |
+| `backuppulse_backup_runs_total` | Counter | Total backup reports ingested, labeled by `status`, `project`, `server_id`, `backup_type` |
+| `backuppulse_failures_24h` | Gauge | Total backup failures recorded across the fleet in the rolling last 24 hours |
+| `backuppulse_stale_servers_count` | Gauge | Number of active production servers missing scheduled backups (`>26h` staleness) |
+| `backuppulse_archive_size_bytes` | Gauge | Size in bytes of the most recently ingested backup archive by project and server |
+| `backuppulse_duration_seconds` | Gauge | Execution time in seconds of the most recently ingested backup run |
+| `backuppulse_active_api_keys` | Gauge | Count of active, unrevoked scoped API tokens in PostgreSQL |
+| Standard Node.js Metrics | Gauges/Counters | Process CPU, resident memory (`process_resident_memory_bytes`), event loop lag, and GC stats |
+
+### Sample Prometheus Scrape Config (`prometheus.yml`)
+```yaml
+scrape_configs:
+  - job_name: 'backuppulse'
+    scrape_interval: 30s
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['backuppulse-hub:3000']
+```
+
+---
+
+## 🌐 Timezone Display Switcher (UTC vs Local Browser Time)
+
+Distributed operations teams frequently manage servers spread across different global regions. BackupPulse features an instant **Timezone Switcher**:
+
+- **Persistent Preference**: Stored in client `localStorage` and accessible from the top navbar or the enterprise sidebar.
+- **1-Click Toggle**: Switch instantly between **🌐 UTC** and **🕒 Local Browser Time**.
+- **System-Wide Formatting**: Automatically re-formats all timestamps across:
+  - Backup Telemetry data table execution windows
+  - Retention availability remaining tooltips
+  - Incident details inspector modal
+  - Notification delivery audit log receipts
+  - User login tracker events
+
+---
+
+## 🏗️ Versioned Database Migration Pipeline (`prisma migrate deploy`)
+
+For zero-downtime, predictable production upgrades:
+- Transitioned from ad-hoc schema pushes to formal, versioned migrations under `backend/prisma/migrations/`.
+- Container startup in `entrypoint.sh` executes `npx prisma migrate deploy` automatically before starting the Node.js server.
+- Automatically handles new columns and indexes with zero risk of schema drift.
+
+---
+
+## 📦 Docker Daemon Automated Log Rotation
+
+To prevent container `stdout` and `stderr` logs from consuming all disk space on the host Docker node:
+- Configured JSON-file log rotation parameters directly on all containers in `docker-compose.yml`:
+  ```yaml
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "3"
+  ```
+- Retains at most **3 rotated files of 10 MB each** per service (`postgres` and `app`), capping log consumption at 30 MB per container.
 
 ---
 

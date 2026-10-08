@@ -3,10 +3,16 @@ import { prisma } from '../db/prisma';
 import { comparePassword, hashPassword } from '../services/auth.service';
 
 export async function authRoutes(fastify: FastifyInstance) {
-  // 1. Login with Tracker Logging
+  // 1. Login with Tracker Logging (Rate limited to 10 attempts per minute to mitigate brute force)
   fastify.post(
     '/api/v1/auth/login',
     {
+      config: {
+        rateLimit: {
+          max: 10,
+          timeWindow: '1 minute',
+        },
+      },
       schema: {
         description: 'Authenticate user and return JWT access token, recording login audit telemetry in database',
         tags: ['Authentication'],

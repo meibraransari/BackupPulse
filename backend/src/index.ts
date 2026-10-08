@@ -2,6 +2,7 @@ import Fastify, { FastifyReply, FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import fastifyJwt from '@fastify/jwt';
 import fastifyStatic from '@fastify/static';
+import rateLimit from '@fastify/rate-limit';
 import path from 'path';
 import fs from 'fs';
 
@@ -18,6 +19,8 @@ import { notificationRoutes } from './routes/notification.route';
 import { systemRoutes } from './routes/system.route';
 import { serverRoutes } from './routes/server.route';
 import { userRoutes } from './routes/user.route';
+import { apiKeyRoutes } from './routes/apikey.route';
+import { metricsRoutes } from './routes/metrics.route';
 
 async function bootstrap() {
   // Fastify logger configuration across all modes
@@ -43,6 +46,17 @@ async function bootstrap() {
       err.statusCode = 400;
       done(err, undefined);
     }
+  });
+
+  // Register Global Rate Limiting
+  await fastify.register(rateLimit, {
+    max: 300,
+    timeWindow: '1 minute',
+    errorResponseBuilder: (_req, context) => ({
+      statusCode: 429,
+      error: 'Too Many Requests',
+      message: `Rate limit exceeded. Exceeded ${context.max} requests within ${context.after}. Please slow down your requests.`,
+    }),
   });
 
   // Enable CORS
@@ -130,6 +144,8 @@ async function bootstrap() {
   await fastify.register(systemRoutes);
   await fastify.register(serverRoutes);
   await fastify.register(userRoutes);
+  await fastify.register(apiKeyRoutes);
+  await fastify.register(metricsRoutes);
 
   // Serve static frontend build if present (for single container deployment)
   const frontendDistPath = path.resolve(__dirname, '../../frontend/dist');
@@ -143,7 +159,7 @@ async function bootstrap() {
 
     // SPA fallback: redirect non-API GET requests to index.html
     fastify.setNotFoundHandler((request, reply) => {
-      if (!request.raw.url?.startsWith('/api') && !request.raw.url?.startsWith('/health')) {
+      if (!request.raw.url?.startsWith('/api') && !request.raw.url?.startsWith('/health') && !request.raw.url?.startsWith('/metrics')) {
         return reply.sendFile('index.html');
       }
       reply.status(404).send({ error: 'Route not found' });
@@ -165,6 +181,7 @@ async function bootstrap() {
     console.log(`====================================================`);
     console.log(`🚀 BackupPulse Monitoring Server is LIVE!`);
     console.log(`📍 Web Dashboard: http://${config.HOST}:${config.PORT}`);
+    console.log(`📊 Prometheus Metrics: http://${config.HOST}:${config.PORT}/metrics`);
     console.log(`📖 Swagger API Docs: ${config.ENABLE_SWAGGER ? `http://${config.HOST}:${config.PORT}/api/docs/` : 'DISABLED (ENABLE_SWAGGER=false)'}`);
     console.log(`💓 Health Check: http://${config.HOST}:${config.PORT}/health`);
     console.log(`📝 Console Logging: ${config.ENABLE_CONSOLE_LOG ? 'ENABLED (' + config.LOG_LEVEL + ')' : 'DISABLED'}`);

@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import { User, UserLoginLog } from '../types';
+import { useTimezone } from '../context/TimezoneContext';
 
 interface UserManagementViewProps {
   currentUser: User | null;
@@ -35,6 +36,7 @@ const PRESET_AVATARS = [
 ];
 
 export const UserManagementView: React.FC<UserManagementViewProps> = ({ currentUser }) => {
+  const { formatTimestamp, formatDateOnly } = useTimezone();
   const [activeTab, setActiveTab] = useState<'users' | 'logins'>('users');
 
   // Users state
@@ -377,7 +379,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ currentU
                         </td>
 
                         <td className="py-3 px-4 text-slate-400 text-[11px] whitespace-nowrap font-mono">
-                          {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '—'}
+                          {user.createdAt ? formatDateOnly(user.createdAt) : '—'}
                         </td>
 
                         <td className="py-3 px-4 text-right whitespace-nowrap">
@@ -485,13 +487,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ currentU
                     loginLogs.map((log) => (
                       <tr key={log.id} className="hover:bg-slate-800/40 transition-colors">
                         <td className="py-3 px-4 whitespace-nowrap font-mono text-[11px] text-slate-400">
-                          {new Date(log.createdAt).toLocaleString(undefined, {
-                            month: 'short',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            second: '2-digit',
-                          })}
+                          {formatTimestamp(log.createdAt)}
                         </td>
                         <td className="py-3 px-4 font-semibold text-white whitespace-nowrap">
                           {log.username}

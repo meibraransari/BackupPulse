@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Copy, Check, Terminal, AlertCircle, HardDrive, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { BackupReport } from '../types';
+import { useTimezone } from '../context/TimezoneContext';
 
 interface DetailModalProps {
   report: BackupReport | null;
@@ -9,6 +10,7 @@ interface DetailModalProps {
 }
 
 export const DetailModal: React.FC<DetailModalProps> = ({ report, onClose, onMarkSuccess }) => {
+  const { formatTimestamp, formatDateOnly } = useTimezone();
   const [copiedKey, setCopiedKey] = useState(false);
 
   if (!report) return null;
@@ -172,7 +174,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ report, onClose, onMar
                   </span>
                   {report.expiresAt && (
                     <span className="text-[11px] text-slate-400">
-                      ({report.isExpired || report.availabilityStatus === 'EXPIRED' ? 'Expired' : 'Expires'}: {new Date(report.expiresAt).toLocaleDateString()}
+                      ({report.isExpired || report.availabilityStatus === 'EXPIRED' ? 'Expired' : 'Expires'}: {formatDateOnly(report.expiresAt)}
                       {report.daysRemaining !== null && report.daysRemaining !== undefined ? ` • ${report.daysRemaining}d left` : ''}
                       {report.daysAgoExpired !== null && report.daysAgoExpired !== undefined ? ` • ${report.daysAgoExpired}d ago` : ''})
                     </span>
@@ -230,9 +232,9 @@ export const DetailModal: React.FC<DetailModalProps> = ({ report, onClose, onMar
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3.5 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between text-xs text-slate-500">
-          <span>Started: {new Date(report.startTime).toLocaleString()}</span>
-          <span>Finished: {new Date(report.endTime).toLocaleString()}</span>
+        <div className="px-6 py-3.5 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between text-xs text-slate-500 font-mono text-[11px]">
+          <span>Started: {formatTimestamp(report.startTime)}</span>
+          <span>Finished: {formatTimestamp(report.endTime)}</span>
         </div>
       </div>
     </div>

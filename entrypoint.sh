@@ -43,12 +43,14 @@ echo -e " 🧹 ${BOLD}Housekeeping:${NC}   ${ENABLE_HOUSEKEEPING:-true} (Retenti
 echo -e "${BLUE}${BOLD}======================================================================${NC}"
 echo ""
 
-# Run database synchronization before starting the service
-echo -e "${YELLOW}🔄 Syncing database schema with Prisma...${NC}"
-if npx prisma db push --skip-generate; then
-  echo -e "${GREEN}✅ Database schema synchronized successfully.${NC}"
+# Run database migrations before starting the service
+echo -e "${YELLOW}🔄 Applying database migrations with Prisma migrate deploy...${NC}"
+if npx prisma migrate deploy; then
+  echo -e "${GREEN}✅ Database migrations deployed successfully.${NC}"
+elif npx prisma db push --skip-generate; then
+  echo -e "${GREEN}✅ Database schema synchronized via db push fallback.${NC}"
 else
-  echo -e "${YELLOW}⚠️  Database sync exited with warning. Proceeding with application startup...${NC}"
+  echo -e "${YELLOW}⚠️  Database migration exited with warning. Proceeding with application startup...${NC}"
 fi
 
 echo ""

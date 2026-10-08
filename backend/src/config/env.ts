@@ -24,11 +24,33 @@ export const config = {
   // Automated Report Schedule (Cron)
   REPORT_CRON: process.env.REPORT_CRON || process.env.GOOGLE_CHAT_REPORT_CRON || '0 9 * * *',
 
+  // Real-Time Instant Alert Configuration (Alert immediately on FAILED or Anomaly)
+  INSTANT_ALERT_ON_FAILURE: process.env.INSTANT_ALERT_ON_FAILURE !== 'false',
+
   // Google Chat Channel Settings
   ENABLE_GOOGLE_CHAT:
     process.env.ENABLE_GOOGLE_CHAT === 'true' ||
     (process.env.ENABLE_GOOGLE_CHAT !== 'false' && process.env.ENABLE_DAILY_REPORT !== 'false' && !!process.env.GOOGLE_CHAT_WEBHOOK_URL),
   GOOGLE_CHAT_WEBHOOK_URL: process.env.GOOGLE_CHAT_WEBHOOK_URL || '',
+
+  // Slack Channel Settings (Block Kit Incoming Webhook)
+  ENABLE_SLACK:
+    process.env.ENABLE_SLACK === 'true' ||
+    (process.env.ENABLE_SLACK !== 'false' && !!process.env.SLACK_WEBHOOK_URL),
+  SLACK_WEBHOOK_URL: process.env.SLACK_WEBHOOK_URL || '',
+
+  // Discord Channel Settings (Rich Embed Webhook)
+  ENABLE_DISCORD:
+    process.env.ENABLE_DISCORD === 'true' ||
+    (process.env.ENABLE_DISCORD !== 'false' && !!process.env.DISCORD_WEBHOOK_URL),
+  DISCORD_WEBHOOK_URL: process.env.DISCORD_WEBHOOK_URL || '',
+
+  // Telegram Channel Settings (Bot API)
+  ENABLE_TELEGRAM:
+    process.env.ENABLE_TELEGRAM === 'true' ||
+    (process.env.ENABLE_TELEGRAM !== 'false' && !!process.env.TELEGRAM_BOT_TOKEN && !!process.env.TELEGRAM_CHAT_ID),
+  TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || '',
+  TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID || '',
 
   // Email Channel Settings (Unified for SMTP, SendGrid, and AWS SES)
   ENABLE_SMTP:

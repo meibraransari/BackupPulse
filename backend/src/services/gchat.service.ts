@@ -359,3 +359,101 @@ export async function sendTestGoogleChatNotification(): Promise<{ success: boole
   return res;
 }
 
+export async function sendGoogleChatInstantAlert(report: {
+  projectName: string;
+  serverId: string;
+  hostname: string;
+  backupType: string;
+  status: string;
+  durationSeconds: number;
+  backupSizeBytes: bigint | number;
+  errorMessage?: string | null;
+  anomalyReason?: string | null;
+  isAnomaly?: boolean;
+}): Promise<{ success: boolean; message: string }> {
+  const isAnomaly = report.isAnomaly || false;
+  const statusEmoji = isAnomaly ? '⚠️' : '🚨';
+  const alertTitle = isAnomaly
+    ? `Backup Anomaly Alert: ${report.projectName}`
+    : `Backup Failure Alert: ${report.projectName}`;
+  const diagnostic = report.errorMessage || report.anomalyReason || 'Unknown error occurred.';
+
+  const cardPayload = {
+    cardsV2: [
+      {
+        cardId: `backup_instant_alert_${Date.now()}`,
+        card: {
+          header: {
+            title: `${statusEmoji} ${alertTitle}`,
+            subtitle: `Server: ${report.serverId} (${report.hostname}) • ${new Date().toISOString()}`,
+            imageUrl: isAnomaly
+              ? 'https://cdn-icons-png.flaticon.com/512/595/595067.png'
+              : 'https://cdn-icons-png.flaticon.com/512/753/753345.png',
+            imageType: 'CIRCLE',
+          },
+          sections: [
+            {
+              header: 'Incident Details',
+              widgets: [
+                {
+                  decoratedText: {
+                    topLabel: 'Status / Type',
+                    text: `<b>${report.status}</b> | ${report.backupType.toUpperCase()} Backup`,
+                    startIcon: { knownIcon: 'DESCRIPTION' },
+                  },
+                },
+                {
+                  decoratedText: {
+                    topLabel: 'Archive Size & Duration',
+                    text: `${formatBytes(report.backupSizeBytes)} in ${report.durationSeconds}s`,
+                    startIcon: { knownIcon: 'CLOCK' },
+                  },
+                },
+                {
+                  decoratedText: {
+                    topLabel: 'Error / Reason',
+                    text: `<font color="#d93025">${diagnostic.slice(0, 500)}</font>`,
+                    wrapText: true,
+                  },
+                },
+                {
+                  buttonList: {
+                    buttons: [
+                      {
+                        text: 'Open Incident Dashboard',
+                        onClick: {
+                          openLink: {
+                            url: config.APP_BASE_URL,
+                          },
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ],
+  };
+
+  const res = await sendGoogleChatMessage(cardPayload);
+
+  await recordNotificationLog({
+    channel: 'GOOGLE_CHAT',
+    eventType: 'FAILURE_ALERT',
+    recipient: getMaskedWebhookUrl(config.GOOGLE_CHAT_WEBHOOK_URL),
+    status: res.success ? 'SUCCESS' : 'FAILED',
+    message: res.message,
+    payload: {
+      project: report.projectName,
+      server: report.serverId,
+      status: report.status,
+      error: diagnostic,
+    },
+  });
+
+  return res;
+}
+

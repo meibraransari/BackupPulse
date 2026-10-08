@@ -11,6 +11,7 @@ import {
   TrendItem,
   User,
   UserLoginLog,
+  ApiKeyItem,
 } from '../types';
 
 const TOKEN_KEY = 'backup_monitor_auth_token';
@@ -245,9 +246,35 @@ export const api = {
     });
   },
 
+  async testSlack(): Promise<{ success: boolean; message: string }> {
+    return request<{ success: boolean; message: string }>('/api/v1/notifications/test-slack', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  },
+
+  async testDiscord(): Promise<{ success: boolean; message: string }> {
+    return request<{ success: boolean; message: string }>('/api/v1/notifications/test-discord', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  },
+
+  async testTelegram(): Promise<{ success: boolean; message: string }> {
+    return request<{ success: boolean; message: string }>('/api/v1/notifications/test-telegram', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  },
+
   async getNotificationStatus(): Promise<{
+    instantAlerts?: { enabled: boolean };
     googleChat: { enabled: boolean; configured: boolean };
+    email?: { enabled: boolean; configured: boolean; provider?: string; from?: string; to?: string };
     smtp: { enabled: boolean; configured: boolean; host: string; port: number; from: string; to: string };
+    slack?: { enabled: boolean; configured: boolean };
+    discord?: { enabled: boolean; configured: boolean };
+    telegram?: { enabled: boolean; configured: boolean };
     cron: { expression: string; active: boolean };
   }> {
     return request('/api/v1/notifications/status');
@@ -256,21 +283,38 @@ export const api = {
   async triggerDailyReport(): Promise<{
     success: boolean;
     message: string;
-    channels?: {
-      googleChat?: { success: boolean; message: string };
-      smtp?: { success: boolean; message: string };
-    };
+    channels?: Record<string, { success?: boolean; message?: string; attempted?: boolean }>;
   }> {
     return request<{
       success: boolean;
       message: string;
-      channels?: {
-        googleChat?: { success: boolean; message: string };
-        smtp?: { success: boolean; message: string };
-      };
+      channels?: Record<string, { success?: boolean; message?: string; attempted?: boolean }>;
     }>('/api/v1/notifications/trigger-daily-report', {
       method: 'POST',
       body: JSON.stringify({}),
+    });
+  },
+
+  // API Key Management (Per-Server / Per-Project Tokens)
+  async getApiKeys(): Promise<{ data: ApiKeyItem[] }> {
+    return request<{ data: ApiKeyItem[] }>('/api/v1/api-keys');
+  },
+
+  async createApiKey(data: {
+    name: string;
+    serverId?: string;
+    projectName?: string;
+    expiresInDays?: number;
+  }): Promise<{ success: boolean; message: string; key: string; apiKey: ApiKeyItem }> {
+    return request('/api/v1/api-keys', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async revokeApiKey(id: string): Promise<{ success: boolean; message: string; apiKey: ApiKeyItem }> {
+    return request(`/api/v1/api-keys/${id}`, {
+      method: 'DELETE',
     });
   },
 

@@ -21,6 +21,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { BackupReport } from '../types';
+import { useTimezone } from '../context/TimezoneContext';
 
 interface BackupTableProps {
   data: BackupReport[];
@@ -76,6 +77,8 @@ export const BackupTable: React.FC<BackupTableProps> = ({
   onSelectReport,
   onMarkSuccess,
 }) => {
+  const { formatTimestamp, formatDateOnly, formatTimeOnly } = useTimezone();
+
   // Column Widths with LocalStorage persistence
   const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
     try {
@@ -286,7 +289,7 @@ export const BackupTable: React.FC<BackupTableProps> = ({
           className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-950/80 text-red-400 border border-red-800/70 shrink-0 shadow-sm"
           title={
             report.expiresAt
-              ? `Expired on ${new Date(report.expiresAt).toLocaleDateString()}${report.daysAgoExpired !== null && report.daysAgoExpired !== undefined ? ` (${report.daysAgoExpired}d ago)` : ''}`
+              ? `Expired on ${formatDateOnly(report.expiresAt)}${report.daysAgoExpired !== null && report.daysAgoExpired !== undefined ? ` (${report.daysAgoExpired}d ago)` : ''}`
               : 'Backup expired based on retention policy'
           }
         >
@@ -301,7 +304,7 @@ export const BackupTable: React.FC<BackupTableProps> = ({
         className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 shrink-0 shadow-sm"
         title={
           report.expiresAt
-            ? `Active in S3 bucket. Expires on ${new Date(report.expiresAt).toLocaleDateString()}${report.daysRemaining !== null && report.daysRemaining !== undefined ? ` (${report.daysRemaining}d left)` : ''}`
+            ? `Active in S3 bucket. Expires on ${formatDateOnly(report.expiresAt)}${report.daysRemaining !== null && report.daysRemaining !== undefined ? ` (${report.daysRemaining}d left)` : ''}`
             : 'Active in S3 bucket'
         }
       >
@@ -536,13 +539,8 @@ export const BackupTable: React.FC<BackupTableProps> = ({
                       </td>
 
                       {/* Timestamp */}
-                      <td className="py-3.5 px-3.5 whitespace-nowrap text-xs text-slate-400 overflow-hidden">
-                        {new Date(report.createdAt).toLocaleString(undefined, {
-                          month: 'short',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
+                      <td className="py-3.5 px-3.5 whitespace-nowrap text-xs text-slate-400 overflow-hidden font-mono text-[11px]">
+                        {formatTimestamp(report.createdAt)}
                       </td>
 
                       {/* Actions Column */}
@@ -719,7 +717,7 @@ export const BackupTable: React.FC<BackupTableProps> = ({
                                   <p className="font-medium text-blue-200">
                                     Manually resolved by{' '}
                                     <span className="font-semibold">{report.metadata?.resolved_by || 'Admin'}</span> on{' '}
-                                    {new Date(report.metadata?.resolved_at || report.createdAt).toLocaleString()}
+                                    {formatTimestamp(report.metadata?.resolved_at || report.createdAt)}
                                   </p>
                                   {report.metadata?.notes && (
                                     <p className="text-blue-300/80 mt-1 italic">
@@ -753,11 +751,10 @@ export const BackupTable: React.FC<BackupTableProps> = ({
                               <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800/80">
                                 <span className="text-[11px] text-slate-400">Execution Window</span>
                                 <p className="text-[11px] font-mono text-slate-300 mt-0.5">
-                                  {new Date(report.startTime).toLocaleTimeString()} →{' '}
-                                  {new Date(report.endTime).toLocaleTimeString()}
+                                  {formatTimeOnly(report.startTime)} → {formatTimeOnly(report.endTime)}
                                 </p>
-                                <p className="text-[10px] text-slate-500">
-                                  {new Date(report.startTime).toLocaleDateString()}
+                                <p className="text-[10px] text-slate-500 font-mono">
+                                  {formatDateOnly(report.startTime)}
                                 </p>
                               </div>
 
@@ -884,7 +881,7 @@ export const BackupTable: React.FC<BackupTableProps> = ({
                                       {getAvailabilityBadge(report)}
                                       {report.expiresAt && (
                                         <span className="text-xs text-slate-400">
-                                          ({report.isExpired ? 'Expired' : 'Expires'}: {new Date(report.expiresAt).toLocaleDateString()}
+                                          ({report.isExpired ? 'Expired' : 'Expires'}: {formatDateOnly(report.expiresAt)}
                                           {report.daysRemaining !== null && report.daysRemaining !== undefined ? ` • ${report.daysRemaining}d remaining` : ''}
                                           {report.daysAgoExpired !== null && report.daysAgoExpired !== undefined ? ` • ${report.daysAgoExpired}d ago` : ''})
                                         </span>

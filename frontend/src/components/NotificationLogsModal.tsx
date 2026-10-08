@@ -14,9 +14,12 @@ import {
   Loader2,
   Copy,
   Check,
+  Hash,
+  MessageSquare,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { NotificationLogItem } from '../types';
+import { useTimezone } from '../context/TimezoneContext';
 
 interface NotificationLogsModalProps {
   isOpen: boolean;
@@ -27,6 +30,7 @@ export const NotificationLogsModal: React.FC<NotificationLogsModalProps> = ({
   isOpen,
   onClose,
 }) => {
+  const { formatTimestamp } = useTimezone();
   const [logs, setLogs] = useState<NotificationLogItem[]>([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 12, total: 0, totalPages: 1 });
   const [loading, setLoading] = useState<boolean>(true);
@@ -35,6 +39,30 @@ export const NotificationLogsModal: React.FC<NotificationLogsModalProps> = ({
   const [page, setPage] = useState<number>(1);
   const [selectedLog, setSelectedLog] = useState<NotificationLogItem | null>(null);
   const [copiedPayload, setCopiedPayload] = useState<boolean>(false);
+  const [testSending, setTestSending] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const handleTriggerTest = async (targetChannel: string) => {
+    setTestSending(targetChannel);
+    setTestResult(null);
+    try {
+      let res: { success: boolean; message: string };
+      if (targetChannel === 'GOOGLE_CHAT') res = await api.testGoogleChat();
+      else if (targetChannel === 'SMTP' || targetChannel === 'EMAIL' || targetChannel === 'SENDGRID' || targetChannel === 'AWS_SES') res = await api.testEmail();
+      else if (targetChannel === 'SLACK') res = await api.testSlack();
+      else if (targetChannel === 'DISCORD') res = await api.testDiscord();
+      else if (targetChannel === 'TELEGRAM') res = await api.testTelegram();
+      else res = await api.triggerDailyReport();
+
+      setTestResult({ success: res.success !== false, message: res.message });
+      fetchLogs();
+    } catch (err: any) {
+      setTestResult({ success: false, message: err.message || 'Test failed' });
+    } finally {
+      setTestSending(null);
+      setTimeout(() => setTestResult(null), 6000);
+    }
+  };
 
   const fetchLogs = useCallback(async () => {
     if (!isOpen) return;
@@ -106,6 +134,21 @@ export const NotificationLogsModal: React.FC<NotificationLogsModalProps> = ({
           </div>
 
           <div className="flex items-center space-x-2">
+            {channel !== 'ALL' && (
+              <button
+                onClick={() => handleTriggerTest(channel)}
+                disabled={Boolean(testSending)}
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 flex items-center space-x-1.5 transition-colors disabled:opacity-50"
+                title={`Send a live test alert to ${channel}`}
+              >
+                {testSending === channel ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-400" />
+                ) : (
+                  <Send className="h-3.5 w-3.5 text-sky-400" />
+                )}
+                <span>Test {channel.replace('_', ' ')}</span>
+              </button>
+            )}
             <button
               onClick={fetchLogs}
               disabled={loading}
@@ -123,6 +166,29 @@ export const NotificationLogsModal: React.FC<NotificationLogsModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Test Result Feedback Banner */}
+        {testResult && (
+          <div
+            className={`px-6 py-2.5 text-xs flex items-center justify-between border-b ${
+              testResult.success
+                ? 'bg-emerald-950/70 border-emerald-800 text-emerald-300'
+                : 'bg-rose-950/70 border-rose-800 text-rose-300'
+            }`}
+          >
+            <div className="flex items-center space-x-2">
+              {testResult.success ? (
+                <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+              ) : (
+                <AlertCircle className="h-4 w-4 text-rose-400 shrink-0" />
+              )}
+              <span>{testResult.message}</span>
+            </div>
+            <button onClick={() => setTestResult(null)} className="text-slate-400 hover:text-white">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Filter Toolbar */}
         <div className="px-6 py-3 border-b border-slate-800 bg-slate-900/60 flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -173,6 +239,33 @@ export const NotificationLogsModal: React.FC<NotificationLogsModalProps> = ({
               >
                 <Mail className="h-3 w-3" />
                 <span>AWS SES</span>
+              </button>
+              <button
+                onClick={() => handleChannelChange('SLACK')}
+                className={`px-2.5 py-1 rounded-lg font-medium transition-colors flex items-center space-x-1.5 ${
+                  channel === 'SLACK' ? 'bg-fuchsia-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Hash className="h-3 w-3" />
+                <span>Slack</span>
+              </button>
+              <button
+                onClick={() => handleChannelChange('DISCORD')}
+                className={`px-2.5 py-1 rounded-lg font-medium transition-colors flex items-center space-x-1.5 ${
+                  channel === 'DISCORD' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <MessageSquare className="h-3 w-3" />
+                <span>Discord</span>
+              </button>
+              <button
+                onClick={() => handleChannelChange('TELEGRAM')}
+                className={`px-2.5 py-1 rounded-lg font-medium transition-colors flex items-center space-x-1.5 ${
+                  channel === 'TELEGRAM' ? 'bg-cyan-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Send className="h-3 w-3" />
+                <span>Telegram</span>
               </button>
             </div>
 
@@ -249,13 +342,7 @@ export const NotificationLogsModal: React.FC<NotificationLogsModalProps> = ({
                       onClick={() => setSelectedLog(item)}
                     >
                       <td className="py-3 px-4 whitespace-nowrap font-mono text-[11px] text-slate-400">
-                        {new Date(item.createdAt).toLocaleString(undefined, {
-                          month: 'short',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          second: '2-digit',
-                        })}
+                        {formatTimestamp(item.createdAt)}
                       </td>
 
                       <td className="py-3 px-4 whitespace-nowrap">
@@ -263,6 +350,21 @@ export const NotificationLogsModal: React.FC<NotificationLogsModalProps> = ({
                           <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-700/50">
                             <Bell className="h-3 w-3 text-emerald-400" />
                             <span>Google Chat</span>
+                          </span>
+                        ) : item.channel === 'SLACK' ? (
+                          <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-fuchsia-950/80 text-fuchsia-300 border border-fuchsia-700/50">
+                            <Hash className="h-3 w-3 text-fuchsia-400" />
+                            <span>Slack</span>
+                          </span>
+                        ) : item.channel === 'DISCORD' ? (
+                          <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-950/80 text-indigo-300 border border-indigo-700/50">
+                            <MessageSquare className="h-3 w-3 text-indigo-400" />
+                            <span>Discord</span>
+                          </span>
+                        ) : item.channel === 'TELEGRAM' ? (
+                          <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-cyan-950/80 text-cyan-300 border border-cyan-700/50">
+                            <Send className="h-3 w-3 text-cyan-400" />
+                            <span>Telegram</span>
                           </span>
                         ) : item.channel === 'SENDGRID' ? (
                           <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-sky-950/80 text-sky-300 border border-sky-700/50">
@@ -401,7 +503,7 @@ export const NotificationLogsModal: React.FC<NotificationLogsModalProps> = ({
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[10px] uppercase">Timestamp</span>
-                  <span className="text-slate-300 font-mono">{new Date(selectedLog.createdAt).toISOString()}</span>
+                  <span className="text-slate-300 font-mono">{formatTimestamp(selectedLog.createdAt)}</span>
                 </div>
                 <div className="col-span-2">
                   <span className="text-slate-400 block text-[10px] uppercase">Recipient Endpoint</span>

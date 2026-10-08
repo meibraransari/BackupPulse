@@ -26,6 +26,11 @@ services:
       backup-network:
         aliases:
           - postgres
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # ============================================================================
   # BackupPulse Application (Backend API + Frontend Dashboard in Single Container)
@@ -55,8 +60,16 @@ services:
       INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:-admin}
       INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-Admin@123456}
       REPORT_CRON: ${REPORT_CRON:-0 9 * * *}
+      INSTANT_ALERT_ON_FAILURE: ${INSTANT_ALERT_ON_FAILURE:-true}
       ENABLE_GOOGLE_CHAT: ${ENABLE_GOOGLE_CHAT:-true}
       GOOGLE_CHAT_WEBHOOK_URL: ${GOOGLE_CHAT_WEBHOOK_URL:-}
+      ENABLE_SLACK: ${ENABLE_SLACK:-false}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      ENABLE_DISCORD: ${ENABLE_DISCORD:-false}
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+      ENABLE_TELEGRAM: ${ENABLE_TELEGRAM:-false}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       ENABLE_SMTP: ${ENABLE_SMTP:-false}
       EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}
       EMAIL_FROM: ${EMAIL_FROM:-}
@@ -86,6 +99,11 @@ services:
       retries: 3
     networks:
       - backup-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   postgres_data:

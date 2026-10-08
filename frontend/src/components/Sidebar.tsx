@@ -22,9 +22,12 @@ import {
   X,
   HardDrive,
   Github,
+  Key,
+  Globe,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { User } from '../types';
+import { useTimezone } from '../context/TimezoneContext';
 
 interface SidebarProps {
   user: User | null;
@@ -33,6 +36,7 @@ interface SidebarProps {
   onOpenProfile: () => void;
   onOpenNotificationLogs: () => void;
   onOpenHousekeeping: () => void;
+  onOpenApiKeys?: () => void;
   onLogout: () => void;
 }
 
@@ -43,8 +47,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenProfile,
   onOpenNotificationLogs,
   onOpenHousekeeping,
+  onOpenApiKeys,
   onLogout,
 }) => {
+  const { timezone, toggleTimezone } = useTimezone();
   const [testingGChat, setTestingGChat] = useState(false);
   const [testingSmtp, setTestingSmtp] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -236,6 +242,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
         >
           <HardDrive className="h-4 w-4 text-amber-400" />
           <span>Storage & Housekeeping</span>
+        </button>
+
+        {/* API Ingestion Tokens (Admin Only) */}
+        {onOpenApiKeys && user?.role === 'admin' && (
+          <button
+            onClick={() => {
+              onOpenApiKeys();
+              setMobileOpen(false);
+            }}
+            className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-amber-300 hover:text-white hover:bg-amber-950/40 transition-colors"
+          >
+            <Key className="h-4 w-4 text-amber-400" />
+            <span>API Ingestion Tokens</span>
+          </button>
+        )}
+
+        {/* Timezone Switcher */}
+        <button
+          onClick={toggleTimezone}
+          className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800/60 transition-colors"
+          title={`Active display timezone: ${timezone}. Click to toggle.`}
+        >
+          <div className="flex items-center space-x-2.5">
+            <Globe className="h-4 w-4 text-cyan-400" />
+            <span>Timezone</span>
+          </div>
+          <span className="font-semibold text-cyan-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800 text-[10px]">
+            {timezone === 'UTC' ? '🌐 UTC' : '🕒 Local'}
+          </span>
         </button>
 
         {/* Test Google Chat */}

@@ -11,9 +11,11 @@ import { NotificationLogsModal } from '../components/NotificationLogsModal';
 import { HousekeepingModal } from '../components/HousekeepingModal';
 import { UserProfileModal } from '../components/UserProfileModal';
 import { UserManagementView } from '../components/UserManagementView';
+import { ApiKeysModal } from '../components/ApiKeysModal';
+import { useTimezone } from '../context/TimezoneContext';
 import { api } from '../services/api';
 import { BackupFilters, BackupReport, DashboardStats, ProjectBreakdown, TrendItem, User } from '../types';
-import { RefreshCw, CheckCircle2, Server, Table, Users } from 'lucide-react';
+import { RefreshCw, CheckCircle2, Server, Table, Users, Globe, Key } from 'lucide-react';
 
 interface DashboardPageProps {
   user: User | null;
@@ -65,6 +67,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
   const [showNotificationLogs, setShowNotificationLogs] = useState<boolean>(false);
   const [showHousekeeping, setShowHousekeeping] = useState<boolean>(false);
   const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
+  const [showApiKeysModal, setShowApiKeysModal] = useState<boolean>(false);
+
+  const { timezone, toggleTimezone } = useTimezone();
 
   // Helper to smoothly scroll down to the data table
   const scrollToTable = () => {
@@ -206,6 +211,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
         onOpenProfile={() => setShowProfileModal(true)}
         onOpenNotificationLogs={() => setShowNotificationLogs(true)}
         onOpenHousekeeping={() => setShowHousekeeping(true)}
+        onOpenApiKeys={() => setShowApiKeysModal(true)}
         onLogout={onLogout}
       />
 
@@ -228,7 +234,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             {/* View Switcher Tabs */}
             <div className="flex items-center space-x-1 bg-slate-900 p-1 rounded-2xl border border-slate-800">
               <button
@@ -278,6 +284,28 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
                 )}
               </button>
             </div>
+
+            {/* Timezone Switcher Pill */}
+            <button
+              onClick={toggleTimezone}
+              className="flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-300 bg-slate-900 border border-slate-800 hover:bg-slate-800 transition-colors shadow-sm select-none"
+              title={`Display timezone: ${timezone}. Click to toggle.`}
+            >
+              <Globe className="h-3.5 w-3.5 text-cyan-400" />
+              <span>{timezone === 'UTC' ? '🌐 UTC' : '🕒 Local'}</span>
+            </button>
+
+            {/* API Tokens Modal Button (Admin Only) */}
+            {currentUser?.role === 'admin' && (
+              <button
+                onClick={() => setShowApiKeysModal(true)}
+                className="flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-medium text-amber-300 bg-amber-950/40 border border-amber-600/30 hover:bg-amber-900/60 transition-colors shadow-sm"
+                title="Manage Per-Server & Per-Project API Ingestion Tokens"
+              >
+                <Key className="h-3.5 w-3.5 text-amber-400" />
+                <span className="hidden sm:inline">API Tokens</span>
+              </button>
+            )}
 
             {activeTab === 'telemetry' && (
               <button
@@ -388,6 +416,13 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
           setActionToast('Profile updated successfully.');
           setTimeout(() => setActionToast(null), 4000);
         }}
+      />
+
+      {/* 10. API Ingestion Tokens Management Modal */}
+      <ApiKeysModal
+        isOpen={showApiKeysModal}
+        onClose={() => setShowApiKeysModal(false)}
+        user={currentUser}
       />
 
       {/* Floating Action Toast */}

@@ -99,12 +99,26 @@ export interface BackupFilters {
 
 export interface NotificationLogItem {
   id: string;
-  channel: 'GOOGLE_CHAT' | 'SMTP';
+  channel: string; // GOOGLE_CHAT, SMTP, SENDGRID, AWS_SES, SLACK, DISCORD, TELEGRAM
   eventType: string;
   recipient: string;
   status: 'SUCCESS' | 'FAILED';
   message: string;
   payload?: any;
+  createdAt: string;
+}
+
+export interface ApiKeyItem {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  serverId?: string | null;
+  projectName?: string | null;
+  createdBy?: string | null;
+  isActive: boolean;
+  lastUsedAt?: string | null;
+  expiresAt?: string | null;
+  revokedAt?: string | null;
   createdAt: string;
 }
 

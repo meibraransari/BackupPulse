@@ -1,54 +1,37 @@
 import cron from 'node-cron';
 import { config } from '../config/env';
-import { sendDailyBackupReportToGoogleChat } from './gchat.service';
-import { sendDailyBackupReportEmail } from './smtp.service';
+import { dispatchDailyReportToAllChannels } from './alert-dispatcher.service';
 import { runDatabaseHousekeeping } from './housekeeping.service';
 
 export function initCronJobs(): void {
   // ============================================================================
-  // 1. Automated Daily Telemetry Reports (Google Chat and/or SMTP)
+  // 1. Automated Daily Telemetry Reports (Google Chat, Email, Slack, Discord, Telegram)
   // ============================================================================
-  const isGchatEnabled = config.ENABLE_GOOGLE_CHAT;
-  const isSmtpEnabled = config.ENABLE_SMTP;
+  const isAnyChannelEnabled =
+    config.ENABLE_GOOGLE_CHAT ||
+    config.ENABLE_SMTP ||
+    config.ENABLE_SLACK ||
+    config.ENABLE_DISCORD ||
+    config.ENABLE_TELEGRAM;
 
-  if (isGchatEnabled || isSmtpEnabled) {
+  if (isAnyChannelEnabled) {
     if (cron.validate(config.REPORT_CRON)) {
       cron.schedule(config.REPORT_CRON, async () => {
-        console.log('[CRON] Executing scheduled daily backup summary report...');
-
-        // 1. Dispatch Google Chat report if enabled
-        if (config.ENABLE_GOOGLE_CHAT) {
-          try {
-            const res = await sendDailyBackupReportToGoogleChat();
-            if (res.success) {
-              console.log('[CRON] [GChat] Daily summary report sent successfully.');
-            } else {
-              console.warn('[CRON] [GChat] Skipped or failed:', res.message);
-            }
-          } catch (err: any) {
-            console.error('[CRON] [GChat] Unhandled error:', err.message);
-          }
-        }
-
-        // 2. Dispatch Email report if enabled (SMTP, SendGrid, or AWS SES)
-        if (config.ENABLE_SMTP) {
-          try {
-            const res = await sendDailyBackupReportEmail();
-            const providerTag = (res.provider || config.EMAIL_PROVIDER || 'EMAIL').toUpperCase();
-            if (res.success) {
-              console.log(`[CRON] [${providerTag}] Daily report email sent successfully.`);
-            } else {
-              console.warn(`[CRON] [${providerTag}] Skipped or failed:`, res.message);
-            }
-          } catch (err: any) {
-            console.error(`[CRON] [${(config.EMAIL_PROVIDER || 'EMAIL').toUpperCase()}] Unhandled error:`, err.message);
-          }
+        console.log('[CRON] Executing scheduled daily backup summary report across all enabled channels...');
+        try {
+          const res = await dispatchDailyReportToAllChannels();
+          console.log(`[CRON] ${res.message}`);
+        } catch (err: any) {
+          console.error('[CRON] Unhandled error during scheduled report dispatch:', err.message);
         }
       });
 
       const activeChannels: string[] = [];
-      if (isGchatEnabled) activeChannels.push('Google Chat');
-      if (isSmtpEnabled) activeChannels.push(`Email (${(config.EMAIL_PROVIDER || 'smtp').toUpperCase()})`);
+      if (config.ENABLE_GOOGLE_CHAT) activeChannels.push('Google Chat');
+      if (config.ENABLE_SMTP) activeChannels.push(`Email (${(config.EMAIL_PROVIDER || 'smtp').toUpperCase()})`);
+      if (config.ENABLE_SLACK) activeChannels.push('Slack');
+      if (config.ENABLE_DISCORD) activeChannels.push('Discord');
+      if (config.ENABLE_TELEGRAM) activeChannels.push('Telegram');
 
       console.log(
         `[CRON] Scheduled daily reporter active for [${activeChannels.join(' & ')}] with cron: "${config.REPORT_CRON}"`
@@ -57,7 +40,7 @@ export function initCronJobs(): void {
       console.error(`[CRON] Invalid cron expression: "${config.REPORT_CRON}". Daily reporting not scheduled.`);
     }
   } else {
-    console.log('[CRON] Automated daily reporting is disabled (Both Google Chat and SMTP channels are turned off in settings).');
+    console.log('[CRON] Automated daily reporting is disabled (All notification channels are turned off in settings).');
   }
 
   // ============================================================================

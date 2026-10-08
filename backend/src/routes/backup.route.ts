@@ -1,13 +1,22 @@
 import { FastifyInstance } from 'fastify';
+import crypto from 'crypto';
 import { prisma } from '../db/prisma';
 import { config } from '../config/env';
 import { formatBytes } from '../services/gchat.service';
+import { recordBackupMetrics } from '../services/metrics.service';
+import { dispatchInstantFailureAlert } from '../services/alert-dispatcher.service';
 
 export async function backupRoutes(fastify: FastifyInstance) {
-  // Ingestion API from Shell Script
+  // Ingestion API from Shell Script (Rate limited to 120 per minute to prevent accidental spam)
   fastify.post(
     '/api/v1/backups/report',
     {
+      config: {
+        rateLimit: {
+          max: 120,
+          timeWindow: '1 minute',
+        },
+      },
       schema: {
         description: 'Ingest backup report from shell script running on client servers',
         tags: ['Backup Ingestion'],
@@ -67,12 +76,49 @@ export async function backupRoutes(fastify: FastifyInstance) {
     },
     async (request, reply) => {
       const apiKey = request.headers['x-api-key'] as string;
-
-      if (!apiKey || apiKey !== config.INGESTION_API_KEY) {
-        return reply.status(401).send({ error: 'Unauthorized: Invalid or missing API key' });
+      if (!apiKey) {
+        return reply.status(401).send({ error: 'Unauthorized: Missing x-api-key header' });
       }
 
       const body = request.body as any;
+
+      // Master Ingestion Key Check
+      if (apiKey !== config.INGESTION_API_KEY) {
+        // Per-Server / Per-Project API Key Database Validation
+        const hash = crypto.createHash('sha256').update(apiKey).digest('hex');
+        const keyRecord = await prisma.apiKey.findUnique({
+          where: { keyHash: hash },
+        });
+
+        if (!keyRecord || !keyRecord.isActive || keyRecord.revokedAt) {
+          return reply.status(401).send({ error: 'Unauthorized: Invalid or revoked API key' });
+        }
+
+        if (keyRecord.expiresAt && keyRecord.expiresAt < new Date()) {
+          return reply.status(401).send({ error: 'Unauthorized: API key has expired' });
+        }
+
+        // Validate server / project scope constraints
+        if (keyRecord.serverId && keyRecord.serverId !== body.server_id) {
+          return reply.status(403).send({
+            error: `Forbidden: API key is restricted to server '${keyRecord.serverId}', but report is from '${body.server_id}'`,
+          });
+        }
+
+        if (keyRecord.projectName && keyRecord.projectName !== body.project_name) {
+          return reply.status(403).send({
+            error: `Forbidden: API key is restricted to project '${keyRecord.projectName}', but report is for '${body.project_name}'`,
+          });
+        }
+
+        // Asynchronously touch lastUsedAt without slowing ingestion response
+        prisma.apiKey
+          .update({
+            where: { id: keyRecord.id },
+            data: { lastUsedAt: new Date() },
+          })
+          .catch((err) => console.warn('[API-KEY] Error updating lastUsedAt:', err.message));
+      }
 
       const startTime = new Date(body.start_time);
       const endTime = new Date(body.end_time);
@@ -170,6 +216,34 @@ export async function backupRoutes(fastify: FastifyInstance) {
           expiresAt,
         },
       });
+
+      // Record Prometheus Metrics
+      recordBackupMetrics({
+        status: report.status,
+        projectName: report.projectName,
+        serverId: report.serverId,
+        backupType: report.backupType,
+        backupSizeBytes: report.backupSizeBytes,
+        durationSeconds: report.durationSeconds,
+      });
+
+      // Real-Time Instant Failure Alert Dispatch (Google Chat, Email, Slack, Discord, Telegram)
+      if (report.status === 'FAILED' || report.isAnomaly) {
+        dispatchInstantFailureAlert({
+          projectName: report.projectName,
+          serverId: report.serverId,
+          hostname: report.hostname,
+          backupType: report.backupType,
+          status: report.status,
+          durationSeconds: report.durationSeconds,
+          backupSizeBytes: report.backupSizeBytes,
+          errorMessage: report.errorMessage,
+          anomalyReason: report.anomalyReason,
+          isAnomaly: report.isAnomaly,
+        }).catch((err) => {
+          console.error('[INSTANT-ALERT] Background dispatch error:', err.message);
+        });
+      }
 
       return reply.status(201).send({
         success: true,

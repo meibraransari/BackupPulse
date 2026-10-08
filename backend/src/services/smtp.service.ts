@@ -592,3 +592,133 @@ export async function sendDailyBackupReportEmail(): Promise<{ success: boolean; 
     };
   }
 }
+
+/**
+ * Dispatches an immediate high-priority alert email on backup failure or critical anomaly
+ */
+export async function sendInstantFailureEmail(report: {
+  projectName: string;
+  serverId: string;
+  hostname: string;
+  backupType: string;
+  status: string;
+  durationSeconds: number;
+  backupSizeBytes: bigint | number;
+  errorMessage?: string | null;
+  anomalyReason?: string | null;
+  isAnomaly?: boolean;
+}): Promise<{ success: boolean; message: string; provider?: string }> {
+  if (!config.ENABLE_SMTP && !config.ENABLE_EMAIL) {
+    return { success: false, message: 'Email reporting is disabled.' };
+  }
+
+  const recipient = config.EMAIL_TO || config.SMTP_TO;
+  if (!recipient) {
+    return { success: false, message: 'Recipient email address is not configured.' };
+  }
+
+  const isAnomaly = report.isAnomaly || false;
+  const statusEmoji = isAnomaly ? '⚠️' : '🚨';
+  const alertHeader = isAnomaly
+    ? `Backup Anomaly Warning: ${report.projectName}`
+    : `Backup Run Failed: ${report.projectName}`;
+  const diagnostic = report.errorMessage || report.anomalyReason || 'Execution failure reported.';
+
+  const subject = `${statusEmoji} [BackupPulse Alert] ${alertHeader} (${report.hostname})`;
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0f172a; color: #f8fafc; margin: 0; padding: 24px; }
+    .card { background-color: #1e293b; border-radius: 12px; max-width: 650px; margin: 0 auto; overflow: hidden; border: 1px solid #334155; }
+    .header { background: linear-gradient(135deg, ${isAnomaly ? '#b45309, #d97706' : '#991b1b, #dc2626'}); padding: 24px 32px; color: #ffffff; }
+    .header h1 { margin: 0; font-size: 20px; font-weight: 700; }
+    .header p { margin: 4px 0 0 0; opacity: 0.9; font-size: 13px; }
+    .content { padding: 28px 32px; }
+    .metric-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 20px; }
+    .metric-box { background-color: #0f172a; padding: 12px 16px; border-radius: 8px; border: 1px solid #334155; }
+    .metric-label { font-size: 11px; text-transform: uppercase; color: #94a3b8; font-weight: 600; }
+    .metric-val { font-size: 16px; font-weight: 700; color: #f8fafc; margin-top: 4px; }
+    .diag-box { background-color: #090d16; border-left: 4px solid ${isAnomaly ? '#f59e0b' : '#ef4444'}; padding: 16px; border-radius: 4px; font-family: monospace; font-size: 13px; color: #fca5a5; overflow-x: auto; margin: 20px 0; }
+    .btn { display: inline-block; background-color: #3b82f6; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: 600; font-size: 14px; text-align: center; }
+    .footer { text-align: center; padding: 20px; color: #64748b; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>${statusEmoji} ${alertHeader}</h1>
+      <p>Server: ${report.serverId} (${report.hostname}) • ${new Date().toUTCString()}</p>
+    </div>
+    <div class="content">
+      <div class="metric-grid">
+        <div class="metric-box">
+          <div class="metric-label">Project</div>
+          <div class="metric-val">${report.projectName}</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-label">Status</div>
+          <div class="metric-val" style="color: ${isAnomaly ? '#fbbf24' : '#f87171'}">${report.status}</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-label">Backup Type</div>
+          <div class="metric-val">${report.backupType.toUpperCase()}</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-label">Duration</div>
+          <div class="metric-val">${report.durationSeconds}s</div>
+        </div>
+      </div>
+
+      <div class="metric-label">Diagnostic Error Details:</div>
+      <div class="diag-box">${diagnostic}</div>
+
+      <div style="text-align: center; margin-top: 24px;">
+        <a href="${config.APP_BASE_URL}" class="btn">View Live Telemetry Dashboard</a>
+      </div>
+    </div>
+    <div class="footer">
+      Automated Incident Alert from BackupPulse Watchdog
+    </div>
+  </div>
+</body>
+</html>`;
+
+  try {
+    const result = await dispatchEmail({ subject, html });
+
+    await recordNotificationLog({
+      channel: result.provider,
+      eventType: 'FAILURE_ALERT',
+      recipient,
+      status: 'SUCCESS',
+      message: `Instant alert email sent via ${result.provider} to ${recipient}`,
+      payload: {
+        project: report.projectName,
+        server: report.serverId,
+        status: report.status,
+      },
+    });
+
+    return {
+      success: true,
+      message: `Instant alert email sent via ${result.provider} to ${recipient}`,
+      provider: result.provider,
+    };
+  } catch (err: any) {
+    const provider = (config.EMAIL_PROVIDER || 'smtp').toUpperCase();
+    console.error(`[EMAIL] Failed to send instant failure alert:`, err.message);
+
+    await recordNotificationLog({
+      channel: provider,
+      eventType: 'FAILURE_ALERT',
+      recipient,
+      status: 'FAILED',
+      message: `Failed to dispatch instant alert email: ${err.message}`,
+    });
+
+    return { success: false, message: err.message, provider };
+  }
+}
