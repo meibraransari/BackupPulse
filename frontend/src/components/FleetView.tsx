@@ -24,6 +24,7 @@ import { FleetSummary, ServerFleetItem } from '../types';
 
 interface FleetViewProps {
   onSelectServer?: (serverId: string) => void;
+  onOpenDeployWizard?: () => void;
 }
 
 const MUTE_REASONS = [
@@ -34,7 +35,7 @@ const MUTE_REASONS = [
   'Custom note (specify below)',
 ];
 
-export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer }) => {
+export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer, onOpenDeployWizard }) => {
   const [fleet, setFleet] = useState<ServerFleetItem[]>([]);
   const [summary, setSummary] = useState<FleetSummary | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -308,6 +309,17 @@ export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer }) => {
             </button>
           </div>
 
+          {onOpenDeployWizard && (
+            <button
+              onClick={onOpenDeployWizard}
+              className="flex items-center space-x-1.5 px-3 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-xl text-xs font-semibold shadow-md shadow-indigo-500/20 transition-all active:scale-95"
+              title="1-Click Deploy New Server Wizard"
+            >
+              <Sparkles className="h-3.5 w-3.5 text-indigo-200" />
+              <span className="hidden sm:inline">Deploy Server</span>
+            </button>
+          )}
+
           <button
             onClick={fetchFleet}
             disabled={loading}
@@ -332,6 +344,15 @@ export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer }) => {
           <p className="text-xs text-slate-500 mt-1">
             No server matched your search query or filter selection.
           </p>
+          {onOpenDeployWizard && (
+            <button
+              onClick={onOpenDeployWizard}
+              className="mt-4 inline-flex items-center space-x-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl shadow-md transition-all active:scale-95"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              <span>Launch Deploy Server Wizard</span>
+            </button>
+          )}
         </div>
       ) : displayMode === 'grid' ? (
         /* Card Grid View */

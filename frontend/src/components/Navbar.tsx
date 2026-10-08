@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import { Database, Bell, Mail, BookOpen, LogOut, ShieldCheck, CheckCircle2, AlertCircle, Loader2, Send, Trash2, Globe, Key } from 'lucide-react';
+import { Database, Bell, Mail, BookOpen, LogOut, CheckCircle2, AlertCircle, Loader2, Send } from 'lucide-react';
 import { api } from '../services/api';
 import { User } from '../types';
-import { useTimezone } from '../context/TimezoneContext';
 
 interface NavbarProps {
   user: User | null;
@@ -19,7 +18,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenHousekeeping,
   onOpenApiKeys,
 }) => {
-  const { timezone, toggleTimezone } = useTimezone();
   const [testingGChat, setTestingGChat] = useState(false);
   const [testingSmtp, setTestingSmtp] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -140,27 +138,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            {/* API Tokens Management (Admin Only) */}
-            {onOpenApiKeys && user?.role === 'admin' && (
-              <button
-                onClick={onOpenApiKeys}
-                className="flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium text-amber-300 bg-amber-950/60 hover:bg-amber-900/80 transition-colors border border-amber-600/30"
-                title="Manage per-server and per-project API tokens"
-              >
-                <Key className="h-3.5 w-3.5 text-amber-400" />
-                <span className="hidden xl:inline">API Tokens</span>
-              </button>
-            )}
 
-            {/* Timezone Switcher Toggle (UTC vs Local) */}
-            <button
-              onClick={toggleTimezone}
-              className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-300 bg-slate-800 hover:bg-slate-700 hover:text-white transition-all border border-slate-700 select-none cursor-pointer"
-              title={`Active display timezone: ${timezone}. Click to toggle between Local and UTC.`}
-            >
-              <Globe className="h-3.5 w-3.5 text-cyan-400" />
-              <span>{timezone === 'UTC' ? 'UTC' : 'Local'}</span>
-            </button>
 
             {/* User Profile & Logout */}
             <div className="flex items-center space-x-3 pl-3 border-l border-slate-800">

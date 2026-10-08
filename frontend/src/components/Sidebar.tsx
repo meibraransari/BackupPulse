@@ -24,6 +24,7 @@ import {
   Github,
   Key,
   Globe,
+  Sparkles,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { User } from '../types';
@@ -37,6 +38,7 @@ interface SidebarProps {
   onOpenNotificationLogs: () => void;
   onOpenHousekeeping: () => void;
   onOpenApiKeys?: () => void;
+  onOpenDeployWizard?: () => void;
   onLogout: () => void;
 }
 
@@ -48,6 +50,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenNotificationLogs,
   onOpenHousekeeping,
   onOpenApiKeys,
+  onOpenDeployWizard,
   onLogout,
 }) => {
   const { timezone, toggleTimezone } = useTimezone();
@@ -243,6 +246,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <HardDrive className="h-4 w-4 text-amber-400" />
           <span>Storage & Housekeeping</span>
         </button>
+
+        {/* Deploy Server Wizard */}
+        {onOpenDeployWizard && (
+          <button
+            onClick={() => {
+              onOpenDeployWizard();
+              setMobileOpen(false);
+            }}
+            className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-emerald-300 hover:text-white hover:bg-emerald-950/50 transition-colors group"
+          >
+            <Sparkles className="h-4 w-4 text-emerald-400 group-hover:rotate-12 transition-transform" />
+            <span>Deploy Server Wizard</span>
+          </button>
+        )}
 
         {/* API Ingestion Tokens (Admin Only) */}
         {onOpenApiKeys && user?.role === 'admin' && (
