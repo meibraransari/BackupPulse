@@ -103,6 +103,54 @@ BackupPulse includes an enterprise multi-channel notification and alert dispatch
 When enabled, the exact second any backup reports `status === 'FAILED'` or is flagged with a critical size drop anomaly (`isAnomaly === true`), high-priority alerts are immediately dispatched to **all enabled channels** (Google Chat, Email, Slack, Discord, Telegram) without waiting for the scheduled morning digest.
 - **5-Minute Deduplication Cooldown**: Automatically prevents alert spam from rapid or broken cron loops on individual servers while recording every run in the database.
 
+### Notification Settings in `.env`
+
+```ini
+# --- Real-Time Instant Alerts ---
+INSTANT_ALERT_ON_FAILURE=true
+
+# --- Scheduled Summary Digest Cron (default: 9:00 AM daily) ---
+REPORT_CRON="0 9 * * *"
+
+# --- Channel 1: Google Chat ---
+ENABLE_GOOGLE_CHAT=true
+GOOGLE_CHAT_WEBHOOK_URL="https://chat.googleapis.com/v1/spaces/YOUR_SPACE/messages?key=...&token=..."
+
+# --- Channel 2: Email Reporting (SMTP / SendGrid / AWS SES) ---
+ENABLE_SMTP=true
+EMAIL_PROVIDER=smtp  # 'smtp' | 'sendgrid' | 'ses'
+EMAIL_FROM="BackupPulse Central <alerts@yourdomain.com>"
+EMAIL_TO="devops@yourdomain.com,team-lead@yourdomain.com"
+
+# Standard SMTP Relay (e.g. Gmail, Postfix, Office 365)
+SMTP_HOST="smtp.gmail.com"
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER="alerts@yourdomain.com"
+SMTP_PASSWORD="your-app-password"
+
+# SendGrid Web API v3
+SENDGRID_API_KEY="SG.your_sendgrid_api_key_here"
+
+# AWS SES (Simple Email Service)
+AWS_SES_REGION="us-east-1"
+# Optional explicit credentials (omit to use AWS IAM instance profiles / ECS / EKS roles):
+AWS_SES_ACCESS_KEY_ID="AKIAIOSFODNN7EXAMPLE"
+AWS_SES_SECRET_ACCESS_KEY="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+
+# --- Channel 3: Slack (Block Kit) ---
+ENABLE_SLACK=true
+SLACK_WEBHOOK_URL="https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
+
+# --- Channel 4: Discord (Rich Embeds) ---
+ENABLE_DISCORD=true
+DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/000000000000000000/XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+
+# --- Channel 5: Telegram Bot ---
+ENABLE_TELEGRAM=true
+TELEGRAM_BOT_TOKEN="123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
+TELEGRAM_CHAT_ID="-1001234567890"
+```
 
 ### ✉️ Email Report Features (SMTP / SendGrid / AWS SES)
 - **Multi-Provider Support**: Seamlessly route emails through traditional SMTP, high-deliverability SendGrid Web API, or cost-effective AWS SES with automatic IAM role fallback.
