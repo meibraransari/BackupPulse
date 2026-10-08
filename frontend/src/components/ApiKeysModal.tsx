@@ -15,6 +15,7 @@ import {
   Search,
   CheckCircle2,
   Calendar,
+  Ban,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { ApiKeyItem, User } from '../types';
@@ -46,7 +47,9 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose, use
   const [copiedToken, setCopiedToken] = useState<boolean>(false);
 
   // Revoke state
+  const [keyToRevoke, setKeyToRevoke] = useState<ApiKeyItem | null>(null);
   const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
 
   const fetchKeys = useCallback(async () => {
     if (!isOpen) return;
@@ -66,6 +69,8 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose, use
       fetchKeys();
       setShowCreateForm(false);
       setNewlyCreatedKey(null);
+      setKeyToRevoke(null);
+      setRevokeError(null);
       setFormError(null);
     }
   }, [isOpen, fetchKeys]);
@@ -102,17 +107,21 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose, use
     }
   };
 
-  const handleRevoke = async (id: string, keyName: string) => {
-    if (!confirm(`Are you sure you want to revoke API Token "${keyName}"? Scripts using this key will immediately be rejected.`)) {
-      return;
-    }
+  const handleOpenRevoke = (keyItem: ApiKeyItem) => {
+    setKeyToRevoke(keyItem);
+    setRevokeError(null);
+  };
 
-    setRevokingId(id);
+  const handleConfirmRevoke = async () => {
+    if (!keyToRevoke) return;
+    setRevokingId(keyToRevoke.id);
+    setRevokeError(null);
     try {
-      await api.revokeApiKey(id);
-      fetchKeys();
+      await api.revokeApiKey(keyToRevoke.id);
+      setKeyToRevoke(null);
+      await fetchKeys();
     } catch (err: any) {
-      alert(`Failed to revoke token: ${err.message}`);
+      setRevokeError(err.message || 'Failed to revoke token');
     } finally {
       setRevokingId(null);
     }
@@ -437,12 +446,11 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose, use
                         <td className="py-3 px-4 text-right">
                           {!isRevoked && (
                             <button
-                              onClick={() => handleRevoke(item.id, item.name)}
-                              disabled={revokingId === item.id}
-                              className="px-2.5 py-1 text-[11px] font-semibold text-rose-400 hover:text-rose-200 hover:bg-rose-950/50 rounded-lg transition-colors border border-rose-900/40"
+                              onClick={() => handleOpenRevoke(item)}
+                              className="px-2.5 py-1 text-[11px] font-semibold text-rose-400 hover:text-rose-200 hover:bg-rose-950/50 rounded-lg transition-colors border border-rose-900/40 hover:border-rose-700/60 shadow-sm"
                               title="Immediately revoke this token"
                             >
-                              {revokingId === item.id ? 'Revoking...' : 'Revoke'}
+                              Revoke
                             </button>
                           )}
                         </td>
@@ -455,6 +463,138 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose, use
           )}
         </div>
       </div>
+
+      {/* ================= FANCY REVOKE TOKEN CONFIRMATION MODAL ================= */}
+      {keyToRevoke && (
+        <div
+          className="fixed inset-0 z-[60] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => {
+            if (!revokingId) setKeyToRevoke(null);
+          }}
+        >
+          <div
+            className="bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border border-rose-500/30 rounded-3xl w-full max-w-md shadow-2xl shadow-rose-950/60 overflow-hidden relative animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Ambient Background Glow */}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-32 bg-rose-500/15 rounded-full blur-3xl pointer-events-none" />
+
+            {/* Top Close Button */}
+            <button
+              onClick={() => {
+                if (!revokingId) setKeyToRevoke(null);
+              }}
+              disabled={Boolean(revokingId)}
+              className="absolute top-4 right-4 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors z-10 disabled:opacity-40"
+              title="Cancel and close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            <div className="p-6 text-center space-y-4">
+              {/* Glowing Shield Icon */}
+              <div className="relative mx-auto mt-1 mb-2">
+                <div className="absolute -inset-1.5 rounded-2xl bg-gradient-to-r from-rose-600 to-red-600 opacity-30 blur-lg animate-pulse" />
+                <div className="relative h-16 w-16 rounded-2xl bg-gradient-to-tr from-rose-950 via-slate-900 to-rose-900/60 border border-rose-500/40 flex items-center justify-center text-rose-400 shadow-xl shadow-rose-950/50 mx-auto">
+                  <ShieldAlert className="h-8 w-8 text-rose-400 animate-pulse" />
+                </div>
+              </div>
+
+              {/* Title & Badge */}
+              <div>
+                <span className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold tracking-wider uppercase bg-rose-950/80 text-rose-300 border border-rose-800/60 mb-2">
+                  <Ban className="h-3 w-3" />
+                  <span>Immediate Access Revocation</span>
+                </span>
+                <h3 className="text-lg font-bold text-white tracking-tight">
+                  Revoke Ingestion Token?
+                </h3>
+                <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                  You are about to permanently deactivate this token. Any client backup scripts using this key will immediately be blocked.
+                </p>
+              </div>
+
+              {/* Token Details Card */}
+              <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 text-left space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2 min-w-0">
+                    <Key className="h-4 w-4 text-amber-400 shrink-0" />
+                    <span className="text-xs font-semibold text-white truncate" title={keyToRevoke.name}>
+                      {keyToRevoke.name}
+                    </span>
+                  </div>
+                  <span className="font-mono text-[11px] text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800 shrink-0">
+                    {keyToRevoke.keyPrefix}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/80 text-[11px]">
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">Server Scope</span>
+                    <span className="text-slate-300 font-mono truncate block" title={keyToRevoke.serverId || 'All Servers'}>
+                      {keyToRevoke.serverId || '🌐 All Servers'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">Project Scope</span>
+                    <span className="text-slate-300 font-medium truncate block" title={keyToRevoke.projectName || 'All Projects'}>
+                      {keyToRevoke.projectName || '📁 All Projects'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Critical Warning Callout */}
+              <div className="p-3 rounded-xl bg-rose-950/30 border border-rose-900/40 text-left flex items-start space-x-2.5 text-xs text-rose-300">
+                <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+                <div className="text-[11px] leading-relaxed">
+                  <strong className="text-rose-200">Irreversible Action:</strong> Once revoked, this token can never be restored. You will need to provision and deploy a new token to resume telemetry ingestion.
+                </div>
+              </div>
+
+              {/* Error feedback if any */}
+              {revokeError && (
+                <div className="p-3 rounded-xl bg-rose-950/80 border border-rose-500 text-rose-200 text-xs flex items-center justify-between">
+                  <span>{revokeError}</span>
+                  <button onClick={() => setRevokeError(null)} className="text-rose-400 hover:text-white">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="pt-2 flex items-center justify-end space-x-2.5">
+                <button
+                  type="button"
+                  disabled={Boolean(revokingId)}
+                  onClick={() => setKeyToRevoke(null)}
+                  className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 transition-colors border border-slate-700 disabled:opacity-50"
+                >
+                  Cancel, Keep Token
+                </button>
+                <button
+                  type="button"
+                  disabled={Boolean(revokingId)}
+                  onClick={handleConfirmRevoke}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-rose-600 via-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 shadow-lg shadow-rose-600/30 hover:shadow-rose-600/50 transition-all flex items-center space-x-2 disabled:opacity-50"
+                >
+                  {revokingId ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>Revoking Access...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span>Yes, Revoke Token</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
