@@ -184,9 +184,12 @@ If your admin team already has established backup scripts (running `mysqldump`, 
 ./scripts/send_backup_telemetry.sh "my-database" "db" "SUCCESS" "db_backup.tar.gz"
 
 # Or embed directly in your existing script:
-curl -s -X POST "http://your-backuppulse-hub:3000/api/v1/backups/report" \
+BACKUPPULSE_URL="http://your-backuppulse-hub:3000"
+API_TOKEN="bkp_live_secret_key_12345"
+
+curl -s -X POST "${BACKUPPULSE_URL}/api/v1/backups/report" \
   -H "Content-Type: application/json" \
-  -H "x-api-key: bkp_live_secret_key_12345" \
+  -H "x-api-key: ${API_TOKEN}" \
   -d '{
     "server_id": "dummy-server-01",
     "hostname": "dummy-server-01.example.com",
