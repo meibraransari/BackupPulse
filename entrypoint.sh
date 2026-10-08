@@ -36,21 +36,31 @@ echo -e "${BLUE}${BOLD}---------------------------------------------------------
 echo -e " 🌐 ${BOLD}Environment:${NC}    ${NODE_ENV:-production}"
 echo -e " 🚪 ${BOLD}Listening Port:${NC} ${PORT:-3000}"
 echo -e " 📡 ${BOLD}Base URL:${NC}       ${APP_BASE_URL:-http://localhost:3000}"
+echo -e " ⚡ ${BOLD}Instant Alerts:${NC} ${INSTANT_ALERT_ON_FAILURE:-false}"
 echo -e " 💬 ${BOLD}Google Chat:${NC}    ${ENABLE_GOOGLE_CHAT:-false}"
 echo -e " ✉️  ${BOLD}Email Alerts:${NC}   ${ENABLE_SMTP:-false} (Provider: ${EMAIL_PROVIDER:-smtp})"
+echo -e " 📱 ${BOLD}Slack Alerts:${NC}   ${ENABLE_SLACK:-false}"
+echo -e " 🎮 ${BOLD}Discord Alerts:${NC} ${ENABLE_DISCORD:-false}"
+echo -e " ✈️  ${BOLD}Telegram Alerts:${NC}${ENABLE_TELEGRAM:-false}"
 echo -e " 📖 ${BOLD}Swagger Docs:${NC}   ${ENABLE_SWAGGER:-true}"
 echo -e " 🧹 ${BOLD}Housekeeping:${NC}   ${ENABLE_HOUSEKEEPING:-true} (Retention: ${DB_RETENTION_DAYS:-365} days)"
 echo -e "${BLUE}${BOLD}======================================================================${NC}"
 echo ""
 
 # Run database migrations before starting the service
-echo -e "${YELLOW}🔄 Applying database migrations with Prisma migrate deploy...${NC}"
-if npx prisma migrate deploy; then
-  echo -e "${GREEN}✅ Database migrations deployed successfully.${NC}"
-elif npx prisma db push --skip-generate; then
-  echo -e "${GREEN}✅ Database schema synchronized via db push fallback.${NC}"
+echo -e "${YELLOW}🔄 Synchronizing database schema with Prisma...${NC}"
+if [ -d "prisma/migrations" ] && [ -n "$(find prisma/migrations -name 'migration.sql' 2>/dev/null)" ]; then
+  echo -e "${BLUE}Applying versioned migrations via prisma migrate deploy...${NC}"
+  if ! npx prisma migrate deploy; then
+    echo -e "${YELLOW}⚠️  prisma migrate deploy failed. Falling back to prisma db push...${NC}"
+    npx prisma db push --skip-generate
+  else
+    echo -e "${GREEN}✅ Database migrations deployed successfully.${NC}"
+  fi
 else
-  echo -e "${YELLOW}⚠️  Database migration exited with warning. Proceeding with application startup...${NC}"
+  echo -e "${BLUE}No versioned migrations detected on disk. Synchronizing schema via prisma db push...${NC}"
+  npx prisma db push --skip-generate
+  echo -e "${GREEN}✅ Database schema synchronized successfully.${NC}"
 fi
 
 echo ""
