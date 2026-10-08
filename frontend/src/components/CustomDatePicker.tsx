@@ -20,6 +20,9 @@ const MONTH_NAMES = [
 
 const DAYS_SHORT = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
+const CURRENT_YEAR = new Date().getFullYear();
+const YEAR_OPTIONS = Array.from({ length: 15 }, (_, i) => CURRENT_YEAR - 10 + i);
+
 // Safe Date Parsing & Formatting Helpers (Resilient against UTC timezone skew)
 export const parseYMD = (ymd: string): Date | null => {
   if (!ymd) return null;
@@ -342,12 +345,12 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
       {/* Floating Calendar Popover */}
       {isOpen && (
         <div
-          className={`absolute top-full mt-1.5 z-50 w-72 bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl p-3.5 animate-in fade-in zoom-in-95 duration-150 ${
+          className={`absolute top-full mt-1.5 z-50 w-80 bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl p-3.5 animate-in fade-in zoom-in-95 duration-150 ${
             align === 'right' ? 'right-0' : 'left-0'
           }`}
-          style={{ minWidth: '280px' }}
+          style={{ minWidth: '310px' }}
         >
-          {/* Calendar Header with Navigation */}
+          {/* Calendar Header with Navigation & Direct Month/Year Jump */}
           <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-slate-800/80">
             <button
               type="button"
@@ -358,8 +361,32 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
               <ChevronLeft className="h-4 w-4" />
             </button>
 
-            <div className="text-xs font-semibold text-slate-200">
-              {MONTH_NAMES[viewMonth]} {viewYear}
+            <div className="flex items-center space-x-1.5">
+              <select
+                value={viewMonth}
+                onChange={(e) => setViewMonth(parseInt(e.target.value, 10))}
+                className="bg-slate-950/90 border border-slate-800 hover:border-slate-700 rounded-md px-2 py-0.5 text-xs text-slate-200 font-semibold focus:outline-none focus:border-emerald-500 cursor-pointer"
+                title="Select month"
+              >
+                {MONTH_NAMES.map((name, idx) => (
+                  <option key={name} value={idx} className="bg-slate-900 text-slate-200">
+                    {name}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={viewYear}
+                onChange={(e) => setViewYear(parseInt(e.target.value, 10))}
+                className="bg-slate-950/90 border border-slate-800 hover:border-slate-700 rounded-md px-1.5 py-0.5 text-xs text-slate-200 font-semibold font-mono focus:outline-none focus:border-emerald-500 cursor-pointer"
+                title="Select year"
+              >
+                {YEAR_OPTIONS.map((yr) => (
+                  <option key={yr} value={yr} className="bg-slate-900 text-slate-200">
+                    {yr}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <button
@@ -419,35 +446,73 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
             })}
           </div>
 
-          {/* Quick Presets & Action Footer */}
-          <div className="mt-3 pt-2.5 border-t border-slate-800 flex items-center justify-between text-[11px]">
-            <div className="flex items-center space-x-1.5">
-              <button
-                type="button"
-                onClick={handleSelectToday}
-                className="px-2 py-1 rounded-md bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors font-medium"
-              >
-                Today
-              </button>
-              <button
-                type="button"
-                onClick={handleSelectYesterday}
-                className="px-2 py-1 rounded-md bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
-              >
-                Yesterday
-              </button>
+          {/* Quick Presets & Month/Year Selection Footer */}
+          <div className="mt-3 pt-2.5 border-t border-slate-800 space-y-2 text-[11px]">
+            {/* Month & Year Quick Jump Bar near Today / Yesterday */}
+            <div className="flex items-center justify-between bg-slate-950/80 p-1.5 rounded-xl border border-slate-800/80">
+              <span className="text-[10px] text-slate-400 font-medium px-1">Jump to:</span>
+              <div className="flex items-center space-x-1.5">
+                <select
+                  value={viewMonth}
+                  onChange={(e) => setViewMonth(parseInt(e.target.value, 10))}
+                  className="bg-slate-900 border border-slate-700/80 hover:border-slate-600 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-medium cursor-pointer"
+                  title="Jump to Month"
+                >
+                  {MONTH_NAMES.map((name, idx) => (
+                    <option key={name} value={idx}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={viewYear}
+                  onChange={(e) => setViewYear(parseInt(e.target.value, 10))}
+                  className="bg-slate-900 border border-slate-700/80 hover:border-slate-600 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-medium font-mono cursor-pointer"
+                  title="Jump to Year"
+                >
+                  {YEAR_OPTIONS.map((yr) => (
+                    <option key={yr} value={yr}>
+                      {yr}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
-            {value && (
-              <button
-                type="button"
-                onClick={handleClear}
-                className="px-2 py-1 rounded-md text-red-400 hover:bg-red-950/50 hover:text-red-300 transition-colors flex items-center space-x-1"
-              >
-                <RotateCcw className="h-2.5 w-2.5" />
-                <span>Reset</span>
-              </button>
-            )}
+            {/* Quick Actions Row: Today, Yesterday, Reset */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-1.5">
+                <button
+                  type="button"
+                  onClick={handleSelectToday}
+                  className="px-2.5 py-1 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 hover:text-white transition-colors font-medium border border-slate-700/60 shadow-sm"
+                  title="Select Today's Date"
+                >
+                  Today
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSelectYesterday}
+                  className="px-2.5 py-1 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 hover:text-white transition-colors font-medium border border-slate-700/60 shadow-sm"
+                  title="Select Yesterday's Date"
+                >
+                  Yesterday
+                </button>
+              </div>
+
+              {value && (
+                <button
+                  type="button"
+                  onClick={handleClear}
+                  className="px-2.5 py-1 rounded-lg text-red-400 hover:bg-red-950/60 hover:text-red-300 transition-colors flex items-center space-x-1 border border-red-900/40"
+                  title="Clear Selected Date"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  <span>Reset</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
