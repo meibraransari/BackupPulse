@@ -1,6 +1,7 @@
-import React from 'react';
-import { Search, Filter, Download, RotateCcw, Calendar, FileText, AlertTriangle } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { Search, Download, RotateCcw, FileText, AlertTriangle, CalendarRange } from 'lucide-react';
 import { BackupFilters } from '../types';
+import { CustomDatePicker, formatYMD } from './CustomDatePicker';
 
 interface FilterBarProps {
   filters: BackupFilters;
@@ -21,6 +22,105 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   onExport,
   exporting,
 }) => {
+  // Common Date Presets calculation (resilient against timezone skew)
+  const todayStr = useMemo(() => formatYMD(new Date()), []);
+
+  const yesterdayStr = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return formatYMD(d);
+  }, []);
+
+  const sevenDaysAgoStr = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 6);
+    return formatYMD(d);
+  }, []);
+
+  const fourteenDaysAgoStr = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 13);
+    return formatYMD(d);
+  }, []);
+
+  const thirtyDaysAgoStr = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 29);
+    return formatYMD(d);
+  }, []);
+
+  const startOfMonthStr = useMemo(() => {
+    const d = new Date();
+    return formatYMD(new Date(d.getFullYear(), d.getMonth(), 1));
+  }, []);
+
+  const startOfLastMonthStr = useMemo(() => {
+    const d = new Date();
+    return formatYMD(new Date(d.getFullYear(), d.getMonth() - 1, 1));
+  }, []);
+
+  const endOfLastMonthStr = useMemo(() => {
+    const d = new Date();
+    return formatYMD(new Date(d.getFullYear(), d.getMonth(), 0));
+  }, []);
+
+  // Determine active preset
+  const activeDatePreset = useMemo(() => {
+    const s = filters.startDate;
+    const e = filters.endDate;
+    if (!s && !e) return 'ALL';
+    if (s === todayStr && e === todayStr) return 'TODAY';
+    if (s === yesterdayStr && e === yesterdayStr) return 'YESTERDAY';
+    if (s === sevenDaysAgoStr && e === todayStr) return '7D';
+    if (s === fourteenDaysAgoStr && e === todayStr) return '14D';
+    if (s === thirtyDaysAgoStr && e === todayStr) return '30D';
+    if (s === startOfMonthStr && e === todayStr) return 'THIS_MONTH';
+    if (s === startOfLastMonthStr && e === endOfLastMonthStr) return 'LAST_MONTH';
+    return 'CUSTOM';
+  }, [
+    filters.startDate,
+    filters.endDate,
+    todayStr,
+    yesterdayStr,
+    sevenDaysAgoStr,
+    fourteenDaysAgoStr,
+    thirtyDaysAgoStr,
+    startOfMonthStr,
+    startOfLastMonthStr,
+    endOfLastMonthStr,
+  ]);
+
+  const handleApplyPreset = (preset: string) => {
+    switch (preset) {
+      case 'ALL':
+        onFilterChange({ startDate: '', endDate: '', page: 1 });
+        break;
+      case 'TODAY':
+        onFilterChange({ startDate: todayStr, endDate: todayStr, page: 1 });
+        break;
+      case 'YESTERDAY':
+        onFilterChange({ startDate: yesterdayStr, endDate: yesterdayStr, page: 1 });
+        break;
+      case '7D':
+        onFilterChange({ startDate: sevenDaysAgoStr, endDate: todayStr, page: 1 });
+        break;
+      case '14D':
+        onFilterChange({ startDate: fourteenDaysAgoStr, endDate: todayStr, page: 1 });
+        break;
+      case '30D':
+        onFilterChange({ startDate: thirtyDaysAgoStr, endDate: todayStr, page: 1 });
+        break;
+      case 'THIS_MONTH':
+        onFilterChange({ startDate: startOfMonthStr, endDate: todayStr, page: 1 });
+        break;
+      case 'LAST_MONTH':
+        onFilterChange({ startDate: startOfLastMonthStr, endDate: endOfLastMonthStr, page: 1 });
+        break;
+      default:
+        break;
+    }
+  };
+
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-md space-y-4">
       {/* Top row: Search input + Actions */}
@@ -87,7 +187,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
       </div>
 
       {/* Filter Selectors Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 pt-2 border-t border-slate-800/80">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-8 gap-3 pt-2 border-t border-slate-800/80">
         {/* Project Filter */}
         <div>
           <label className="block text-[11px] font-medium text-slate-400 mb-1">Project</label>
@@ -167,25 +267,57 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           </select>
         </div>
 
-        {/* Date Start */}
+        {/* Quick Date Range Preset Dropdown */}
         <div>
-          <label className="block text-[11px] font-medium text-slate-400 mb-1">From Date</label>
-          <input
-            type="date"
-            value={filters.startDate}
-            onChange={(e) => onFilterChange({ startDate: e.target.value, page: 1 })}
+          <label className="block text-[11px] font-medium text-slate-400 mb-1 flex items-center space-x-1">
+            <CalendarRange className="h-3 w-3 text-emerald-400" />
+            <span>Date Range</span>
+          </label>
+          <select
+            value={activeDatePreset}
+            onChange={(e) => handleApplyPreset(e.target.value)}
             className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
+          >
+            <option value="ALL">All Time</option>
+            <option value="TODAY">Today</option>
+            <option value="YESTERDAY">Yesterday</option>
+            <option value="7D">Last 7 Days</option>
+            <option value="14D">Last 14 Days</option>
+            <option value="30D">Last 30 Days</option>
+            <option value="THIS_MONTH">This Month</option>
+            <option value="LAST_MONTH">Last Month</option>
+            <option value="CUSTOM" disabled>
+              Custom Range
+            </option>
+          </select>
+        </div>
+
+        {/* From Date with Professional Custom Calendar Dropdown */}
+        <div>
+          <CustomDatePicker
+            label="From Date"
+            value={filters.startDate || ''}
+            onChange={(val) => onFilterChange({ startDate: val, page: 1 })}
+            maxDate={filters.endDate || todayStr}
+            compareDate={filters.endDate}
+            isStartDate={true}
+            placeholder="Start date..."
+            align="left"
           />
         </div>
 
-        {/* Date End */}
+        {/* To Date with Professional Custom Calendar Dropdown */}
         <div>
-          <label className="block text-[11px] font-medium text-slate-400 mb-1">To Date</label>
-          <input
-            type="date"
-            value={filters.endDate}
-            onChange={(e) => onFilterChange({ endDate: e.target.value, page: 1 })}
-            className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
+          <CustomDatePicker
+            label="To Date"
+            value={filters.endDate || ''}
+            onChange={(val) => onFilterChange({ endDate: val, page: 1 })}
+            minDate={filters.startDate}
+            maxDate={todayStr}
+            compareDate={filters.startDate}
+            isStartDate={false}
+            placeholder="End date..."
+            align="right"
           />
         </div>
       </div>
