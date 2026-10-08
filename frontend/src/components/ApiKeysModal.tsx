@@ -256,25 +256,31 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose, use
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1 font-medium">Server ID Scope (Optional)</label>
+                <label className="block text-slate-400 mb-1 font-medium">Server Scope (Optional)</label>
                 <input
                   type="text"
-                  placeholder="e.g. srv-us-east-01 (or empty for any)"
+                  placeholder="e.g. 15.206.222.190 or hostname (or blank for any)"
                   value={serverId}
                   onChange={(e) => setServerId(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
                 />
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Matches server_id, hostname, or IP. Leave empty to allow any server.
+                </p>
               </div>
 
               <div>
                 <label className="block text-slate-400 mb-1 font-medium">Project Name Scope (Optional)</label>
                 <input
                   type="text"
-                  placeholder="e.g. ecommerce-core (or empty for any)"
+                  placeholder="e.g. ecommerce-core (or blank for any)"
                   value={projectName}
                   onChange={(e) => setProjectName(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
                 />
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Matches project_name. Leave empty to allow any project.
+                </p>
               </div>
 
               <div>

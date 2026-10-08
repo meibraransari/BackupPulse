@@ -99,16 +99,41 @@ export async function backupRoutes(fastify: FastifyInstance) {
         }
 
         // Validate server / project scope constraints
-        if (keyRecord.serverId && keyRecord.serverId !== body.server_id) {
-          return reply.status(403).send({
-            error: `Forbidden: API key is restricted to server '${keyRecord.serverId}', but report is from '${body.server_id}'`,
-          });
+        if (keyRecord.serverId) {
+          const clientIp = ((request.headers['x-forwarded-for'] as string)?.split(',')[0] || request.ip || '').trim().toLowerCase();
+          const allowedServers = keyRecord.serverId
+            .split(',')
+            .map((s) => s.trim().toLowerCase())
+            .filter(Boolean);
+
+          const candidateIdentifiers = [
+            body.server_id?.toString().trim().toLowerCase(),
+            body.hostname?.toString().trim().toLowerCase(),
+            body.server_ip?.toString().trim().toLowerCase(),
+            clientIp,
+          ].filter(Boolean);
+
+          const matchesServer = candidateIdentifiers.some((id) => allowedServers.includes(id));
+
+          if (!matchesServer) {
+            return reply.status(403).send({
+              error: `Forbidden: API key is restricted to server '${keyRecord.serverId}', but report is from '${body.server_id}' (IP: ${clientIp || body.server_ip || 'unknown'})`,
+            });
+          }
         }
 
-        if (keyRecord.projectName && keyRecord.projectName !== body.project_name) {
-          return reply.status(403).send({
-            error: `Forbidden: API key is restricted to project '${keyRecord.projectName}', but report is for '${body.project_name}'`,
-          });
+        if (keyRecord.projectName) {
+          const allowedProjects = keyRecord.projectName
+            .split(',')
+            .map((p) => p.trim().toLowerCase())
+            .filter(Boolean);
+          const reportProject = body.project_name?.toString().trim().toLowerCase();
+
+          if (!reportProject || !allowedProjects.includes(reportProject)) {
+            return reply.status(403).send({
+              error: `Forbidden: API key is restricted to project '${keyRecord.projectName}', but report is for '${body.project_name}'`,
+            });
+          }
         }
 
         // Asynchronously touch lastUsedAt without slowing ingestion response
