@@ -24,7 +24,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({ report, onClose, onMar
       <div className="bg-slate-900 border border-slate-800 w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="px-6 py-4 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2.5">
             <span
               className={`px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase ${
                 report.status === 'SUCCESS'
@@ -34,6 +34,22 @@ export const DetailModal: React.FC<DetailModalProps> = ({ report, onClose, onMar
             >
               {report.status}
             </span>
+            {report.status !== 'FAILED' && (
+              <span
+                className={`px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase flex items-center space-x-1.5 ${
+                  report.isExpired || report.availabilityStatus === 'EXPIRED'
+                    ? 'bg-red-950 text-red-400 border border-red-800/70'
+                    : 'bg-emerald-950 text-emerald-400 border border-emerald-800/60'
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    report.isExpired || report.availabilityStatus === 'EXPIRED' ? 'bg-red-400 animate-pulse' : 'bg-emerald-400'
+                  }`}
+                />
+                <span>{report.isExpired || report.availabilityStatus === 'EXPIRED' ? 'Expired' : 'Active'}</span>
+              </span>
+            )}
             <div>
               <h2 className="text-base font-bold text-white flex items-center space-x-2">
                 <span>{report.projectName}</span>
@@ -137,16 +153,49 @@ export const DetailModal: React.FC<DetailModalProps> = ({ report, onClose, onMar
 
             <div className="space-y-1.5 text-xs font-mono">
               <div className="text-slate-400 flex items-center">
-                <span className="w-20 text-slate-500">S3 Bucket:</span>
+                <span className="w-28 text-slate-500">Vault Status:</span>
+                <span className="text-slate-200 flex items-center space-x-2">
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                      report.status === 'FAILED'
+                        ? 'bg-slate-800 text-slate-400'
+                        : report.isExpired || report.availabilityStatus === 'EXPIRED'
+                        ? 'bg-red-950 text-red-400 border border-red-800/70'
+                        : 'bg-emerald-950 text-emerald-400 border border-emerald-800/60'
+                    }`}
+                  >
+                    {report.status === 'FAILED'
+                      ? 'N/A'
+                      : report.isExpired || report.availabilityStatus === 'EXPIRED'
+                      ? 'Expired'
+                      : 'Active in Bucket'}
+                  </span>
+                  {report.expiresAt && (
+                    <span className="text-[11px] text-slate-400">
+                      ({report.isExpired || report.availabilityStatus === 'EXPIRED' ? 'Expired' : 'Expires'}: {new Date(report.expiresAt).toLocaleDateString()}
+                      {report.daysRemaining !== null && report.daysRemaining !== undefined ? ` • ${report.daysRemaining}d left` : ''}
+                      {report.daysAgoExpired !== null && report.daysAgoExpired !== undefined ? ` • ${report.daysAgoExpired}d ago` : ''})
+                    </span>
+                  )}
+                </span>
+              </div>
+              <div className="text-slate-400 flex items-center">
+                <span className="w-28 text-slate-500">Retention:</span>
+                <span className="text-slate-200">
+                  {report.retentionDays ? `${report.retentionDays} Days (S3 retention policy)` : 'Default / Not Specified'}
+                </span>
+              </div>
+              <div className="text-slate-400 flex items-center">
+                <span className="w-28 text-slate-500">S3 Bucket:</span>
                 <span className="text-slate-200">{report.s3Bucket || 'N/A'}</span>
               </div>
               <div className="text-slate-400 flex items-center">
-                <span className="w-20 text-slate-500">S3 Key:</span>
+                <span className="w-28 text-slate-500">S3 Key:</span>
                 <span className="text-slate-200 break-all">{report.s3Key || 'N/A'}</span>
               </div>
               {report.checksum && (
                 <div className="text-slate-400 flex items-center">
-                  <span className="w-20 text-slate-500">Checksum:</span>
+                  <span className="w-28 text-slate-500">Checksum:</span>
                   <span className="text-slate-300 break-all">{report.checksum}</span>
                 </div>
               )}

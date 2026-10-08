@@ -319,16 +319,16 @@ chmod +x scripts/zip_s3_backup.sh
 | :--- | :--- | :--- | :--- |
 | `GET` | `/health` | Server uptime & DB connection check (includes `swagger` enabled flag) | None |
 | `GET` | `/api/docs` | Interactive Swagger UI sandbox (enabled when `ENABLE_SWAGGER=true`) | None |
-| `POST` | `/api/v1/backups/report` | Telemetry ingestion from shell script (with anomaly detection) | `x-api-key` |
+| `POST` | `/api/v1/backups/report` | Telemetry ingestion from shell script (with anomaly detection, `retention_days` & expiry calculation) | `x-api-key` |
 | `POST` | `/api/v1/auth/login` | Admin login | None |
 | `GET` | `/api/v1/auth/me` | Current session user | Bearer JWT |
 | `GET` | `/api/v1/dashboard/stats` | 24h & all-time summary KPIs | Bearer JWT |
 | `GET` | `/api/v1/dashboard/trends` | Daily trends for charts (last 7-30 days) | Bearer JWT |
 | `GET` | `/api/v1/dashboard/fleet` | Aggregated 100+ servers fleet health, storage, and staleness matrix | Bearer JWT |
-| `GET` | `/api/v1/backups` | Filtered & paginated backup records (supports `isAnomaly` filter) | Bearer JWT |
-| `GET` | `/api/v1/backups/:id` | Full details, logs, and S3 paths | Bearer JWT |
+| `GET` | `/api/v1/backups` | Filtered & paginated backup records (supports `isAnomaly` and `availability`: `ALL` / `ACTIVE` / `EXPIRED`) | Bearer JWT |
+| `GET` | `/api/v1/backups/:id` | Full details, logs, S3 paths, retention days, and availability status | Bearer JWT |
 | `PATCH` | `/api/v1/backups/:id/status` | Manually mark failed backup as SUCCESS with resolution notes | Bearer JWT |
-| `GET` | `/api/v1/backups/export` | Export filtered records to CSV or JSON | Bearer JWT |
+| `GET` | `/api/v1/backups/export` | Export filtered records to CSV or JSON (includes retention days & availability status) | Bearer JWT |
 | `GET` | `/api/v1/notifications/status` | Check active status of Google Chat & Email channels (SMTP/SendGrid/SES) | Bearer JWT |
 | `GET` | `/api/v1/notifications/logs` | Query alert send audit logs (channel, recipient, status, payload) | Bearer JWT |
 | `POST` | `/api/v1/notifications/test-gchat` | Immediate Google Chat webhook test card | Bearer JWT |
@@ -344,6 +344,23 @@ chmod +x scripts/zip_s3_backup.sh
 | `POST` | `/api/v1/users` | Provision a new team user (Username, Password, Role, Email) | Bearer JWT (Admin) |
 | `PUT` | `/api/v1/users/:id` | Update user details, role, active status, or reset password | Bearer JWT (Admin) |
 | `DELETE` | `/api/v1/users/:id` | Delete user account (Admin account protected) | Bearer JWT (Admin) |
+
+---
+
+## 🗄️ S3 Backup Availability & Retention Lifecycle (`Active,expired`)
+
+In distributed infrastructures, each server typically runs its own automated pruning logic (e.g. retaining the last 30 daily backups and deleting older archives from AWS S3). Previously, telemetry records only indicated whether a backup succeeded at execution time, with no clue whether the file remained available in the bucket or had since been deleted.
+
+BackupPulse introduces automatic **Retention Lifecycle & Availability Tracking**:
+
+- **Retention Policy Ingestion**: Shell scripts pass their retention window in days (`retention_days`, e.g., `--retention-days 30`).
+- **Real-Time Expiration Calculation**: The backend calculates the exact expiration date (`expires_at = start_time + retention_days * 86,400,000`). If `now > expires_at`, the archive is categorized as `EXPIRED`; otherwise, it is `ACTIVE`. Failed backups (`FAILED`) are categorized as `N/A`.
+- **New Data Table Column (`Active,expired`)**: Positioned immediately after **Status & Action** in the **Backup Telemetry Records** table:
+  - 🟢 **`Active`** (Emerald badge): Archive is actively available in the S3 bucket for restoration. Hovering displays remaining days until expiration.
+  - 🔴 **`Expired`** (Red badge): Archive has reached the end of its retention lifecycle and has been pruned/purged from S3.
+  - ⚪ **`N/A`** (Slate badge): Backup failed at creation time; no valid file exists in the vault.
+- **Dedicated Availability Filter**: Filter bar includes an **Active / Expired** dropdown (`All Availability`, `Active (In S3)`, `Expired (Pruned)`) allowing DevOps teams to instantly locate only currently-restorable archives or audit pruned backups.
+- **Inspector Modal & S3 Vault Tab**: Full visibility into retention policy duration, exact expiration timestamp, days remaining, or days elapsed since expiration.
 
 ---
 

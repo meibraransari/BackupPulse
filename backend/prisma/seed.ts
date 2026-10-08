@@ -80,6 +80,8 @@ async function main() {
           errorMessage: isFailed ? 'mysqldump: Got errno 28 (No space left on device) during table dump' : null,
           stdoutLog: isFailed ? 'Archive creation started.\nDatabase dump initiated.' : 'Archive verified.\nChecksum: SHA256 matches.\nUploaded to S3 successfully.',
           stderrLog: isFailed ? 'ERROR 2002 (HY000): Can\'t connect to local MySQL server through socket' : null,
+          retentionDays: isFailed ? null : (i % 5 === 0 ? 1 : 30), // Sample expired (1 day retention from days ago) and active (30 days)
+          expiresAt: isFailed ? null : new Date(startTime.getTime() + (i % 5 === 0 ? 1 : 30) * 86400000),
           createdAt: endTime,
         },
       });

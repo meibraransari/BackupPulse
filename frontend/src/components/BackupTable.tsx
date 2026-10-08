@@ -37,6 +37,7 @@ const STORAGE_KEY_COL_WIDTHS = 'backuppulse_table_col_widths_v1';
 const DEFAULT_COLUMN_WIDTHS: Record<string, number> = {
   expand: 44,
   status: 125,
+  availability: 115,
   project: 175,
   type: 75,
   size: 90,
@@ -57,6 +58,7 @@ interface ColumnConfig {
 const COLUMN_CONFIGS: ColumnConfig[] = [
   { key: 'expand', label: '', minWidth: 44, resizable: false, align: 'center' },
   { key: 'status', label: 'Status & Action', minWidth: 95, resizable: true },
+  { key: 'availability', label: 'Active,expired', minWidth: 105, resizable: true },
   { key: 'project', label: 'Project & Host', minWidth: 110, resizable: true },
   { key: 'type', label: 'Type', minWidth: 60, resizable: true },
   { key: 'size', label: 'Archive Size', minWidth: 70, resizable: true },
@@ -267,6 +269,48 @@ export const BackupTable: React.FC<BackupTableProps> = ({
     }
   };
 
+  const getAvailabilityBadge = (report: BackupReport) => {
+    if (report.status === 'FAILED') {
+      return (
+        <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-xs font-medium bg-slate-800/80 text-slate-400 border border-slate-700/60 shrink-0">
+          <span>N/A</span>
+        </span>
+      );
+    }
+
+    const isExpired = report.isExpired ?? (report.availabilityStatus === 'EXPIRED');
+
+    if (isExpired) {
+      return (
+        <span
+          className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-950/80 text-red-400 border border-red-800/70 shrink-0 shadow-sm"
+          title={
+            report.expiresAt
+              ? `Expired on ${new Date(report.expiresAt).toLocaleDateString()}${report.daysAgoExpired !== null && report.daysAgoExpired !== undefined ? ` (${report.daysAgoExpired}d ago)` : ''}`
+              : 'Backup expired based on retention policy'
+          }
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse"></span>
+          <span>Expired</span>
+        </span>
+      );
+    }
+
+    return (
+      <span
+        className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 shrink-0 shadow-sm"
+        title={
+          report.expiresAt
+            ? `Active in S3 bucket. Expires on ${new Date(report.expiresAt).toLocaleDateString()}${report.daysRemaining !== null && report.daysRemaining !== undefined ? ` (${report.daysRemaining}d left)` : ''}`
+            : 'Active in S3 bucket'
+        }
+      >
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+        <span>Active</span>
+      </span>
+    );
+  };
+
   const getTypeBadge = (type: string) => {
     const colors: Record<string, string> = {
       db: 'bg-indigo-950/70 text-indigo-300 border-indigo-800/50',
@@ -401,12 +445,12 @@ export const BackupTable: React.FC<BackupTableProps> = ({
             {loading ? (
               [...Array(6)].map((_, i) => (
                 <tr key={i} className="animate-pulse">
-                  <td colSpan={9} className="py-4 px-4 bg-slate-900/40 h-12" />
+                  <td colSpan={10} className="py-4 px-4 bg-slate-900/40 h-12" />
                 </tr>
               ))
             ) : data.length === 0 ? (
               <tr>
-                <td colSpan={9} className="py-12 text-center text-slate-500">
+                <td colSpan={10} className="py-12 text-center text-slate-500">
                   <HardDrive className="h-8 w-8 mx-auto mb-2 opacity-30" />
                   <p className="text-sm">No backup records matching your filters.</p>
                 </td>
@@ -441,6 +485,9 @@ export const BackupTable: React.FC<BackupTableProps> = ({
 
                       {/* Status & Resolve Button */}
                       <td className="py-3.5 px-3.5 overflow-hidden">{getStatusBadge(report)}</td>
+
+                      {/* Active,expired Availability Badge */}
+                      <td className="py-3.5 px-3.5 overflow-hidden">{getAvailabilityBadge(report)}</td>
 
                       {/* Project & Server */}
                       <td className="py-3.5 px-3.5 overflow-hidden">
@@ -530,7 +577,7 @@ export const BackupTable: React.FC<BackupTableProps> = ({
                     {/* Inline Expanded Content Sub-Row */}
                     {isExpanded && (
                       <tr className="bg-slate-950/70 border-b border-slate-800">
-                        <td colSpan={9} className="p-0">
+                        <td colSpan={10} className="p-0">
                           <div
                             className={`p-4 sm:p-6 border-l-4 space-y-5 bg-gradient-to-r from-slate-950 via-slate-900/60 to-slate-950 ${
                               report.status === 'FAILED'
@@ -831,6 +878,27 @@ export const BackupTable: React.FC<BackupTableProps> = ({
                                 </div>
 
                                 <div className="space-y-2 text-xs font-mono">
+                                  <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800 flex flex-col sm:flex-row sm:items-center">
+                                    <span className="w-28 text-slate-500 font-medium">Availability:</span>
+                                    <div className="flex items-center space-x-2">
+                                      {getAvailabilityBadge(report)}
+                                      {report.expiresAt && (
+                                        <span className="text-xs text-slate-400">
+                                          ({report.isExpired ? 'Expired' : 'Expires'}: {new Date(report.expiresAt).toLocaleDateString()}
+                                          {report.daysRemaining !== null && report.daysRemaining !== undefined ? ` • ${report.daysRemaining}d remaining` : ''}
+                                          {report.daysAgoExpired !== null && report.daysAgoExpired !== undefined ? ` • ${report.daysAgoExpired}d ago` : ''})
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800 flex flex-col sm:flex-row sm:items-center">
+                                    <span className="w-28 text-slate-500 font-medium">Retention:</span>
+                                    <span className="text-slate-200">
+                                      {report.retentionDays ? `${report.retentionDays} Days (S3 Retention Window)` : 'Default / Not Specified'}
+                                    </span>
+                                  </div>
+
                                   <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800 flex flex-col sm:flex-row sm:items-center">
                                     <span className="w-28 text-slate-500 font-medium">S3 Bucket:</span>
                                     <span className="text-slate-200">{report.s3Bucket || 'N/A'}</span>

@@ -87,7 +87,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
       </div>
 
       {/* Filter Selectors Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-2 border-t border-slate-800/80">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 pt-2 border-t border-slate-800/80">
         {/* Project Filter */}
         <div>
           <label className="block text-[11px] font-medium text-slate-400 mb-1">Project</label>
@@ -135,6 +135,20 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             <option value="FAILED">Failed Only</option>
             <option value="WARNING">Warnings</option>
             <option value="IN_PROGRESS">In Progress</option>
+          </select>
+        </div>
+
+        {/* Availability Filter (Active vs Expired) */}
+        <div>
+          <label className="block text-[11px] font-medium text-slate-400 mb-1">Active / Expired</label>
+          <select
+            value={filters.availability || 'ALL'}
+            onChange={(e) => onFilterChange({ availability: e.target.value, page: 1 })}
+            className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
+          >
+            <option value="ALL">All Availability</option>
+            <option value="ACTIVE">Active (In S3)</option>
+            <option value="EXPIRED">Expired (Pruned)</option>
           </select>
         </div>
 

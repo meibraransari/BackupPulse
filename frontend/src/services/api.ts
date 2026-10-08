@@ -197,6 +197,7 @@ export const api = {
     if (filters.backupType) params.append('backupType', filters.backupType);
     if (filters.search) params.append('search', filters.search);
     if (filters.isAnomaly !== undefined) params.append('isAnomaly', String(filters.isAnomaly));
+    if (filters.availability && filters.availability !== 'ALL') params.append('availability', filters.availability);
     if (filters.startDate) params.append('startDate', filters.startDate);
     if (filters.endDate) params.append('endDate', filters.endDate);
 
@@ -315,6 +316,7 @@ export const api = {
     if (filters.status) params.append('status', filters.status);
     if (filters.backupType) params.append('backupType', filters.backupType);
     if (filters.isAnomaly !== undefined) params.append('isAnomaly', String(filters.isAnomaly));
+    if (filters.availability && filters.availability !== 'ALL') params.append('availability', filters.availability);
     if (filters.startDate) params.append('startDate', filters.startDate);
     if (filters.endDate) params.append('endDate', filters.endDate);
 

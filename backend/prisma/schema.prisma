@@ -62,12 +62,15 @@ model BackupReport {
   metadata        Json?
   isAnomaly       Boolean  @default(false) @map("is_anomaly")
   anomalyReason   String?  @map("anomaly_reason")
+  retentionDays   Int?     @map("retention_days")
+  expiresAt       DateTime? @map("expires_at")
   createdAt       DateTime @default(now()) @map("created_at")
 
   @@index([projectName, createdAt(sort: Desc)])
   @@index([serverId, createdAt(sort: Desc)])
   @@index([status, createdAt(sort: Desc)])
   @@index([isAnomaly, createdAt(sort: Desc)])
+  @@index([expiresAt])
   @@index([createdAt(sort: Desc)])
   @@map("backup_reports")
 }

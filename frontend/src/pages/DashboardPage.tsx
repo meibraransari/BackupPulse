@@ -28,6 +28,7 @@ const initialFilters: BackupFilters = {
   status: 'ALL',
   backupType: 'ALL',
   search: '',
+  availability: 'ALL',
   startDate: '',
   endDate: '',
 };

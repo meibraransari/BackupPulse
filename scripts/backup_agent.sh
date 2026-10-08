@@ -30,6 +30,7 @@ S3_ENDPOINT_URL="${S3_ENDPOINT_URL:-${AWS_ENDPOINT_URL:-}}"
 ENVIRONMENT="${ENVIRONMENT:-production}"
 TEMP_DIR="${TEMP_DIR:-/tmp/backups}"
 KEEP_LOCAL_DAYS="${KEEP_LOCAL_DAYS:-0}" # 0 = delete immediately after S3 upload
+RETENTION_DAYS="${RETENTION_DAYS:-30}"
 DRY_RUN="${DRY_RUN:-false}"
 
 # Server Identification
@@ -50,6 +51,7 @@ while [[ "$#" -gt 0 ]]; do
     --s3-secret-key|--secret-key|--aws-secret-access-key) AWS_SECRET_ACCESS_KEY="$2"; shift 2 ;;
     --s3-region|--region|--aws-region) AWS_DEFAULT_REGION="$2"; shift 2 ;;
     --s3-endpoint|--endpoint-url) S3_ENDPOINT_URL="$2"; shift 2 ;;
+    --retention-days) RETENTION_DAYS="$2"; shift 2 ;;
     --api-url) API_URL="$2"; shift 2 ;;
     --api-key) API_KEY="$2"; shift 2 ;;
     --server-id) SERVER_ID="$2"; shift 2 ;;
@@ -67,6 +69,7 @@ while [[ "$#" -gt 0 ]]; do
       echo "  --s3-secret-key AWS / S3 Secret Access Key"
       echo "  --s3-region     AWS / S3 Region (default: us-east-1)"
       echo "  --s3-endpoint   Custom S3 Endpoint URL (e.g. MinIO, Cloudflare R2, Wasabi)"
+      echo "  --retention-days Retention period in days for availability tracking (default: 30)"
       echo "  --api-url       BackupPulse Ingestion API URL"
       echo "  --api-key       BackupPulse Ingestion API Key"
       echo "  --server-id     Server identification identifier"
@@ -153,6 +156,7 @@ send_report() {
   "checksum": "${checksum}",
   "zip_filename": "${ARCHIVE_BASENAME}",
   "exit_code": ${exit_code},
+  "retention_days": ${RETENTION_DAYS},
   "error_message": $([ -n "$error_clean" ] && echo "\"$error_clean\"" || echo "null"),
   "stdout_log": $([ -n "$stdout_clean" ] && echo "\"$stdout_clean\"" || echo "null"),
   "stderr_log": $([ -n "$stderr_clean" ] && echo "\"$stderr_clean\"" || echo "null"),

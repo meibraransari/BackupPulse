@@ -56,6 +56,7 @@ S3_FOLDER_NAME="${S3_FOLDER_NAME:-file_backups}"
 # AWS S3 Storage & Retention Policy
 S3_BUCKET="${S3_BUCKET:-my-file-backup-vault}"
 MAX_FILES="${MAX_FILES:-30}"
+RETENTION_DAYS="${RETENTION_DAYS:-30}"
 MIN_FILE_SIZE="${MIN_FILE_SIZE:-$((35 * 1024))}" # 35KB Minimum Threshold
 
 # Local Storage Path for temporary zip creation
@@ -82,6 +83,7 @@ while [[ "$#" -gt 0 ]]; do
     --backup-path|--staging-path) BACKUP_PATH="$2"; shift 2 ;;
     --exclude) EXCLUDE_PATTERNS="$2"; shift 2 ;;
     --max-files) MAX_FILES="$2"; shift 2 ;;
+    --retention-days) RETENTION_DAYS="$2"; shift 2 ;;
     --min-size-kb) MIN_FILE_SIZE="$(( $2 * 1024 ))"; shift 2 ;;
     --api-url) HUB_API_URL="$2"; shift 2 ;;
     --api-key) HUB_API_KEY="$2"; shift 2 ;;
@@ -100,6 +102,7 @@ while [[ "$#" -gt 0 ]]; do
       echo "  --backup-path <path>    Local zip staging path (default: /var/backups/zip_archives)"
       echo "  --exclude <patterns>    Space-separated glob patterns to exclude from zip"
       echo "  --max-files <count>     Maximum files to retain in S3 (default: 30)"
+      echo "  --retention-days <days> Retention period in days for availability tracking (default: 30)"
       echo "  --min-size-kb <kb>      Minimum file size threshold in KB (default: 35)"
       echo "  --api-url <url>         BackupPulse API Endpoint"
       echo "  --api-key <key>         BackupPulse Ingestion API Key"
@@ -147,7 +150,8 @@ echo " Source Path:   ${SOURCE_PATH}"
 echo " Backup Type:   ${BACKUP_TYPE}"
 echo " Local Staging: ${BACKUP_PATH}"
 echo " S3 Target:     ${S3_URL}"
-echo " Max Retention: ${MAX_FILES} archives in S3"
+echo " Max Retention: ${MAX_FILES} archives in S3 (${RETENTION_DAYS} days policy)"
+echo " Retention Days: ${RETENTION_DAYS} days"
 echo " Min Size:      $(( MIN_FILE_SIZE / 1024 )) KB"
 echo " Hub Endpoint:  ${HUB_API_URL}"
 echo " Timestamp:     ${START_TIME_ISO}"
@@ -219,6 +223,7 @@ send_telemetry() {
       --arg checksum "$checksum" \
       --arg zip_filename "$zip_name" \
       --argjson exit_code "$exit_code" \
+      --argjson retention_days "$RETENTION_DAYS" \
       --arg error_message "$error_msg" \
       --arg stdout_log "$stdout_snip" \
       --arg stderr_log "$stderr_snip" \
@@ -242,6 +247,7 @@ send_telemetry() {
         checksum: (if $checksum == "" then null else $checksum end),
         zip_filename: $zip_filename,
         exit_code: $exit_code,
+        retention_days: $retention_days,
         error_message: (if $error_message == "" then null else $error_message end),
         stdout_log: (if $stdout_log == "" then null else $stdout_log end),
         stderr_log: (if $stderr_log == "" then null else $stderr_log end),
@@ -272,6 +278,7 @@ send_telemetry() {
   "checksum": "${checksum}",
   "zip_filename": "${zip_name}",
   "exit_code": ${exit_code},
+  "retention_days": ${RETENTION_DAYS},
   "error_message": $([ -n "$clean_error" ] && echo "\"${clean_error}\"" || echo "null"),
   "stdout_log": $([ -n "$clean_stdout" ] && echo "\"${clean_stdout}\"" || echo "null"),
   "stderr_log": $([ -n "$clean_stderr" ] && echo "\"${clean_stderr}\"" || echo "null"),
@@ -515,6 +522,7 @@ if command -v jq >/dev/null 2>&1; then
     --arg s3_folder "$S3_FOLDER_NAME" \
     --argjson min_threshold_bytes "$MIN_FILE_SIZE" \
     --argjson max_files_retention "$MAX_FILES" \
+    --argjson retention_days "$RETENTION_DAYS" \
     --argjson s3_total_files "$FILES_COUNT" \
     --argjson s3_files_pruned "$FILES_DELETED" \
     --argjson is_anomaly "$IS_ANOMALY" \
@@ -528,6 +536,7 @@ if command -v jq >/dev/null 2>&1; then
       s3_folder: $s3_folder,
       min_size_threshold_bytes: $min_threshold_bytes,
       max_files_retention: $max_files_retention,
+      retention_days: $retention_days,
       s3_total_files: $s3_total_files,
       s3_files_pruned: $s3_files_pruned,
       anomaly_detected: $is_anomaly,
@@ -536,7 +545,7 @@ if command -v jq >/dev/null 2>&1; then
     }')
 else
   CLEAN_STATUS_MSG="$(echo "$STATUS_MESSAGE" | sed 's/"/\\"/g')"
-  FINAL_META="{\"agent_name\": \"zip_s3_backup\", \"backup_category\": \"directory_zip\", \"source_path\": \"${SOURCE_PATH}\", \"backup_type\": \"${BACKUP_TYPE}\", \"s3_folder\": \"${S3_FOLDER_NAME}\", \"min_size_threshold_bytes\": ${MIN_FILE_SIZE}, \"max_files_retention\": ${MAX_FILES}, \"s3_total_files\": ${FILES_COUNT}, \"s3_files_pruned\": ${FILES_DELETED}, \"anomaly_detected\": ${IS_ANOMALY}, \"status_summary\": \"${CLEAN_STATUS_MSG}\"}"
+  FINAL_META="{\"agent_name\": \"zip_s3_backup\", \"backup_category\": \"directory_zip\", \"source_path\": \"${SOURCE_PATH}\", \"backup_type\": \"${BACKUP_TYPE}\", \"s3_folder\": \"${S3_FOLDER_NAME}\", \"min_size_threshold_bytes\": ${MIN_FILE_SIZE}, \"max_files_retention\": ${MAX_FILES}, \"retention_days\": ${RETENTION_DAYS}, \"s3_total_files\": ${FILES_COUNT}, \"s3_files_pruned\": ${FILES_DELETED}, \"anomaly_detected\": ${IS_ANOMALY}, \"status_summary\": \"${CLEAN_STATUS_MSG}\"}"
 fi
 
 send_telemetry \

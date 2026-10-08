@@ -43,6 +43,7 @@ export async function backupRoutes(fastify: FastifyInstance) {
             error_message: { type: 'string' },
             stdout_log: { type: 'string' },
             stderr_log: { type: 'string' },
+            retention_days: { type: 'integer', description: 'Days to retain backup archive in S3 bucket before deletion' },
             metadata: { type: 'object' },
           },
         },
@@ -124,8 +125,18 @@ export async function backupRoutes(fastify: FastifyInstance) {
         }
       }
 
+      const retentionDays = body.retention_days !== undefined
+        ? Number(body.retention_days)
+        : (body.metadata?.retention_days !== undefined ? Number(body.metadata.retention_days) : null);
+
+      const expiresAt = retentionDays !== null && retentionDays > 0
+        ? new Date(startTime.getTime() + retentionDays * 24 * 60 * 60 * 1000)
+        : null;
+
       const mergedMetadata = {
         ...(body.metadata || {}),
+        ...(retentionDays !== null ? { retention_days: retentionDays } : {}),
+        ...(expiresAt ? { expires_at: expiresAt.toISOString() } : {}),
         ...(isAnomaly ? { anomaly: { detected: true, reason: anomalyReason } } : {}),
       };
 
@@ -155,6 +166,8 @@ export async function backupRoutes(fastify: FastifyInstance) {
           metadata: mergedMetadata,
           isAnomaly,
           anomalyReason,
+          retentionDays,
+          expiresAt,
         },
       });
 
@@ -188,6 +201,7 @@ export async function backupRoutes(fastify: FastifyInstance) {
             backupType: { type: 'string' },
             search: { type: 'string' },
             isAnomaly: { type: 'boolean', description: 'Filter only anomalous/truncated backups' },
+            availability: { type: 'string', description: 'Filter by availability: ALL, ACTIVE, or EXPIRED' },
             startDate: { type: 'string' },
             endDate: { type: 'string' },
             sortBy: { type: 'string', default: 'createdAt' },
@@ -224,6 +238,20 @@ export async function backupRoutes(fastify: FastifyInstance) {
         where.isAnomaly = query.isAnomaly === 'true' || query.isAnomaly === true;
       }
 
+      if (query.availability && query.availability !== 'ALL') {
+        const availUpper = query.availability.toUpperCase();
+        const now = new Date();
+        if (availUpper === 'ACTIVE') {
+          where.status = { not: 'FAILED' };
+          where.OR = [
+            { expiresAt: { gt: now } },
+            { expiresAt: null },
+          ];
+        } else if (availUpper === 'EXPIRED') {
+          where.expiresAt = { lte: now };
+        }
+      }
+
       if (query.startDate || query.endDate) {
         where.createdAt = {};
         if (query.startDate) where.createdAt.gte = new Date(query.startDate);
@@ -248,7 +276,7 @@ export async function backupRoutes(fastify: FastifyInstance) {
       const sortBy = query.sortBy || 'createdAt';
       const sortOrder = query.sortOrder === 'asc' ? 'asc' : 'desc';
 
-      const [total, data] = await Promise.all([
+      const [total, rawData] = await Promise.all([
         prisma.backupReport.count({ where }),
         prisma.backupReport.findMany({
           where,
@@ -257,6 +285,48 @@ export async function backupRoutes(fastify: FastifyInstance) {
           orderBy: { [sortBy]: sortOrder },
         }),
       ]);
+
+      const now = new Date();
+      const data = rawData.map((report) => {
+        let isExpired = false;
+        let daysRemaining: number | null = null;
+        let daysAgoExpired: number | null = null;
+
+        if (report.expiresAt) {
+          const expiryDate = new Date(report.expiresAt);
+          isExpired = now.getTime() > expiryDate.getTime();
+          const diffDays = Math.round((expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+          if (isExpired) {
+            daysAgoExpired = Math.abs(diffDays);
+          } else {
+            daysRemaining = diffDays;
+          }
+        } else if (report.retentionDays && report.retentionDays > 0) {
+          const calculatedExpiry = new Date(new Date(report.startTime).getTime() + report.retentionDays * 86400000);
+          isExpired = now.getTime() > calculatedExpiry.getTime();
+          const diffDays = Math.round((calculatedExpiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+          if (isExpired) {
+            daysAgoExpired = Math.abs(diffDays);
+          } else {
+            daysRemaining = diffDays;
+          }
+        }
+
+        let availabilityStatus: 'ACTIVE' | 'EXPIRED' | 'N/A' = 'ACTIVE';
+        if (report.status === 'FAILED') {
+          availabilityStatus = 'N/A';
+        } else if (isExpired) {
+          availabilityStatus = 'EXPIRED';
+        }
+
+        return {
+          ...report,
+          availabilityStatus,
+          isExpired,
+          daysRemaining,
+          daysAgoExpired,
+        };
+      });
 
       return reply.send({
         data,
@@ -296,7 +366,45 @@ export async function backupRoutes(fastify: FastifyInstance) {
         return reply.status(404).send({ error: 'Backup report not found' });
       }
 
-      return reply.send(report);
+      const now = new Date();
+      let isExpired = false;
+      let daysRemaining: number | null = null;
+      let daysAgoExpired: number | null = null;
+
+      if (report.expiresAt) {
+        const expiryDate = new Date(report.expiresAt);
+        isExpired = now.getTime() > expiryDate.getTime();
+        const diffDays = Math.round((expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        if (isExpired) {
+          daysAgoExpired = Math.abs(diffDays);
+        } else {
+          daysRemaining = diffDays;
+        }
+      } else if (report.retentionDays && report.retentionDays > 0) {
+        const calculatedExpiry = new Date(new Date(report.startTime).getTime() + report.retentionDays * 86400000);
+        isExpired = now.getTime() > calculatedExpiry.getTime();
+        const diffDays = Math.round((calculatedExpiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        if (isExpired) {
+          daysAgoExpired = Math.abs(diffDays);
+        } else {
+          daysRemaining = diffDays;
+        }
+      }
+
+      let availabilityStatus: 'ACTIVE' | 'EXPIRED' | 'N/A' = 'ACTIVE';
+      if (report.status === 'FAILED') {
+        availabilityStatus = 'N/A';
+      } else if (isExpired) {
+        availabilityStatus = 'EXPIRED';
+      }
+
+      return reply.send({
+        ...report,
+        availabilityStatus,
+        isExpired,
+        daysRemaining,
+        daysAgoExpired,
+      });
     }
   );
 
@@ -419,6 +527,7 @@ export async function backupRoutes(fastify: FastifyInstance) {
             serverId: { type: 'string' },
             status: { type: 'string' },
             backupType: { type: 'string' },
+            availability: { type: 'string' },
             startDate: { type: 'string' },
             endDate: { type: 'string' },
           },
@@ -433,6 +542,21 @@ export async function backupRoutes(fastify: FastifyInstance) {
       if (query.serverId && query.serverId !== 'ALL') where.serverId = query.serverId;
       if (query.status && query.status !== 'ALL') where.status = query.status.toUpperCase();
       if (query.backupType && query.backupType !== 'ALL') where.backupType = query.backupType.toLowerCase();
+
+      if (query.availability && query.availability !== 'ALL') {
+        const availUpper = query.availability.toUpperCase();
+        const now = new Date();
+        if (availUpper === 'ACTIVE') {
+          where.status = { not: 'FAILED' };
+          where.OR = [
+            { expiresAt: { gt: now } },
+            { expiresAt: null },
+          ];
+        } else if (availUpper === 'EXPIRED') {
+          where.expiresAt = { lte: now };
+        }
+      }
+
       if (query.startDate || query.endDate) {
         where.createdAt = {};
         if (query.startDate) where.createdAt.gte = new Date(query.startDate);
@@ -443,10 +567,34 @@ export async function backupRoutes(fastify: FastifyInstance) {
         }
       }
 
-      const reports = await prisma.backupReport.findMany({
+      const rawReports = await prisma.backupReport.findMany({
         where,
         take: 5000,
         orderBy: { createdAt: 'desc' },
+      });
+
+      const now = new Date();
+      const reports = rawReports.map((r) => {
+        let isExpired = false;
+        if (r.expiresAt) {
+          isExpired = now > new Date(r.expiresAt);
+        } else if (r.retentionDays && r.retentionDays > 0) {
+          const calculatedExpiry = new Date(new Date(r.startTime).getTime() + r.retentionDays * 86400000);
+          isExpired = now > calculatedExpiry;
+        }
+
+        let availabilityStatus = 'Active';
+        if (r.status === 'FAILED') {
+          availabilityStatus = 'N/A';
+        } else if (isExpired) {
+          availabilityStatus = 'Expired';
+        }
+
+        return {
+          ...r,
+          isExpired,
+          availabilityStatus,
+        };
       });
 
       if (query.format === 'json') {
@@ -462,6 +610,9 @@ export async function backupRoutes(fastify: FastifyInstance) {
         'Project',
         'Type',
         'Status',
+        'Availability',
+        'Retention (Days)',
+        'Expires At',
         'Duration (sec)',
         'Size (Human)',
         'Size (Bytes)',
@@ -482,6 +633,9 @@ export async function backupRoutes(fastify: FastifyInstance) {
             `"${r.projectName}"`,
             `"${r.backupType}"`,
             `"${r.status}"`,
+            `"${r.availabilityStatus}"`,
+            r.retentionDays ? r.retentionDays : '',
+            r.expiresAt ? `"${r.expiresAt.toISOString()}"` : '""',
             r.durationSeconds,
             `"${r.backupSizeHuman || ''}"`,
             r.backupSizeBytes.toString(),

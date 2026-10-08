@@ -37,6 +37,9 @@ ZIP_FILENAME="${4:-${PROJECT_NAME}_$(date +%Y%m%d_%H%M%S).tar.gz}"
 # Argument 5: Optional error message (if status is FAILED)
 ERROR_MSG="${5:-}"
 
+# Argument 6: Retention period in days (default: 30)
+RETENTION_DAYS="${6:-${RETENTION_DAYS:-30}}"
+
 # ------------------------------------------------------------------------------
 # 3. SYSTEM & RUNTIME TELEMETRY (Auto-detected)
 # ------------------------------------------------------------------------------
@@ -92,6 +95,7 @@ JSON_PAYLOAD=$(cat <<EOF
   "checksum": "${CHECKSUM}",
   "zip_filename": "${ZIP_FILENAME}",
   "exit_code": ${EXIT_CODE},
+  "retention_days": ${RETENTION_DAYS},
   "error_message": $([ -n "$clean_error" ] && echo "\"${clean_error}\"" || echo "null")
 }
 EOF
@@ -161,6 +165,7 @@ fi
 #     \"status\": \"$STATUS_TXT\",
 #     \"start_time\": \"$BKP_START\",
 #     \"end_time\": \"$BKP_END\",
-#     \"zip_filename\": \"my_backup.tar.gz\"
+#     \"zip_filename\": \"my_backup.tar.gz\",
+#     \"retention_days\": 30
 #   }"
 # ==============================================================================

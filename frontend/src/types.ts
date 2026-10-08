@@ -47,6 +47,12 @@ export interface BackupReport {
   metadata?: Record<string, any>;
   isAnomaly?: boolean;
   anomalyReason?: string;
+  retentionDays?: number | null;
+  expiresAt?: string | null;
+  availabilityStatus?: 'ACTIVE' | 'EXPIRED' | 'N/A';
+  isExpired?: boolean;
+  daysRemaining?: number | null;
+  daysAgoExpired?: number | null;
   createdAt: string;
 }
 
@@ -86,6 +92,7 @@ export interface BackupFilters {
   backupType?: string;
   search?: string;
   isAnomaly?: boolean;
+  availability?: string; // 'ALL' | 'ACTIVE' | 'EXPIRED'
   startDate?: string;
   endDate?: string;
 }
