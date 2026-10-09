@@ -398,8 +398,9 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       > = {};
 
       const now = new Date();
+      const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
       for (let i = days - 1; i >= 0; i--) {
-        const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+        const d = new Date(todayUtc.getTime() - i * 24 * 60 * 60 * 1000);
         const dateKey = d.toISOString().split('T')[0];
         heatmapMap[dateKey] = {
           date: dateKey,
@@ -430,6 +431,9 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       let inactiveDays = 0;
 
       const dayItems = Object.values(heatmapMap).map((item) => {
+        const d = new Date(item.date + 'T00:00:00Z');
+        const dayOfWeek = d.getUTCDay();
+
         if (item.total === 0) {
           item.status = 'NO_RUNS';
           item.successRate = 100;
@@ -450,13 +454,18 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
             failedDays++;
           }
         }
-        return item;
+        return {
+          ...item,
+          dayOfWeek,
+          slaPercent: item.successRate,
+        };
       });
 
       const overallSla = totalBackups > 0 ? Math.round((totalSuccess / totalBackups) * 100) : 100;
 
       return reply.send({
         days: dayItems,
+        heatmap: dayItems,
         summary: {
           daysTracked: days,
           totalBackups,
@@ -465,6 +474,13 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
           partialDays,
           failedDays,
           inactiveDays,
+        },
+        metrics: {
+          overallSlaPercent: overallSla,
+          totalRuns: totalBackups,
+          perfectDays,
+          totalFailed: failedDays,
+          daysWithRuns: days - inactiveDays,
         },
       });
     }

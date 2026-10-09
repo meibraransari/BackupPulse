@@ -59,11 +59,22 @@ export const SlaHeatmap: React.FC<SlaHeatmapProps> = ({
 
   // Group days into 7 rows (Sunday=0 to Saturday=6) across week columns
   const { weeks, monthLabels } = useMemo(() => {
-    if (!data || !data.heatmap || data.heatmap.length === 0) {
+    const rawItems = data?.heatmap || data?.days || [];
+    if (!rawItems || rawItems.length === 0) {
       return { weeks: [], monthLabels: [] };
     }
 
-    const items = data.heatmap;
+    const items = rawItems.map((dayItem) => {
+      const d = new Date(dayItem.date + 'T00:00:00Z');
+      const dayOfWeek = typeof dayItem.dayOfWeek === 'number' ? dayItem.dayOfWeek : d.getUTCDay();
+      const slaPercent = typeof dayItem.slaPercent === 'number' ? dayItem.slaPercent : (dayItem.successRate ?? 100);
+      return {
+        ...dayItem,
+        dayOfWeek,
+        slaPercent,
+      };
+    });
+
     const weekCols: (SlaHeatmapDayItem | null)[][] = [];
     const months: { label: string; weekIndex: number }[] = [];
 
@@ -72,7 +83,7 @@ export const SlaHeatmap: React.FC<SlaHeatmapProps> = ({
 
     // Pad first week if starting day is not Sunday (dayOfWeek 0)
     const firstDay = items[0];
-    for (let i = 0; i < firstDay.dayOfWeek; i++) {
+    for (let i = 0; i < (firstDay.dayOfWeek ?? 0); i++) {
       currentWeek.push(null);
     }
 
@@ -109,13 +120,16 @@ export const SlaHeatmap: React.FC<SlaHeatmapProps> = ({
 
   const getSquareColor = (day: SlaHeatmapDayItem | null) => {
     if (!day) return 'bg-transparent border-transparent pointer-events-none';
-    if (day.status === 'EMPTY' || day.total === 0) {
+    if (day.total === 0 || day.status === 'EMPTY' || day.status === 'NO_RUNS') {
       return 'bg-slate-900/80 border-slate-800/80 text-slate-600 hover:border-slate-700';
     }
-    if (day.status === 'FAILED') {
+    if (day.failed > 0 || day.status === 'FAILED' || day.status === 'CRITICAL_FAILED') {
+      if (day.success > 0 || day.status === 'PARTIAL') {
+        return 'bg-amber-500 border-amber-400 hover:bg-amber-400 text-white shadow-sm shadow-amber-950';
+      }
       return 'bg-red-500 border-red-400 hover:bg-red-400 text-white shadow-sm shadow-red-950';
     }
-    if (day.status === 'WARNING') {
+    if (day.warning > 0 || day.status === 'WARNING' || day.status === 'PARTIAL') {
       return 'bg-amber-500 border-amber-400 hover:bg-amber-400 text-white shadow-sm shadow-amber-950';
     }
     return 'bg-emerald-500 border-emerald-400 hover:bg-emerald-400 text-white shadow-sm shadow-emerald-950';
@@ -136,7 +150,21 @@ export const SlaHeatmap: React.FC<SlaHeatmapProps> = ({
     }
   };
 
-  const metrics = data?.metrics;
+  const metrics = useMemo(() => {
+    if (!data) return null;
+    if (data.metrics) return data.metrics;
+    if (data.summary) {
+      const s = data.summary;
+      return {
+        overallSlaPercent: s.overallSla ?? 100,
+        totalRuns: s.totalBackups ?? 0,
+        perfectDays: s.perfectDays ?? 0,
+        totalFailed: s.failedDays ?? 0,
+        daysWithRuns: (s.daysTracked ?? 0) - (s.inactiveDays ?? 0),
+      };
+    }
+    return null;
+  }, [data]);
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-5 transition-all">

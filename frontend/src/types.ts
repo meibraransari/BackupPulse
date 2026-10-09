@@ -182,11 +182,14 @@ export interface SlaHeatmapDayItem {
   failed: number;
   warning: number;
   successRate: number;
-  status: 'ALL_PASSED' | 'PARTIAL' | 'CRITICAL_FAILED' | 'NO_RUNS';
+  slaPercent?: number;
+  dayOfWeek?: number;
+  status: 'ALL_PASSED' | 'PARTIAL' | 'CRITICAL_FAILED' | 'NO_RUNS' | 'SUCCESS' | 'WARNING' | 'FAILED' | 'EMPTY';
 }
 
 export interface SlaHeatmapResponse {
   days: SlaHeatmapDayItem[];
+  heatmap?: SlaHeatmapDayItem[];
   summary: {
     daysTracked: number;
     totalBackups: number;
@@ -195,6 +198,13 @@ export interface SlaHeatmapResponse {
     partialDays: number;
     failedDays: number;
     inactiveDays: number;
+  };
+  metrics?: {
+    overallSlaPercent: number;
+    totalRuns: number;
+    perfectDays: number;
+    totalFailed: number;
+    daysWithRuns: number;
   };
 }
 
