@@ -16,8 +16,8 @@ export async function scriptRoutes(fastify: FastifyInstance) {
         querystring: {
           type: 'object',
           properties: {
-            type: { type: 'string', enum: ['postgres', 'mysql', 'directory'], default: 'postgres' },
-            dest: { type: 'string', enum: ['s3', 'gcs', 'azure', 'local', 'mapped'], default: 's3' },
+            type: { type: 'string', enum: ['postgres', 'mysql', 'directory', 'curl', 'custom', 'generic'], default: 'postgres' },
+            dest: { type: 'string', enum: ['s3', 'gcs', 'azure', 'local', 'mapped', 'none'], default: 's3' },
             hubUrl: { type: 'string' },
             drill: { type: 'string', enum: ['true', 'false'], default: 'false' },
           },
@@ -147,6 +147,15 @@ case "${backupType}" in
     else
       print_fail "'zip' is missing for directory archiving! Install via: sudo apt-get install zip"
     fi
+    ;;
+  curl|custom|generic|*)
+    if command -v curl >/dev/null 2>&1; then
+      CURL_VER=$(curl --version 2>&1 | head -n 1)
+      print_pass "cURL HTTP client is installed: $CURL_VER"
+    else
+      print_fail "'curl' is missing! Install via: sudo apt-get install curl"
+    fi
+    print_info "Generic cURL telemetry mode active. No database client required."
     ;;
 esac
 

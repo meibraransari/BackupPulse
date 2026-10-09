@@ -14,6 +14,7 @@ import { UserManagementView } from '../components/UserManagementView';
 import { ApiKeysModal } from '../components/ApiKeysModal';
 import { DeployWizardModal } from '../components/DeployWizardModal';
 import { SlaHeatmap } from '../components/SlaHeatmap';
+import { DrillPulseView } from '../components/DrillPulseView';
 import { api } from '../services/api';
 import { BackupFilters, BackupReport, DashboardStats, ProjectBreakdown, TrendItem, User } from '../types';
 import { RefreshCw, CheckCircle2, Server, Table, Users, Sparkles } from 'lucide-react';
@@ -64,7 +65,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
   const [actionToast, setActionToast] = useState<string | null>(null);
 
   // View toggle & Modal states
-  const [activeTab, setActiveTab] = useState<'telemetry' | 'fleet' | 'users'>('telemetry');
+  const [activeTab, setActiveTab] = useState<'telemetry' | 'drills' | 'fleet' | 'users'>('telemetry');
   const [showNotificationLogs, setShowNotificationLogs] = useState<boolean>(false);
   const [showHousekeeping, setShowHousekeeping] = useState<boolean>(false);
   const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
@@ -366,6 +367,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
               />
             </div>
           </>
+        ) : activeTab === 'drills' ? (
+          /* Disaster Recovery Verification Drills (DrillPulse) View */
+          <DrillPulseView
+            onSelectReport={(report) => setSelectedReport(report)}
+            onOpenDeployWizard={() => setShowDeployWizard(true)}
+          />
         ) : activeTab === 'fleet' ? (
           /* Server Fleet Inventory View */
           <FleetView

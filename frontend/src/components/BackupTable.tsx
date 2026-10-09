@@ -100,8 +100,8 @@ export const BackupTable: React.FC<BackupTableProps> = ({
   const [copiedField, setCopiedField] = useState<string | null>(null);
   // Log viewer height preference per row (true = full height, false = scrollable)
   const [fullHeightLogs, setFullHeightLogs] = useState<Record<string, boolean>>({});
-  // Selected tab in expanded view: 'logs' | 'vault' | 'raw'
-  const [activeTab, setActiveTab] = useState<Record<string, 'logs' | 'vault' | 'raw'>>({});
+  // Selected tab in expanded view: 'logs' | 'vault' | 'drill' | 'raw'
+  const [activeTab, setActiveTab] = useState<Record<string, 'logs' | 'vault' | 'drill' | 'raw'>>({});
 
   // Save column widths to localStorage whenever changed
   useEffect(() => {
@@ -510,18 +510,24 @@ export const BackupTable: React.FC<BackupTableProps> = ({
                         <div className="flex items-center space-x-1.5 flex-wrap gap-y-1">
                           {getTypeBadge(report.backupType)}
                           {report.restoreDrillStatus && (
-                            <span
-                              className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveTab((prev) => ({ ...prev, [report.id]: 'drill' }));
+                                setExpandedRowIds((prev) => new Set(prev).add(report.id));
+                              }}
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border cursor-pointer hover:scale-105 transition-all ${
                                 report.restoreDrillStatus === 'SUCCESS'
-                                  ? 'bg-emerald-950/70 text-emerald-300 border-emerald-700/50'
+                                  ? 'bg-emerald-950/70 text-emerald-300 border-emerald-700/50 hover:bg-emerald-900/80 shadow-sm'
                                   : report.restoreDrillStatus === 'FAILED'
-                                  ? 'bg-red-950/70 text-red-300 border-red-700/50'
-                                  : 'bg-slate-800 text-slate-400 border-slate-700'
+                                  ? 'bg-red-950/70 text-red-300 border-red-700/50 hover:bg-red-900/80 shadow-sm'
+                                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'
                               }`}
-                              title={`DrillPulse DR Drill: ${report.restoreDrillStatus} (${report.restoreDrillVerifiedTables ?? 0} entities verified in ${report.restoreDrillDurationSeconds ?? 0}s)`}
+                              title={`DrillPulse DR Drill: ${report.restoreDrillStatus} (${report.restoreDrillVerifiedTables ?? 0} entities verified in ${report.restoreDrillDurationSeconds ?? 0}s). Click to view sandbox drill logs.`}
                             >
                               🧪 {report.restoreDrillStatus === 'SUCCESS' ? 'DR Pass' : report.restoreDrillStatus === 'FAILED' ? 'DR Fail' : 'DR Skip'}
-                            </span>
+                            </button>
                           )}
                         </div>
                       </td>
@@ -666,6 +672,32 @@ export const BackupTable: React.FC<BackupTableProps> = ({
                                 >
                                   <HardDrive className="h-3 w-3" />
                                   <span>Storage Vault</span>
+                                </button>
+
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveTab((prev) => ({ ...prev, [report.id]: 'drill' }));
+                                  }}
+                                  className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors flex items-center space-x-1.5 ${
+                                    currentTab === 'drill'
+                                      ? 'bg-emerald-600 text-white shadow-sm'
+                                      : 'text-slate-400 hover:text-white'
+                                  }`}
+                                >
+                                  <span>🧪</span>
+                                  <span>DR Drill</span>
+                                  {report.restoreDrillStatus && (
+                                    <span
+                                      className={`px-1 py-0.2 rounded text-[9px] font-mono font-bold ${
+                                        report.restoreDrillStatus === 'SUCCESS'
+                                          ? 'bg-emerald-950 text-emerald-300 border border-emerald-700/60'
+                                          : 'bg-red-950 text-red-300 border border-red-700/60'
+                                      }`}
+                                    >
+                                      {report.restoreDrillStatus === 'SUCCESS' ? 'PASS' : 'FAIL'}
+                                    </span>
+                                  )}
                                 </button>
 
                                 <button
@@ -948,6 +980,84 @@ export const BackupTable: React.FC<BackupTableProps> = ({
                                     </div>
                                   )}
                                 </div>
+                              </div>
+                            )}
+
+                            {/* TAB: DISASTER RECOVERY DRILL (DRILLPULSE) */}
+                            {currentTab === 'drill' && (
+                              <div className="p-4 bg-slate-900/80 rounded-xl border border-slate-800 space-y-3.5">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs font-semibold text-slate-200 flex items-center space-x-1.5">
+                                    <span>🧪</span>
+                                    <span>Disaster Recovery Restoration Drill (DrillPulse)</span>
+                                  </span>
+
+                                  {report.restoreDrillStatus && (
+                                    <span
+                                      className={`px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase ${
+                                        report.restoreDrillStatus === 'SUCCESS'
+                                          ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/60'
+                                          : report.restoreDrillStatus === 'FAILED'
+                                          ? 'bg-red-950 text-red-400 border border-red-800/60'
+                                          : 'bg-slate-800 text-slate-400 border border-slate-700'
+                                      }`}
+                                    >
+                                      {report.restoreDrillStatus}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {report.restoreDrillStatus ? (
+                                  <>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs font-mono">
+                                      <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800">
+                                        <span className="text-[10px] text-slate-500 block">Verified Entities:</span>
+                                        <span className="text-emerald-400 font-semibold">{report.restoreDrillVerifiedTables ?? 0} tables / files</span>
+                                      </div>
+                                      <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800">
+                                        <span className="text-[10px] text-slate-500 block">Drill Duration:</span>
+                                        <span className="text-slate-200 font-semibold">{report.restoreDrillDurationSeconds ?? 0}s</span>
+                                      </div>
+                                      <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800 col-span-2 sm:col-span-1">
+                                        <span className="text-[10px] text-slate-500 block">Verification Result:</span>
+                                        <span className={report.restoreDrillStatus === 'SUCCESS' ? 'text-emerald-400 font-semibold' : 'text-red-400 font-semibold'}>
+                                          {report.restoreDrillStatus === 'SUCCESS' ? 'Dump Validated in Sandbox' : 'Sandbox Verification Failed'}
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    {report.restoreDrillLog && (
+                                      <div>
+                                        <div className="flex items-center justify-between mb-1">
+                                          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Drill Log Output</span>
+                                          <button
+                                            onClick={(e) => copyToClipboard(report.restoreDrillLog || '', `drill_${report.id}`, e)}
+                                            className="text-xs text-slate-400 hover:text-white"
+                                          >
+                                            {copiedField === `drill_${report.id}` ? (
+                                              <Check className="h-3 w-3 text-emerald-400 inline mr-1" />
+                                            ) : (
+                                              <Copy className="h-3 w-3 inline mr-1" />
+                                            )}
+                                            <span>{copiedField === `drill_${report.id}` ? 'Copied' : 'Copy Drill Log'}</span>
+                                          </button>
+                                        </div>
+                                        <pre className="p-3 bg-black/90 rounded-lg border border-slate-800 text-slate-300 font-mono text-xs overflow-x-auto max-h-56 whitespace-pre-wrap select-text">
+                                          {report.restoreDrillLog}
+                                        </pre>
+                                      </div>
+                                    )}
+                                  </>
+                                ) : (
+                                  <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-slate-400 text-xs space-y-2">
+                                    <p className="font-semibold text-slate-300">
+                                      Standard Backup Execution (No Automated Restoration Drill)
+                                    </p>
+                                    <p className="text-[11px] leading-relaxed">
+                                      This backup run was archived successfully without an ephemeral Docker sandbox restoration test. To verify future backups automatically, enable the <strong>🧪 Automated Restoration Drill (DrillPulse)</strong> checkbox in the Deploy New Server Wizard.
+                                    </p>
+                                  </div>
+                                )}
                               </div>
                             )}
 

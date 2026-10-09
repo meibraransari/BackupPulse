@@ -32,8 +32,8 @@ import { useTimezone } from '../context/TimezoneContext';
 
 interface SidebarProps {
   user: User | null;
-  activeTab: 'telemetry' | 'fleet' | 'users';
-  onTabChange: (tab: 'telemetry' | 'fleet' | 'users') => void;
+  activeTab: 'telemetry' | 'drills' | 'fleet' | 'users';
+  onTabChange: (tab: 'telemetry' | 'drills' | 'fleet' | 'users') => void;
   onOpenProfile: () => void;
   onOpenNotificationLogs: () => void;
   onOpenHousekeeping: () => void;
@@ -105,6 +105,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Backup Telemetry',
       icon: Table,
       badge: 'Live',
+    },
+    {
+      id: 'drills' as const,
+      label: 'DR Verification Drills',
+      icon: ShieldCheck,
+      badge: 'DrillPulse',
     },
     {
       id: 'fleet' as const,

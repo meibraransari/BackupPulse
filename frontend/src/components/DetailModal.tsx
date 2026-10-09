@@ -136,53 +136,61 @@ export const DetailModal: React.FC<DetailModalProps> = ({ report, onClose, onMar
           </div>
 
           {/* Disaster Recovery Verification Drill (DrillPulse) */}
-          {report.restoreDrillStatus && (
-            <div className="p-4 bg-slate-950/50 rounded-xl border border-slate-800 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-200 flex items-center space-x-2">
-                  <span>🧪</span>
-                  <span>Disaster Recovery Restoration Drill (DrillPulse)</span>
-                </span>
-                <span
-                  className={`px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase ${
-                    report.restoreDrillStatus === 'SUCCESS'
-                      ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/60'
-                      : report.restoreDrillStatus === 'FAILED'
-                      ? 'bg-red-950 text-red-400 border border-red-800/60'
-                      : 'bg-slate-800 text-slate-400 border border-slate-700'
-                  }`}
-                >
-                  {report.restoreDrillStatus}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs font-mono">
-                <div className="p-2.5 bg-slate-900/60 rounded-lg border border-slate-800/80">
-                  <span className="text-[10px] text-slate-500 block">Verified Entities:</span>
-                  <span className="text-emerald-400 font-semibold">{report.restoreDrillVerifiedTables ?? 0} tables / files</span>
-                </div>
-                <div className="p-2.5 bg-slate-900/60 rounded-lg border border-slate-800/80">
-                  <span className="text-[10px] text-slate-500 block">Drill Duration:</span>
-                  <span className="text-slate-200 font-semibold">{report.restoreDrillDurationSeconds ?? 0}s</span>
-                </div>
-                <div className="p-2.5 bg-slate-900/60 rounded-lg border border-slate-800/80 col-span-2 sm:col-span-1">
-                  <span className="text-[10px] text-slate-500 block">Verification Status:</span>
-                  <span className={report.restoreDrillStatus === 'SUCCESS' ? 'text-emerald-400' : 'text-red-400'}>
-                    {report.restoreDrillStatus === 'SUCCESS' ? 'Dump Validated in Sandbox' : 'Sandbox Test Failed'}
-                  </span>
-                </div>
-              </div>
-
-              {report.restoreDrillLog && (
-                <div>
-                  <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Drill Log Output</span>
-                  <pre className="mt-1 p-2.5 bg-black/60 rounded-lg border border-slate-800/80 text-slate-300 font-mono text-[11px] overflow-x-auto whitespace-pre-wrap">
-                    {report.restoreDrillLog}
-                  </pre>
-                </div>
-              )}
+          <div className="p-4 bg-slate-950/50 rounded-xl border border-slate-800 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-200 flex items-center space-x-2">
+                <span>🧪</span>
+                <span>Disaster Recovery Restoration Drill (DrillPulse)</span>
+              </span>
+              <span
+                className={`px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase ${
+                  report.restoreDrillStatus === 'SUCCESS'
+                    ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/60'
+                    : report.restoreDrillStatus === 'FAILED'
+                    ? 'bg-red-950 text-red-400 border border-red-800/60'
+                    : 'bg-slate-800 text-slate-400 border border-slate-700'
+                }`}
+              >
+                {report.restoreDrillStatus || 'NOT CONFIGURED'}
+              </span>
             </div>
-          )}
+
+            {report.restoreDrillStatus ? (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs font-mono">
+                  <div className="p-2.5 bg-slate-900/60 rounded-lg border border-slate-800/80">
+                    <span className="text-[10px] text-slate-500 block">Verified Entities:</span>
+                    <span className="text-emerald-400 font-semibold">{report.restoreDrillVerifiedTables ?? 0} tables / files</span>
+                  </div>
+                  <div className="p-2.5 bg-slate-900/60 rounded-lg border border-slate-800/80">
+                    <span className="text-[10px] text-slate-500 block">Drill Duration:</span>
+                    <span className="text-slate-200 font-semibold">{report.restoreDrillDurationSeconds ?? 0}s</span>
+                  </div>
+                  <div className="p-2.5 bg-slate-900/60 rounded-lg border border-slate-800/80 col-span-2 sm:col-span-1">
+                    <span className="text-[10px] text-slate-500 block">Verification Status:</span>
+                    <span className={report.restoreDrillStatus === 'SUCCESS' ? 'text-emerald-400' : 'text-red-400'}>
+                      {report.restoreDrillStatus === 'SUCCESS' ? 'Dump Validated in Sandbox' : 'Sandbox Test Failed'}
+                    </span>
+                  </div>
+                </div>
+
+                {report.restoreDrillLog ? (
+                  <div>
+                    <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Drill Log Output</span>
+                    <pre className="mt-1 p-2.5 bg-black/60 rounded-lg border border-slate-800/80 text-slate-300 font-mono text-[11px] overflow-x-auto whitespace-pre-wrap">
+                      {report.restoreDrillLog}
+                    </pre>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-slate-500 italic">No detailed log output captured for this drill.</p>
+                )}
+              </>
+            ) : (
+              <p className="text-xs text-slate-400 leading-relaxed">
+                This backup was executed without automated ephemeral sandbox restoration testing. To certify archive integrity in an isolated Docker container prior to dispatch, enable the <strong>🧪 Automated Restoration Drill (DrillPulse)</strong> option in the Deploy Wizard.
+              </p>
+            )}
+          </div>
 
           {/* S3 Details */}
           <div className="p-4 bg-slate-950/50 rounded-xl border border-slate-800 space-y-3">
