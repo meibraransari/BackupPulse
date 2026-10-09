@@ -375,20 +375,41 @@ export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer, onOpenDepl
               <div>
                 {/* Server Header */}
                 <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center space-x-2.5">
-                    <div className="h-9 w-9 rounded-xl bg-slate-800 flex items-center justify-center text-slate-300 shrink-0">
+                  <div className="flex items-start space-x-2.5 min-w-0 flex-1">
+                    <div className="h-9 w-9 rounded-xl bg-slate-800 flex items-center justify-center text-slate-300 shrink-0 mt-0.5">
                       <Server className="h-4 w-4" />
                     </div>
-                    <div>
-                      <h4 className="font-bold text-white text-sm font-mono truncate max-w-[170px]" title={server.serverId}>
+                    <div className="min-w-0 flex-1">
+                      {/* Highlighted Hosted Project Name on top of IP */}
+                      <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                        {server.projects && server.projects.length > 0 ? (
+                          server.projects.map((proj) => (
+                            <span
+                              key={proj}
+                              className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-lg text-xs font-bold font-mono bg-amber-400/20 text-amber-300 border border-amber-400/40 shadow-sm shadow-amber-950/50"
+                              title={`Hosted Project: ${proj}`}
+                            >
+                              <Folder className="h-3 w-3 text-amber-400 shrink-0" />
+                              <span className="truncate max-w-[210px]">{proj}</span>
+                            </span>
+                          ))
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-mono bg-slate-800 text-slate-400 border border-slate-700">
+                            Unassigned Project
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Server ID & Hostname / IP below project */}
+                      <h4 className="font-semibold text-white text-sm font-mono truncate max-w-[210px]" title={server.serverId}>
                         {server.serverId}
                       </h4>
-                      <div className="text-[11px] text-slate-400 font-mono truncate max-w-[170px]">
-                        {server.hostname} • {server.serverIp}
+                      <div className="text-[11px] text-slate-400 font-mono truncate max-w-[210px]" title={`${server.hostname} • ${server.serverIp}`}>
+                        {server.hostname && server.hostname !== server.serverId ? `${server.hostname} • ` : ''}{server.serverIp}
                       </div>
                     </div>
                   </div>
-                  {getStatusBadge(server)}
+                  <div className="shrink-0">{getStatusBadge(server)}</div>
                 </div>
 
                 {/* Metrics Grid */}
@@ -445,23 +466,6 @@ export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer, onOpenDepl
                     </span>
                   </div>
                 )}
-
-                {/* Hosted Projects Chips */}
-                <div className="mt-3 pt-3 border-t border-slate-800/80">
-                  <span className="text-[10px] text-slate-500 uppercase block mb-1.5">
-                    Hosted Projects ({server.projects.length})
-                  </span>
-                  <div className="flex flex-wrap gap-1.5 max-h-16 overflow-y-auto">
-                    {server.projects.map((proj) => (
-                      <span
-                        key={proj}
-                        className="px-2 py-0.5 rounded-md text-[11px] font-mono bg-slate-950 text-slate-300 border border-slate-800"
-                      >
-                        {proj}
-                      </span>
-                    ))}
-                  </div>
-                </div>
               </div>
 
               {/* Action Buttons */}
@@ -584,10 +588,21 @@ export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer, onOpenDepl
                       </div>
                     </td>
 
-                    <td className="py-3 px-4 max-w-[200px] truncate" title={server.projects.join(', ')}>
-                      <div className="flex items-center space-x-1">
-                        <Folder className="h-3 w-3 text-slate-500 shrink-0" />
-                        <span className="truncate">{server.projects.join(', ')}</span>
+                    <td className="py-3 px-4 max-w-[220px]" title={server.projects.join(', ')}>
+                      <div className="flex flex-wrap gap-1">
+                        {server.projects && server.projects.length > 0 ? (
+                          server.projects.map((proj) => (
+                            <span
+                              key={proj}
+                              className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-bold font-mono bg-amber-400/20 text-amber-300 border border-amber-400/40"
+                            >
+                              <Folder className="h-2.5 w-2.5 text-amber-400 shrink-0" />
+                              <span className="truncate max-w-[170px]">{proj}</span>
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-slate-500 text-[11px] font-mono">None</span>
+                        )}
                       </div>
                     </td>
 
