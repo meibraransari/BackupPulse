@@ -368,64 +368,74 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsSaved }) =
         )}
       </div>
 
-      {/* Category Tabs & Search Bar (ALL ON THE EXACT SAME LINE AS REQUESTED) */}
-      <div className="flex items-center justify-between gap-3 bg-slate-900/80 p-2 rounded-2xl border border-slate-800">
-        {/* Scrollable Category Pills */}
-        <div className="flex items-center space-x-1.5 overflow-x-auto scrollbar-none flex-1 min-w-0 pr-2">
-          <button
-            onClick={() => setActiveCategory('all')}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
-              activeCategory === 'all'
-                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/30'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-            }`}
-          >
-            <span>All Cards</span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-950/60 font-mono">
-              {SETTING_CARDS.length}
-            </span>
-          </button>
-          {categories.map((cat) => {
-            const count = SETTING_CARDS.filter((c) => c.category === cat.id).length;
-            const isActive = activeCategory === cat.id;
-            return (
-              <button
-                key={cat.id}
-                onClick={() => setActiveCategory(cat.id)}
-                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
-                  isActive
-                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/30'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+      {/* Professional Category Navigation & Search Toolbar (Multi-line layout, zero scrollbars) */}
+      <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-3.5 shadow-sm">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3.5">
+          {/* Multi-line wrapping category pills (Zero horizontal scrollbar) */}
+          <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
+            <button
+              onClick={() => setActiveCategory('all')}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                activeCategory === 'all'
+                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/40 ring-1 ring-emerald-400/30'
+                  : 'bg-slate-950/70 text-slate-400 hover:text-white hover:bg-slate-800/80 border border-slate-800/80'
+              }`}
+            >
+              <span>All Settings</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
+                  activeCategory === 'all' ? 'bg-emerald-700 text-white' : 'bg-slate-900 text-slate-400 border border-slate-800'
                 }`}
               >
-                <span>{cat.name}</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-950/60 font-mono">
-                  {count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Search Input on the EXACT SAME line */}
-        <div className="relative w-44 sm:w-64 shrink-0">
-          <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search settings..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-7 py-1.5 bg-slate-950 border border-slate-700/80 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="absolute right-2.5 top-2 text-slate-500 hover:text-white text-xs"
-              title="Clear search"
-            >
-              ✕
+                {SETTING_CARDS.length}
+              </span>
             </button>
-          )}
+            {categories.map((cat) => {
+              const count = SETTING_CARDS.filter((c) => c.category === cat.id).length;
+              const isActive = activeCategory === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => setActiveCategory(cat.id)}
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                    isActive
+                      ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/40 ring-1 ring-emerald-400/30'
+                      : 'bg-slate-950/70 text-slate-400 hover:text-white hover:bg-slate-800/80 border border-slate-800/80'
+                  }`}
+                >
+                  <span>{cat.name}</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
+                      isActive ? 'bg-emerald-700 text-white' : 'bg-slate-900 text-slate-400 border border-slate-800'
+                    }`}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Search Input on the right, perfectly styled */}
+          <div className="relative w-full lg:w-72 shrink-0">
+            <Search className="absolute left-3.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search setting name, key, or provider..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-8 py-2 bg-slate-950/90 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500/80 focus:ring-1 focus:ring-emerald-500/30 transition-all shadow-inner"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-2 text-slate-500 hover:text-white p-0.5 rounded-full hover:bg-slate-800 text-xs transition-colors"
+                title="Clear search"
+              >
+                ✕
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
