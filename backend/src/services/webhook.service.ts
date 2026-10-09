@@ -1,5 +1,5 @@
 import { config } from '../config/env';
-import { DailySummaryStats, formatBytes } from './gchat.service';
+import { DailySummaryStats } from './gchat.service';
 import { recordNotificationLog } from './notification-log.service';
 
 function maskUrl(url: string, type: string): string {
@@ -84,7 +84,6 @@ export async function sendSlackInstantAlert(report: {
           { type: 'mrkdwn', text: `*Server:*\n${report.serverId} (\`${report.hostname}\`)` },
           { type: 'mrkdwn', text: `*Status:*\n${report.status}` },
           { type: 'mrkdwn', text: `*Backup Type:*\n${report.backupType.toUpperCase()}` },
-          { type: 'mrkdwn', text: `*Size:*\n${formatBytes(report.backupSizeBytes)}` },
           { type: 'mrkdwn', text: `*Duration:*\n${report.durationSeconds}s` },
         ],
       },
@@ -153,12 +152,10 @@ export async function sendSlackDailyReport(stats: DailySummaryStats): Promise<{ 
     {
       type: 'section',
       fields: [
-        { type: 'mrkdwn', text: `*Success Rate:*\n${stats.successRate}%` },
         { type: 'mrkdwn', text: `*Total Backups:*\n${stats.total}` },
-        { type: 'mrkdwn', text: `*Successful:*\n${stats.success}` },
+        { type: 'mrkdwn', text: `*Successful:*\n${stats.success} (${stats.successRate}%)` },
         { type: 'mrkdwn', text: `*Failed:*\n${stats.failed}` },
         { type: 'mrkdwn', text: `*Warnings / Anomalies:*\n${stats.warning + stats.anomaliesCount}` },
-        { type: 'mrkdwn', text: `*Volume Transferred:*\n${stats.totalSizeHuman}` },
       ],
     },
   ];
@@ -308,7 +305,6 @@ export async function sendDiscordInstantAlert(report: {
         fields: [
           { name: 'Status', value: report.status, inline: true },
           { name: 'Type', value: report.backupType.toUpperCase(), inline: true },
-          { name: 'Archive Size', value: formatBytes(report.backupSizeBytes), inline: true },
           { name: 'Duration', value: `${report.durationSeconds}s`, inline: true },
         ],
         footer: { text: 'BackupPulse Automated Incident Watchdog' },
@@ -351,7 +347,6 @@ export async function sendDiscordDailyReport(stats: DailySummaryStats): Promise<
           { name: 'Successful', value: String(stats.success), inline: true },
           { name: 'Failed', value: String(stats.failed), inline: true },
           { name: 'Warnings', value: String(stats.warning + stats.anomaliesCount), inline: true },
-          { name: 'Transferred', value: stats.totalSizeHuman, inline: true },
         ],
         footer: { text: 'BackupPulse Daily Digest' },
         timestamp: new Date().toISOString(),
@@ -458,7 +453,7 @@ export async function sendTelegramInstantAlert(report: {
     statusEmoji + ' ' + alertHeader,
     `<b>Server:</b> <code>${report.serverId}</code> (${report.hostname})`,
     `<b>Status:</b> ${report.status} | <b>Type:</b> ${report.backupType.toUpperCase()}`,
-    `<b>Size:</b> ${formatBytes(report.backupSizeBytes)} | <b>Duration:</b> ${report.durationSeconds}s`,
+    `<b>Duration:</b> ${report.durationSeconds}s`,
     `<b>Diagnostic:</b>\n<pre>${errorText.slice(0, 800)}</pre>`,
     `🔗 <a href="${config.APP_BASE_URL}">Open BackupPulse Dashboard</a>`,
   ].join('\n');
@@ -489,7 +484,6 @@ export async function sendTelegramDailyReport(stats: DailySummaryStats): Promise
     `${emoji} <b>BackupPulse Daily Telemetry Summary</b>`,
     `<b>Success Rate:</b> ${stats.successRate}%`,
     `<b>Total Runs:</b> ${stats.total} | <b>Success:</b> ${stats.success} | <b>Failed:</b> ${stats.failed}`,
-    `<b>Volume Transferred:</b> ${stats.totalSizeHuman}`,
     `🔗 <a href="${config.APP_BASE_URL}">View Telemetry Dashboard</a>`,
   ].join('\n');
 

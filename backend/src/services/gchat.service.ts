@@ -194,13 +194,6 @@ export async function sendDailyBackupReportToGoogleChat(): Promise<{ success: bo
         startIcon: { knownIcon: 'DESCRIPTION' },
       },
     },
-    {
-      decoratedText: {
-        topLabel: 'Storage Uploaded to S3',
-        text: `<b>${stats.totalSizeHuman}</b>`,
-        startIcon: { knownIcon: 'MEMBERSHIP' },
-      },
-    },
   ];
 
   if (stats.staleServers && stats.staleServers.length > 0) {
@@ -292,9 +285,9 @@ export async function sendDailyBackupReportToGoogleChat(): Promise<{ success: bo
     message: res.message,
     payload: {
       total: stats.total,
+      success: stats.success,
       successRate: stats.successRate,
       failed: stats.failed,
-      totalSizeHuman: stats.totalSizeHuman,
     },
   });
 
@@ -404,8 +397,8 @@ export async function sendGoogleChatInstantAlert(report: {
                 },
                 {
                   decoratedText: {
-                    topLabel: 'Archive Size & Duration',
-                    text: `${formatBytes(report.backupSizeBytes)} in ${report.durationSeconds}s`,
+                    topLabel: 'Execution Duration',
+                    text: `${report.durationSeconds}s`,
                     startIcon: { knownIcon: 'CLOCK' },
                   },
                 },

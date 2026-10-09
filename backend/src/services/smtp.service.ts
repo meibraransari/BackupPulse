@@ -512,12 +512,12 @@ export async function sendDailyBackupReportEmail(): Promise<{ success: boolean; 
                 <div class="col-val" style="color: ${stats.successRate >= 90 ? '#34d399' : '#f87171'};">${stats.successRate}%</div>
               </div>
               <div class="col" style="margin-right: 8px;">
-                <div class="col-lbl">Failed Jobs</div>
-                <div class="col-val" style="color: ${stats.failed > 0 ? '#f87171' : '#ffffff'};">${stats.failed}</div>
+                <div class="col-lbl">Successful</div>
+                <div class="col-val" style="color: #34d399;">${stats.success}</div>
               </div>
               <div class="col">
-                <div class="col-lbl">Vault Storage</div>
-                <div class="col-val">${stats.totalSizeHuman}</div>
+                <div class="col-lbl">Failed Jobs</div>
+                <div class="col-val" style="color: ${stats.failed > 0 ? '#f87171' : '#94a3b8'};">${stats.failed}</div>
               </div>
             </div>
 
@@ -556,9 +556,9 @@ export async function sendDailyBackupReportEmail(): Promise<{ success: boolean; 
       message: `Daily report email sent via ${result.provider} to ${recipient} (ID: ${result.messageId})`,
       payload: {
         total: stats.total,
+        success: stats.success,
         successRate: stats.successRate,
         failed: stats.failed,
-        totalSizeHuman: stats.totalSizeHuman,
         subject,
         provider: result.provider,
       },
