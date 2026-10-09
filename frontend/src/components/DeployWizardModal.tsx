@@ -600,10 +600,11 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
               </div>
             )}
 
-            {/* Step 4: Storage Destination & Retention Policy */}
-            {backupType !== 'curl' && (
-              <div className="space-y-3 pt-2 border-t border-slate-800/80">
-                <label className="block text-slate-300 font-semibold">4. Backup Destination & Storage Target *</label>
+            {/* Step 4: Storage Destination & Retention Policy (Available for all backup types) */}
+            <div className="space-y-3 pt-2 border-t border-slate-800/80">
+              <label className="block text-slate-300 font-semibold">
+                {backupType === 'curl' ? '3.' : '4.'} Backup Destination & Storage Target *
+              </label>
 
                 {/* Destination Dropdown */}
                 <div className="relative">
@@ -909,123 +910,177 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                   </div>
                 </div>
               </div>
-            )}
           </div>
 
           {/* ================= RIGHT COLUMN: GENERATED OUTPUTS & INSTRUCTIONS (7 cols) ================= */}
           <div className="lg:col-span-7 flex flex-col h-full bg-slate-950/80">
-            {/* Output Sub-Tabs */}
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/40">
-              <div className="flex items-center space-x-1 bg-slate-950 p-1 rounded-2xl border border-slate-800">
+            {/* Output Sub-Tabs (Two-Line Layout with Two-Line Cards) */}
+            <div className="p-4 border-b border-slate-800 bg-slate-900/60 space-y-3">
+              {/* Line 1: The 5 Deployment Mode Cards (Two-Line Card Design) */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+                {/* 1. Full Script */}
                 <button
                   type="button"
                   onClick={() => setOutputTab('script')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-colors ${
+                  className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between ${
                     outputTab === 'script'
-                      ? 'bg-emerald-600 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-white'
+                      ? 'bg-emerald-600/20 border-emerald-500 text-white shadow-md shadow-emerald-950/40 ring-1 ring-emerald-500/50'
+                      : 'bg-slate-950/70 border-slate-800/90 text-slate-400 hover:text-white hover:bg-slate-900/90'
                   }`}
                 >
-                  <FileCode className="h-3.5 w-3.5" />
-                  <span>Full Script (.sh)</span>
+                  <div className="flex items-center space-x-1.5 font-bold text-xs">
+                    <FileCode className={`h-3.5 w-3.5 shrink-0 ${outputTab === 'script' ? 'text-emerald-400' : 'text-slate-400'}`} />
+                    <span className="truncate">Full Script (.sh)</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-mono mt-1 block truncate">Ready-to-deploy</span>
                 </button>
 
+                {/* 2. 1-Liner Run */}
                 <button
                   type="button"
                   onClick={() => setOutputTab('command')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-colors ${
+                  className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between ${
                     outputTab === 'command'
-                      ? 'bg-indigo-600 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-white'
+                      ? 'bg-indigo-600/20 border-indigo-500 text-white shadow-md shadow-indigo-950/40 ring-1 ring-indigo-500/50'
+                      : 'bg-slate-950/70 border-slate-800/90 text-slate-400 hover:text-white hover:bg-slate-900/90'
                   }`}
                 >
-                  <Terminal className="h-3.5 w-3.5" />
-                  <span>1-Liner Run</span>
+                  <div className="flex items-center space-x-1.5 font-bold text-xs">
+                    <Terminal className={`h-3.5 w-3.5 shrink-0 ${outputTab === 'command' ? 'text-indigo-400' : 'text-slate-400'}`} />
+                    <span className="truncate">1-Liner Run</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-mono mt-1 block truncate">curl | bash command</span>
                 </button>
 
+                {/* 3. Pre-Flight Check */}
                 <button
                   type="button"
                   onClick={() => setOutputTab('preflight')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-colors ${
+                  className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between ${
                     outputTab === 'preflight'
-                      ? 'bg-cyan-600 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-white'
+                      ? 'bg-cyan-600/20 border-cyan-500 text-white shadow-md shadow-cyan-950/40 ring-1 ring-cyan-500/50'
+                      : 'bg-slate-950/70 border-slate-800/90 text-slate-400 hover:text-white hover:bg-slate-900/90'
                   }`}
                 >
-                  <Activity className="h-3.5 w-3.5" />
-                  <span>🩺 Pre-Flight Check</span>
+                  <div className="flex items-center space-x-1.5 font-bold text-xs">
+                    <Activity className={`h-3.5 w-3.5 shrink-0 ${outputTab === 'preflight' ? 'text-cyan-400' : 'text-slate-400'}`} />
+                    <span className="truncate">Pre-Flight Check</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-mono mt-1 block truncate">🩺 agent-check.sh</span>
                 </button>
 
+                {/* 4. Crontab */}
                 <button
                   type="button"
                   onClick={() => setOutputTab('crontab')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-colors ${
+                  className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between ${
                     outputTab === 'crontab'
-                      ? 'bg-purple-600 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-white'
+                      ? 'bg-purple-600/20 border-purple-500 text-white shadow-md shadow-purple-950/40 ring-1 ring-purple-500/50'
+                      : 'bg-slate-950/70 border-slate-800/90 text-slate-400 hover:text-white hover:bg-slate-900/90'
                   }`}
                 >
-                  <Clock className="h-3.5 w-3.5" />
-                  <span>Crontab</span>
+                  <div className="flex items-center space-x-1.5 font-bold text-xs">
+                    <Clock className={`h-3.5 w-3.5 shrink-0 ${outputTab === 'crontab' ? 'text-purple-400' : 'text-slate-400'}`} />
+                    <span className="truncate">Crontab Entry</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-mono mt-1 block truncate">Auto schedule</span>
                 </button>
 
+                {/* 5. Pre-requisites */}
                 <button
                   type="button"
                   onClick={() => setOutputTab('prereq')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-colors ${
+                  className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between ${
                     outputTab === 'prereq'
-                      ? 'bg-amber-600 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-white'
+                      ? 'bg-amber-600/20 border-amber-500 text-white shadow-md shadow-amber-950/40 ring-1 ring-amber-500/50'
+                      : 'bg-slate-950/70 border-slate-800/90 text-slate-400 hover:text-white hover:bg-slate-900/90'
                   }`}
                 >
-                  <ShieldCheck className="h-3.5 w-3.5" />
-                  <span>Pre-requisites</span>
+                  <div className="flex items-center space-x-1.5 font-bold text-xs">
+                    <ShieldCheck className={`h-3.5 w-3.5 shrink-0 ${outputTab === 'prereq' ? 'text-amber-400' : 'text-slate-400'}`} />
+                    <span className="truncate">Pre-requisites</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-mono mt-1 block truncate">CLI packages</span>
                 </button>
               </div>
 
-              {/* Action Buttons: Copy / Download */}
-              <div className="flex items-center space-x-2">
-                {outputTab === 'script' && (
+              {/* Line 2: Actions Bar & File Info */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-2 border-t border-slate-800/80">
+                <div className="flex items-center space-x-2 text-xs overflow-hidden">
+                  <span className="flex items-center space-x-1.5 text-white font-mono text-[11px] bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800 truncate">
+                    <FileCode className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                    <span className="truncate font-semibold">
+                      {outputTab === 'script'
+                        ? defaultScriptName
+                        : outputTab === 'command'
+                        ? '1-liner.sh'
+                        : outputTab === 'preflight'
+                        ? 'agent-check.sh'
+                        : outputTab === 'crontab'
+                        ? 'crontab -e'
+                        : 'dependencies.sh'}
+                    </span>
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md bg-slate-800 text-[10px] text-slate-300 font-mono border border-slate-700 shrink-0">
+                    Target:{' '}
+                    <strong className="text-emerald-400">
+                      {storageDestination === 's3'
+                        ? 'AWS S3'
+                        : storageDestination === 'gcs'
+                        ? 'Google Cloud Storage'
+                        : storageDestination === 'azure'
+                        ? 'Azure Blob Storage'
+                        : storageDestination === 'local'
+                        ? 'Local Storage'
+                        : 'Shared Drive / NFS'}
+                    </strong>
+                  </span>
+                </div>
+
+                {/* Actions: Download .sh & Copy Snippet */}
+                <div className="flex items-center space-x-2 shrink-0">
+                  {outputTab === 'script' && (
+                    <button
+                      type="button"
+                      onClick={handleDownloadScript}
+                      className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 transition-colors shadow-sm"
+                      title={`Download ${defaultScriptName}`}
+                    >
+                      <Download className="h-3.5 w-3.5 text-cyan-400" />
+                      <span>Download .sh</span>
+                    </button>
+                  )}
+
                   <button
                     type="button"
-                    onClick={handleDownloadScript}
-                    className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 transition-colors shadow-sm"
-                    title={`Download ${defaultScriptName}`}
+                    onClick={() => {
+                      const toCopy =
+                        outputTab === 'script'
+                          ? generatedScript
+                          : outputTab === 'command'
+                          ? generatedCliCommand
+                          : outputTab === 'preflight'
+                          ? preflightCmd
+                          : outputTab === 'crontab'
+                          ? generateCrontabLine(targetScriptPath, cronSchedule)
+                          : `${installCommands.debian}\n\n${installCommands.prep}\n\n# ${installCommands.storageTitle}\n${installCommands.storageCommand}`;
+                      copyText(toCopy, outputTab);
+                    }}
+                    className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-md shadow-emerald-950/40"
                   >
-                    <Download className="h-3.5 w-3.5 text-cyan-400" />
-                    <span className="hidden sm:inline">Download .sh</span>
+                    {copiedCode === outputTab ? (
+                      <>
+                        <Check className="h-3.5 w-3.5 text-white" />
+                        <span>Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3.5 w-3.5 text-white" />
+                        <span>Copy Code</span>
+                      </>
+                    )}
                   </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    const toCopy =
-                      outputTab === 'script'
-                        ? generatedScript
-                        : outputTab === 'command'
-                        ? generatedCliCommand
-                        : outputTab === 'preflight'
-                        ? preflightCmd
-                        : outputTab === 'crontab'
-                        ? generateCrontabLine(targetScriptPath, cronSchedule)
-                        : `${installCommands.debian}\n\n${installCommands.prep}\n\n# ${installCommands.storageTitle}\n${installCommands.storageCommand}`;
-                    copyText(toCopy, outputTab);
-                  }}
-                  className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-md shadow-emerald-950/40"
-                >
-                  {copiedCode === outputTab ? (
-                    <>
-                      <Check className="h-3.5 w-3.5 text-white" />
-                      <span>Copied!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-3.5 w-3.5 text-white" />
-                      <span>Copy</span>
-                    </>
-                  )}
-                </button>
+                </div>
               </div>
             </div>
 

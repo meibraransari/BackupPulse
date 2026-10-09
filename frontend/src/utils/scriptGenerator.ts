@@ -1669,8 +1669,8 @@ export function generateCurlSnippet(cfg: GeneratorConfig): string {
   let targetBucket = cfg.s3Bucket || 'my-backup-vault';
   if (dest === 'gcs') targetBucket = `gs://${cfg.gcsBucket || 'my-gcp-vault'}`;
   else if (dest === 'azure') targetBucket = `Azure: ${cfg.azureContainer || 'backups'}`;
-  else if (dest === 'local') targetBucket = 'Local Storage';
-  else if (dest === 'shared_drive') targetBucket = 'Shared Drive';
+  else if (dest === 'local') targetBucket = cfg.localBackupDir ? `Local: ${cfg.localBackupDir}` : 'Local Storage';
+  else if (dest === 'shared_drive') targetBucket = cfg.sharedDrivePath ? `Shared: ${cfg.sharedDrivePath}` : 'Shared Drive';
 
   return `# ==============================================================================
 # Paste this block at the end of your existing backup bash script:
