@@ -155,54 +155,24 @@ BackupPulse includes an enterprise multi-channel notification and alert dispatch
 When enabled, the exact second any backup reports `status === 'FAILED'` or is flagged with a critical size drop anomaly (`isAnomaly === true`), high-priority alerts are immediately dispatched to **all enabled channels** (Google Chat, Email, Slack, Discord, Telegram) without waiting for the scheduled morning digest.
 - **5-Minute Deduplication Cooldown**: Automatically prevents alert spam from rapid or broken cron loops on individual servers while recording every run in the database.
 
-### Notification Settings in `.env`
+### ⚙️ Dynamic Notification Configuration (System Settings Dashboard)
 
-```ini
-# --- Real-Time Instant Alerts ---
-INSTANT_ALERT_ON_FAILURE=true
+All notification webhooks, SMTP / SendGrid / SES credentials, and alert cron schedules are managed directly in the Web Dashboard under **System Settings** (`⚙️ System Settings`). There is **zero requirement to edit `.env` or restart containers**:
 
-# --- Scheduled Summary Digest Cron (default: 9:00 AM daily) ---
-REPORT_CRON="0 9 * * *"
+- **Instant Hot-Reload**: Changes take effect in-memory immediately upon saving.
+- **Persistent in PostgreSQL**: Saved in the `system_settings` table, ensuring notification endpoints are safely included in standard database backups (`pg_dump`).
+- **Dedicated Single-Card Controls**:
+  - ⚡ **Alerts & Cron Settings**: Toggle instant failure alerts and customize the morning digest cron (e.g., `0 9 * * *`).
+  - 💬 **Google Chat**: Incoming webhook URL and 1-click test button.
+  - ✉️ **Email Dispatch**: Toggle emails, choose provider (`smtp`, `sendgrid`, or `ses`), set sender name/address, and comma-separated recipients.
+  - 📨 **SMTP Relay**: Host, port (`587` / `465` / `25`), TLS toggle, username, and masked password.
+  - 🚀 **SendGrid Web API**: API key configuration with masked storage and instant test dispatch.
+  - ☁️ **AWS SES**: AWS region, optional IAM Access Key ID and Secret Access Key (auto-falls back to AWS instance/pod IAM roles).
+  - 💬 **Slack**: Block Kit incoming webhook URL and test button.
+  - 🎮 **Discord**: Rich Embed webhook URL and test button.
+  - ✈️ **Telegram**: Bot token, destination chat ID, and test button.
 
-# --- Channel 1: Google Chat ---
-ENABLE_GOOGLE_CHAT=true
-GOOGLE_CHAT_WEBHOOK_URL="https://chat.googleapis.com/v1/spaces/YOUR_SPACE/messages?key=...&token=..."
-
-# --- Channel 2: Email Reporting (SMTP / SendGrid / AWS SES) ---
-ENABLE_SMTP=true
-EMAIL_PROVIDER=smtp  # 'smtp' | 'sendgrid' | 'ses'
-EMAIL_FROM="BackupPulse Central <alerts@yourdomain.com>"
-EMAIL_TO="devops@yourdomain.com,team-lead@yourdomain.com"
-
-# Standard SMTP Relay (e.g. Gmail, Postfix, Office 365)
-SMTP_HOST="smtp.gmail.com"
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER="alerts@yourdomain.com"
-SMTP_PASSWORD="your-app-password"
-
-# SendGrid Web API v3
-SENDGRID_API_KEY="SG.your_sendgrid_api_key_here"
-
-# AWS SES (Simple Email Service)
-AWS_SES_REGION="us-east-1"
-# Optional explicit credentials (omit to use AWS IAM instance profiles / ECS / EKS roles):
-AWS_SES_ACCESS_KEY_ID="AKIAIOSFODNN7EXAMPLE"
-AWS_SES_SECRET_ACCESS_KEY="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
-
-# --- Channel 3: Slack (Block Kit) ---
-ENABLE_SLACK=true
-SLACK_WEBHOOK_URL="https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
-
-# --- Channel 4: Discord (Rich Embeds) ---
-ENABLE_DISCORD=true
-DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/000000000000000000/XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-
-# --- Channel 5: Telegram Bot ---
-ENABLE_TELEGRAM=true
-TELEGRAM_BOT_TOKEN="123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
-TELEGRAM_CHAT_ID="-1001234567890"
-```
+Administrators can also view and update these settings programmatically via `GET /api/v1/settings` and `PATCH /api/v1/settings` (or dispatch test alerts via `POST /api/v1/settings/test-channel`).
 
 ### ✉️ Email Report Features (SMTP / SendGrid / AWS SES)
 - **Multi-Provider Support**: Seamlessly route emails through traditional SMTP, high-deliverability SendGrid Web API, or cost-effective AWS SES with automatic IAM role fallback.
@@ -636,18 +606,13 @@ Every dispatch attempt to Google Chat and SMTP is tracked in real-time in the `n
 
 ## 🧹 Database Retention & Automated Housekeeping
 
-To prevent unbounded database disk usage across hundreds of production servers generating daily backups, BackupPulse features an automated data retention housekeeping policy configurable via `.env`:
+To prevent unbounded database disk usage across hundreds of production servers generating daily backups, BackupPulse features an automated data retention housekeeping policy configured directly in the Web Dashboard under **System Settings** (`⚙️ System Settings`):
 
-```ini
-# Maximum days to retain telemetry and alert send logs (default: 365 days / 1 year)
-DB_RETENTION_DAYS=365
+- **Data Retention Window (`DB_RETENTION_DAYS`)**: Maximum days to retain backup telemetry and alert dispatch logs (default: 365 days / 1 year).
+- **Automated Housekeeping Toggle (`ENABLE_HOUSEKEEPING`)**: Enable or disable background cron retention purges.
+- **Housekeeping Cron Schedule (`HOUSEKEEPING_CRON`)**: Schedule for running database cleanup (default: `0 3 * * *` / 03:00 AM daily).
 
-# Enable or disable automated cron retention purge
-ENABLE_HOUSEKEEPING=true
-
-# Schedule for running database cleanup (default: 03:00 AM daily)
-HOUSEKEEPING_CRON="0 3 * * *"
-```
+All retention changes are persisted in PostgreSQL and take effect immediately without modifying `.env` or restarting containers.
 
 ### How Housekeeping Works:
 * **Automated Cron**: Runs daily at 03:00 AM (or your custom `HOUSEKEEPING_CRON`) to purge all records in `backup_reports` and `notification_logs` where `created_at < now - DB_RETENTION_DAYS`.
@@ -755,7 +720,7 @@ Previously, all remote servers shared a single central `BACKUP_API_KEY`. In larg
   - **Expiration Timers**: Automatically expire keys after a specified number of days (e.g., 90 or 365 days).
 - **Security & Hashing**: Keys are generated using cryptographically secure random bytes (`bkp_<hex>`), hashed with SHA-256 before storage in PostgreSQL, and displayed **only once** upon generation with a copy-to-clipboard modal.
 - **1-Click Immediate Revocation**: Instantly revoke any compromised token with a single click without affecting other servers.
-- **Master Key Backward Compatibility**: The central `BACKUP_API_KEY` defined in `.env` continues to work seamlessly across all existing backup scripts.
+- **Master Key Backward Compatibility**: The central master ingestion key configured in **System Settings** (or seeded during initial startup) continues to work seamlessly across all existing backup scripts.
 
 ---
 
