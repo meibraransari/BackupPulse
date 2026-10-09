@@ -310,8 +310,13 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
 
         {activeTab === 'telemetry' ? (
           <>
-            {/* 1. Metric Cards (Clickable: Jumps and filters table) */}
-            <StatCards stats={stats} loading={loadingStats} onSelectFilter={handleCardClick} />
+            {/* 1. Metric Cards (Clickable: Jumps and filters table / fleet view) */}
+            <StatCards
+              stats={stats}
+              loading={loadingStats}
+              onSelectFilter={handleCardClick}
+              onViewFleet={() => setActiveTab('fleet')}
+            />
 
             {/* 2. Visual Charts (Clickable: Jumps and filters by date / project) */}
             <TrendChart

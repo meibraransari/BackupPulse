@@ -1,14 +1,15 @@
 import React from 'react';
-import { CheckCircle2, AlertTriangle, HardDrive, Activity, ArrowDownRight } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, Server, Activity, ArrowDownRight } from 'lucide-react';
 import { DashboardStats } from '../types';
 
 interface StatCardsProps {
   stats: DashboardStats | null;
   loading: boolean;
   onSelectFilter?: (status: string) => void;
+  onViewFleet?: () => void;
 }
 
-export const StatCards: React.FC<StatCardsProps> = ({ stats, loading, onSelectFilter }) => {
+export const StatCards: React.FC<StatCardsProps> = ({ stats, loading, onSelectFilter, onViewFleet }) => {
   if (loading || !stats) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -108,26 +109,28 @@ export const StatCards: React.FC<StatCardsProps> = ({ stats, loading, onSelectFi
         </div>
       </div>
 
-      {/* 4. Total Fleet Storage Consumed (Clickable -> View Table) */}
+      {/* 4. Active Monitored Hosts / Fleet Infrastructure (Clickable -> View Fleet Inventory) */}
       <div
-        onClick={() => onSelectFilter?.('ALL')}
+        onClick={() => (onViewFleet ? onViewFleet() : onSelectFilter?.('ALL'))}
         className="bg-slate-900 border border-slate-800 hover:border-purple-500/60 hover:bg-slate-900/90 rounded-2xl p-5 relative overflow-hidden group transition-all duration-200 shadow-md cursor-pointer hover:shadow-purple-500/10 hover:shadow-xl hover:-translate-y-0.5"
-        title="Click to view all storage records"
+        title="Click to view server fleet inventory"
       >
         <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">Total Fleet Storage</span>
+          <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">Active Monitored Hosts</span>
           <div className="p-2 bg-purple-500/10 text-purple-400 rounded-xl group-hover:bg-purple-500/20 transition-colors">
-            <HardDrive className="h-5 w-5" />
+            <Server className="h-5 w-5" />
           </div>
         </div>
         <div className="mt-3 flex items-baseline justify-between">
-          <span className="text-3xl font-extrabold text-white tracking-tight">{stats.totalStorageHuman}</span>
-          <span className="text-xs text-slate-500">{stats.activeProjectsCount} Projects • {stats.activeServersCount} Hosts</span>
+          <span className="text-3xl font-extrabold text-white tracking-tight">{stats.activeServersCount}</span>
+          <span className="text-xs px-2 py-0.5 rounded-full bg-purple-950/60 text-purple-400 border border-purple-800/40 font-semibold">
+            {stats.activeProjectsCount} Projects
+          </span>
         </div>
         <div className="mt-2 text-xs text-slate-400 flex items-center justify-between">
-          <span>Multi-cloud & local volume</span>
+          <span>Online telemetry reporting</span>
           <span className="text-[10px] text-purple-400/80 group-hover:text-purple-300 flex items-center font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-            View table <ArrowDownRight className="h-3 w-3 ml-0.5" />
+            View fleet <ArrowDownRight className="h-3 w-3 ml-0.5" />
           </span>
         </div>
       </div>
