@@ -647,7 +647,7 @@ export const BackupTable: React.FC<BackupTableProps> = ({
                                   }`}
                                 >
                                   <HardDrive className="h-3 w-3" />
-                                  <span>S3 Vault</span>
+                                  <span>Storage Vault</span>
                                 </button>
 
                                 <button
@@ -850,13 +850,13 @@ export const BackupTable: React.FC<BackupTableProps> = ({
                               </div>
                             )}
 
-                            {/* TAB 2: S3 VAULT DETAILS */}
+                            {/* TAB 2: STORAGE VAULT DETAILS */}
                             {currentTab === 'vault' && (
                               <div className="p-4 bg-slate-900/80 rounded-xl border border-slate-800 space-y-3">
                                 <div className="flex items-center justify-between">
                                   <span className="text-xs font-semibold text-slate-200 flex items-center space-x-1.5">
                                     <HardDrive className="h-3.5 w-3.5 text-blue-400" />
-                                    <span>Cloud Storage & Checksum Verification</span>
+                                    <span>Storage Vault & Checksum Verification</span>
                                   </span>
 
                                   {report.s3Url && (

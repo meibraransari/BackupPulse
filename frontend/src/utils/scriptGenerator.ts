@@ -1,14 +1,15 @@
 // ==============================================================================
 // BackupPulse Script Generator Utility
 // Generates ready-to-run, production-grade backup scripts and curl snippets
-// Supports: AWS S3, Local Server Path, and Network Shared Drive (NFS / CIFS / SMB)
+// Supports: AWS S3, Google Cloud Storage (GCS), Azure Blob Storage,
+//           Local Server Path, and Network Shared Drive (NFS / CIFS / SMB)
 // ==============================================================================
 
-export type StorageDestination = 's3' | 'local' | 'shared_drive';
+export type StorageDestination = 's3' | 'gcs' | 'azure' | 'local' | 'shared_drive';
 
 export interface GeneratorConfig {
   backupType: 'postgres' | 'mysql' | 'zip' | 'curl';
-  storageDestination?: StorageDestination; // 's3' | 'local' | 'shared_drive' (defaults to 's3')
+  storageDestination?: StorageDestination;
   apiUrl: string;
   apiKey: string;
   projectName: string;
@@ -26,9 +27,22 @@ export interface GeneratorConfig {
   dbName?: string;
   allDatabases?: boolean;
 
-  // Storage destination specific
+  // AWS S3 specific
   s3Bucket: string;
   s3Folder: string;
+
+  // Google Cloud Storage specific
+  gcsBucket?: string;
+  gcsFolder?: string;
+
+  // Azure Blob Storage specific
+  azureStorageAccount?: string;
+  azureContainer?: string;
+  azureFolder?: string;
+  azureSasToken?: string;
+  azureConnectionString?: string;
+
+  // Local / Shared Drive specific
   backupPath: string; // Local staging directory
   localBackupDir?: string; // Target local storage directory
   sharedDrivePath?: string; // Target mounted shared drive path
@@ -51,9 +65,20 @@ export function generatePostgresScript(cfg: GeneratorConfig): string {
   const dbHost = cfg.dbHost || '127.0.0.1';
   const dbPort = cfg.dbPort || '5432';
   const dbName = cfg.dbName || 'my_database';
+
+  // Cloud targets
   const s3Bucket = cfg.s3Bucket || 'my-backup-vault';
   const s3Folder = cfg.s3Folder || `${project}_db_backup`;
-  const stagingPath = cfg.backupPath || (dest === 's3' ? '/var/backups/postgres' : '/tmp/backup_staging');
+  const gcsBucket = cfg.gcsBucket || 'my-gcp-backup-vault';
+  const gcsFolder = cfg.gcsFolder || `${project}_db_backup`;
+  const azureAccount = cfg.azureStorageAccount || 'mybackupstorage';
+  const azureContainer = cfg.azureContainer || 'backups';
+  const azureFolder = cfg.azureFolder || `${project}_db_backup`;
+  const azureSas = cfg.azureSasToken || '';
+  const azureConn = cfg.azureConnectionString || '';
+
+  // Local / mount targets
+  const stagingPath = cfg.backupPath || (dest === 'local' ? '/var/backups/postgres' : '/tmp/backup_staging');
   const localBackupDir = cfg.localBackupDir || '/var/backups/postgres';
   const sharedDrivePath = cfg.sharedDrivePath || '/mnt/backup_share';
   const retentionDays = cfg.retentionDays || 30;
@@ -63,7 +88,11 @@ export function generatePostgresScript(cfg: GeneratorConfig): string {
 
   const targetLabel =
     dest === 's3'
-      ? `s3://${s3Bucket}/${s3Folder}`
+      ? `AWS S3 (s3://${s3Bucket}/${s3Folder})`
+      : dest === 'gcs'
+      ? `Google Cloud Storage (gs://${gcsBucket}/${gcsFolder})`
+      : dest === 'azure'
+      ? `Azure Blob Storage (${azureAccount}/${azureContainer}/${azureFolder})`
       : dest === 'local'
       ? `Local Disk (${localBackupDir})`
       : `Shared Drive (${sharedDrivePath})`;
@@ -96,9 +125,16 @@ DB_PORT="\${PGPORT:-\${DB_PORT:-${dbPort}}}"
 DB_NAME="\${PGDATABASE:-\${DB_NAME:-${dbName}}}"
 
 # --- Destination & Retention Policy ---
-DESTINATION="\${DESTINATION:-${dest}}"  # Options: s3, local, shared_drive
+DESTINATION="\${DESTINATION:-${dest}}"  # Options: s3, gcs, azure, local, shared_drive
 S3_BUCKET="\${S3_BUCKET:-${s3Bucket}}"
 S3_FOLDER_NAME="\${S3_FOLDER_NAME:-${s3Folder}}"
+GCS_BUCKET="\${GCS_BUCKET:-${gcsBucket}}"
+GCS_FOLDER_NAME="\${GCS_FOLDER_NAME:-${gcsFolder}}"
+AZURE_STORAGE_ACCOUNT="\${AZURE_STORAGE_ACCOUNT:-${azureAccount}}"
+AZURE_CONTAINER="\${AZURE_CONTAINER:-${azureContainer}}"
+AZURE_FOLDER="\${AZURE_FOLDER:-${azureFolder}}"
+AZURE_SAS_TOKEN="\${AZURE_SAS_TOKEN:-${azureSas}}"
+AZURE_CONNECTION_STRING="\${AZURE_CONNECTION_STRING:-${azureConn}}"
 LOCAL_BACKUP_DIR="\${LOCAL_BACKUP_DIR:-${localBackupDir}}"
 SHARED_DRIVE_PATH="\${SHARED_DRIVE_PATH:-${sharedDrivePath}}"
 MAX_FILES="\${MAX_FILES:-${maxFiles}}"
@@ -124,6 +160,11 @@ while [[ "$#" -gt 0 ]]; do
     --destination) DESTINATION="$2"; shift 2 ;;
     --s3-bucket) S3_BUCKET="$2"; shift 2 ;;
     --s3-folder) S3_FOLDER_NAME="$2"; shift 2 ;;
+    --gcs-bucket) GCS_BUCKET="$2"; shift 2 ;;
+    --gcs-folder) GCS_FOLDER_NAME="$2"; shift 2 ;;
+    --azure-account) AZURE_STORAGE_ACCOUNT="$2"; shift 2 ;;
+    --azure-container) AZURE_CONTAINER="$2"; shift 2 ;;
+    --azure-folder) AZURE_FOLDER="$2"; shift 2 ;;
     --local-dir) LOCAL_BACKUP_DIR="$2"; shift 2 ;;
     --shared-dir) SHARED_DRIVE_PATH="$2"; shift 2 ;;
     --retention-days) RETENTION_DAYS="$2"; shift 2 ;;
@@ -316,6 +357,120 @@ if [ "$DESTINATION" = "s3" ]; then
   fi
   rm -f "$ZIP_FILE"
 
+elif [ "$DESTINATION" = "gcs" ]; then
+  GCS_KEY="\${GCS_FOLDER_NAME}/\${ZIP_FILENAME}"
+  GCS_URL="gs://\${GCS_BUCKET}/\${GCS_KEY}"
+  FINAL_BUCKET="gs://\${GCS_BUCKET}"
+  FINAL_KEY="$GCS_KEY"
+  FINAL_URL="$GCS_URL"
+
+  echo "🌐 [4/5] Uploading to Google Cloud Storage: \${GCS_URL}..."
+  UPLOAD_OK=false
+  if command -v gcloud >/dev/null 2>&1; then
+    if gcloud storage cp "$ZIP_FILE" "$GCS_URL" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
+      UPLOAD_OK=true
+    fi
+  elif command -v gsutil >/dev/null 2>&1; then
+    if gsutil cp "$ZIP_FILE" "$GCS_URL" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
+      UPLOAD_OK=true
+    fi
+  else
+    echo "❌ Neither 'gcloud' nor 'gsutil' CLI was found!" >>"$LOG_STDERR"
+  fi
+
+  if [ "$UPLOAD_OK" != true ]; then
+    ERR="GCS upload failed: $(tail -n 3 "$LOG_STDERR")"
+    echo "❌ $ERR"
+    send_telemetry "FAILED" 1 "$ERR" "$LATEST_SIZE" "$CHECKSUM" "$FINAL_BUCKET" "$FINAL_KEY" "$FINAL_URL"
+    exit 1
+  fi
+
+  echo "🧹 [5/5] Managing GCS retention (Keep max \${MAX_FILES} files)..."
+  if command -v gcloud >/dev/null 2>&1; then
+    GCS_FILES=($(gcloud storage ls "gs://\${GCS_BUCKET}/\${GCS_FOLDER_NAME}/*.zip" 2>/dev/null | sort || true))
+    TOTAL_GCS=\${#GCS_FILES[@]}
+    if (( TOTAL_GCS > MAX_FILES )); then
+      PRUNE_COUNT=$(( TOTAL_GCS - MAX_FILES ))
+      echo "Pruning \${PRUNE_COUNT} oldest archives from GCS..."
+      for (( i=0; i<PRUNE_COUNT; i++ )); do
+        gcloud storage rm "\${GCS_FILES[$i]}" 2>/dev/null || true
+      done
+    fi
+  elif command -v gsutil >/dev/null 2>&1; then
+    GCS_FILES=($(gsutil ls "gs://\${GCS_BUCKET}/\${GCS_FOLDER_NAME}/*.zip" 2>/dev/null | sort || true))
+    TOTAL_GCS=\${#GCS_FILES[@]}
+    if (( TOTAL_GCS > MAX_FILES )); then
+      PRUNE_COUNT=$(( TOTAL_GCS - MAX_FILES ))
+      echo "Pruning \${PRUNE_COUNT} oldest archives from GCS..."
+      for (( i=0; i<PRUNE_COUNT; i++ )); do
+        gsutil rm "\${GCS_FILES[$i]}" 2>/dev/null || true
+      done
+    fi
+  fi
+  rm -f "$ZIP_FILE"
+
+elif [ "$DESTINATION" = "azure" ]; then
+  AZURE_BLOB_NAME="\${AZURE_FOLDER}/\${ZIP_FILENAME}"
+  AZURE_BLOB_URL="https://\${AZURE_STORAGE_ACCOUNT}.blob.core.windows.net/\${AZURE_CONTAINER}/\${AZURE_BLOB_NAME}"
+  FINAL_BUCKET="Azure: \${AZURE_CONTAINER}"
+  FINAL_KEY="$AZURE_BLOB_NAME"
+  FINAL_URL="$AZURE_BLOB_URL"
+
+  echo "🔷 [4/5] Uploading to Azure Blob Storage: \${AZURE_BLOB_URL}..."
+  UPLOAD_OK=false
+  AUTH_ARGS=()
+  if [ -n "$AZURE_CONNECTION_STRING" ]; then
+    AUTH_ARGS+=(--connection-string "$AZURE_CONNECTION_STRING")
+  elif [ -n "$AZURE_SAS_TOKEN" ]; then
+    AUTH_ARGS+=(--account-name "$AZURE_STORAGE_ACCOUNT" --sas-token "$AZURE_SAS_TOKEN")
+  else
+    AUTH_ARGS+=(--account-name "$AZURE_STORAGE_ACCOUNT" --auth-mode login)
+  fi
+
+  if command -v az >/dev/null 2>&1; then
+    if az storage blob upload \\
+      --container-name "$AZURE_CONTAINER" \\
+      --name "$AZURE_BLOB_NAME" \\
+      --file "$ZIP_FILE" \\
+      --overwrite true \\
+      "\${AUTH_ARGS[@]}" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
+      UPLOAD_OK=true
+    fi
+  elif command -v azcopy >/dev/null 2>&1; then
+    DEST_URL="https://\${AZURE_STORAGE_ACCOUNT}.blob.core.windows.net/\${AZURE_CONTAINER}/\${AZURE_BLOB_NAME}"
+    if [ -n "$AZURE_SAS_TOKEN" ]; then
+      DEST_URL="\${DEST_URL}?\${AZURE_SAS_TOKEN#\\?}"
+    fi
+    if azcopy copy "$ZIP_FILE" "$DEST_URL" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
+      UPLOAD_OK=true
+    fi
+  else
+    echo "❌ Neither Azure CLI ('az') nor 'azcopy' was found!" >>"$LOG_STDERR"
+  fi
+
+  if [ "$UPLOAD_OK" != true ]; then
+    ERR="Azure Blob upload failed: $(tail -n 3 "$LOG_STDERR")"
+    echo "❌ $ERR"
+    send_telemetry "FAILED" 1 "$ERR" "$LATEST_SIZE" "$CHECKSUM" "$FINAL_BUCKET" "$FINAL_KEY" "$FINAL_URL"
+    exit 1
+  fi
+
+  echo "🧹 [5/5] Managing Azure Blob retention (Keep max \${MAX_FILES} files)..."
+  if command -v az >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+    BLOBS_JSON=$(az storage blob list --container-name "$AZURE_CONTAINER" --prefix "\${AZURE_FOLDER}/" "\${AUTH_ARGS[@]}" --query "[].name" -o json 2>/dev/null || echo "[]")
+    TOTAL_BLOBS=$(echo "$BLOBS_JSON" | jq 'length' 2>/dev/null || echo "0")
+    if (( TOTAL_BLOBS > MAX_FILES )); then
+      PRUNE_COUNT=$(( TOTAL_BLOBS - MAX_FILES ))
+      echo "Pruning \${PRUNE_COUNT} oldest archives from Azure Blob..."
+      echo "$BLOBS_JSON" | jq -r 'sort | .[:'"$PRUNE_COUNT"'] | .[]' | while read -r OLD_BLOB; do
+        if [ -n "$OLD_BLOB" ]; then
+          az storage blob delete --container-name "$AZURE_CONTAINER" --name "$OLD_BLOB" "\${AUTH_ARGS[@]}" 2>/dev/null || true
+        fi
+      done
+    fi
+  fi
+  rm -f "$ZIP_FILE"
+
 elif [ "$DESTINATION" = "shared_drive" ]; then
   DEST_FILE="\${SHARED_DRIVE_PATH}/\${ZIP_FILENAME}"
   FINAL_BUCKET="Shared Drive"
@@ -378,9 +533,20 @@ export function generateMysqlScript(cfg: GeneratorConfig): string {
   const dbHost = cfg.dbHost || '127.0.0.1';
   const dbPort = cfg.dbPort || '3306';
   const dbName = cfg.dbName || 'my_database';
+
+  // Cloud targets
   const s3Bucket = cfg.s3Bucket || 'my-backup-vault';
   const s3Folder = cfg.s3Folder || `${project}_db_backup`;
-  const stagingPath = cfg.backupPath || (dest === 's3' ? '/var/backups/mysql' : '/tmp/backup_staging');
+  const gcsBucket = cfg.gcsBucket || 'my-gcp-backup-vault';
+  const gcsFolder = cfg.gcsFolder || `${project}_db_backup`;
+  const azureAccount = cfg.azureStorageAccount || 'mybackupstorage';
+  const azureContainer = cfg.azureContainer || 'backups';
+  const azureFolder = cfg.azureFolder || `${project}_db_backup`;
+  const azureSas = cfg.azureSasToken || '';
+  const azureConn = cfg.azureConnectionString || '';
+
+  // Local / mount targets
+  const stagingPath = cfg.backupPath || (dest === 'local' ? '/var/backups/mysql' : '/tmp/backup_staging');
   const localBackupDir = cfg.localBackupDir || '/var/backups/mysql';
   const sharedDrivePath = cfg.sharedDrivePath || '/mnt/backup_share';
   const retentionDays = cfg.retentionDays || 30;
@@ -390,7 +556,11 @@ export function generateMysqlScript(cfg: GeneratorConfig): string {
 
   const targetLabel =
     dest === 's3'
-      ? `s3://${s3Bucket}/${s3Folder}`
+      ? `AWS S3 (s3://${s3Bucket}/${s3Folder})`
+      : dest === 'gcs'
+      ? `Google Cloud Storage (gs://${gcsBucket}/${gcsFolder})`
+      : dest === 'azure'
+      ? `Azure Blob Storage (${azureAccount}/${azureContainer}/${azureFolder})`
       : dest === 'local'
       ? `Local Disk (${localBackupDir})`
       : `Shared Drive (${sharedDrivePath})`;
@@ -423,9 +593,16 @@ DB_PORT="\${MYSQL_TCP_PORT:-\${DB_PORT:-${dbPort}}}"
 DB_NAME="\${MYSQL_DATABASE:-\${DB_NAME:-${dbName}}}"
 
 # --- Destination & Retention Policy ---
-DESTINATION="\${DESTINATION:-${dest}}"  # Options: s3, local, shared_drive
+DESTINATION="\${DESTINATION:-${dest}}"  # Options: s3, gcs, azure, local, shared_drive
 S3_BUCKET="\${S3_BUCKET:-${s3Bucket}}"
 S3_FOLDER_NAME="\${S3_FOLDER_NAME:-${s3Folder}}"
+GCS_BUCKET="\${GCS_BUCKET:-${gcsBucket}}"
+GCS_FOLDER_NAME="\${GCS_FOLDER_NAME:-${gcsFolder}}"
+AZURE_STORAGE_ACCOUNT="\${AZURE_STORAGE_ACCOUNT:-${azureAccount}}"
+AZURE_CONTAINER="\${AZURE_CONTAINER:-${azureContainer}}"
+AZURE_FOLDER="\${AZURE_FOLDER:-${azureFolder}}"
+AZURE_SAS_TOKEN="\${AZURE_SAS_TOKEN:-${azureSas}}"
+AZURE_CONNECTION_STRING="\${AZURE_CONNECTION_STRING:-${azureConn}}"
 LOCAL_BACKUP_DIR="\${LOCAL_BACKUP_DIR:-${localBackupDir}}"
 SHARED_DRIVE_PATH="\${SHARED_DRIVE_PATH:-${sharedDrivePath}}"
 MAX_FILES="\${MAX_FILES:-${maxFiles}}"
@@ -451,6 +628,11 @@ while [[ "$#" -gt 0 ]]; do
     --destination) DESTINATION="$2"; shift 2 ;;
     --s3-bucket) S3_BUCKET="$2"; shift 2 ;;
     --s3-folder) S3_FOLDER_NAME="$2"; shift 2 ;;
+    --gcs-bucket) GCS_BUCKET="$2"; shift 2 ;;
+    --gcs-folder) GCS_FOLDER_NAME="$2"; shift 2 ;;
+    --azure-account) AZURE_STORAGE_ACCOUNT="$2"; shift 2 ;;
+    --azure-container) AZURE_CONTAINER="$2"; shift 2 ;;
+    --azure-folder) AZURE_FOLDER="$2"; shift 2 ;;
     --local-dir) LOCAL_BACKUP_DIR="$2"; shift 2 ;;
     --shared-dir) SHARED_DRIVE_PATH="$2"; shift 2 ;;
     --retention-days) RETENTION_DAYS="$2"; shift 2 ;;
@@ -644,6 +826,120 @@ if [ "$DESTINATION" = "s3" ]; then
   fi
   rm -f "$ZIP_FILE"
 
+elif [ "$DESTINATION" = "gcs" ]; then
+  GCS_KEY="\${GCS_FOLDER_NAME}/\${ZIP_FILENAME}"
+  GCS_URL="gs://\${GCS_BUCKET}/\${GCS_KEY}"
+  FINAL_BUCKET="gs://\${GCS_BUCKET}"
+  FINAL_KEY="$GCS_KEY"
+  FINAL_URL="$GCS_URL"
+
+  echo "🌐 [4/5] Uploading to Google Cloud Storage: \${GCS_URL}..."
+  UPLOAD_OK=false
+  if command -v gcloud >/dev/null 2>&1; then
+    if gcloud storage cp "$ZIP_FILE" "$GCS_URL" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
+      UPLOAD_OK=true
+    fi
+  elif command -v gsutil >/dev/null 2>&1; then
+    if gsutil cp "$ZIP_FILE" "$GCS_URL" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
+      UPLOAD_OK=true
+    fi
+  else
+    echo "❌ Neither 'gcloud' nor 'gsutil' CLI was found!" >>"$LOG_STDERR"
+  fi
+
+  if [ "$UPLOAD_OK" != true ]; then
+    ERR="GCS upload failed: $(tail -n 3 "$LOG_STDERR")"
+    echo "❌ $ERR"
+    send_telemetry "FAILED" 1 "$ERR" "$LATEST_SIZE" "$CHECKSUM" "$FINAL_BUCKET" "$FINAL_KEY" "$FINAL_URL"
+    exit 1
+  fi
+
+  echo "🧹 [5/5] Managing GCS retention (Keep max \${MAX_FILES} files)..."
+  if command -v gcloud >/dev/null 2>&1; then
+    GCS_FILES=($(gcloud storage ls "gs://\${GCS_BUCKET}/\${GCS_FOLDER_NAME}/*.zip" 2>/dev/null | sort || true))
+    TOTAL_GCS=\${#GCS_FILES[@]}
+    if (( TOTAL_GCS > MAX_FILES )); then
+      PRUNE_COUNT=$(( TOTAL_GCS - MAX_FILES ))
+      echo "Pruning \${PRUNE_COUNT} oldest archives from GCS..."
+      for (( i=0; i<PRUNE_COUNT; i++ )); do
+        gcloud storage rm "\${GCS_FILES[$i]}" 2>/dev/null || true
+      done
+    fi
+  elif command -v gsutil >/dev/null 2>&1; then
+    GCS_FILES=($(gsutil ls "gs://\${GCS_BUCKET}/\${GCS_FOLDER_NAME}/*.zip" 2>/dev/null | sort || true))
+    TOTAL_GCS=\${#GCS_FILES[@]}
+    if (( TOTAL_GCS > MAX_FILES )); then
+      PRUNE_COUNT=$(( TOTAL_GCS - MAX_FILES ))
+      echo "Pruning \${PRUNE_COUNT} oldest archives from GCS..."
+      for (( i=0; i<PRUNE_COUNT; i++ )); do
+        gsutil rm "\${GCS_FILES[$i]}" 2>/dev/null || true
+      done
+    fi
+  fi
+  rm -f "$ZIP_FILE"
+
+elif [ "$DESTINATION" = "azure" ]; then
+  AZURE_BLOB_NAME="\${AZURE_FOLDER}/\${ZIP_FILENAME}"
+  AZURE_BLOB_URL="https://\${AZURE_STORAGE_ACCOUNT}.blob.core.windows.net/\${AZURE_CONTAINER}/\${AZURE_BLOB_NAME}"
+  FINAL_BUCKET="Azure: \${AZURE_CONTAINER}"
+  FINAL_KEY="$AZURE_BLOB_NAME"
+  FINAL_URL="$AZURE_BLOB_URL"
+
+  echo "🔷 [4/5] Uploading to Azure Blob Storage: \${AZURE_BLOB_URL}..."
+  UPLOAD_OK=false
+  AUTH_ARGS=()
+  if [ -n "$AZURE_CONNECTION_STRING" ]; then
+    AUTH_ARGS+=(--connection-string "$AZURE_CONNECTION_STRING")
+  elif [ -n "$AZURE_SAS_TOKEN" ]; then
+    AUTH_ARGS+=(--account-name "$AZURE_STORAGE_ACCOUNT" --sas-token "$AZURE_SAS_TOKEN")
+  else
+    AUTH_ARGS+=(--account-name "$AZURE_STORAGE_ACCOUNT" --auth-mode login)
+  fi
+
+  if command -v az >/dev/null 2>&1; then
+    if az storage blob upload \\
+      --container-name "$AZURE_CONTAINER" \\
+      --name "$AZURE_BLOB_NAME" \\
+      --file "$ZIP_FILE" \\
+      --overwrite true \\
+      "\${AUTH_ARGS[@]}" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
+      UPLOAD_OK=true
+    fi
+  elif command -v azcopy >/dev/null 2>&1; then
+    DEST_URL="https://\${AZURE_STORAGE_ACCOUNT}.blob.core.windows.net/\${AZURE_CONTAINER}/\${AZURE_BLOB_NAME}"
+    if [ -n "$AZURE_SAS_TOKEN" ]; then
+      DEST_URL="\${DEST_URL}?\${AZURE_SAS_TOKEN#\\?}"
+    fi
+    if azcopy copy "$ZIP_FILE" "$DEST_URL" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
+      UPLOAD_OK=true
+    fi
+  else
+    echo "❌ Neither Azure CLI ('az') nor 'azcopy' was found!" >>"$LOG_STDERR"
+  fi
+
+  if [ "$UPLOAD_OK" != true ]; then
+    ERR="Azure Blob upload failed: $(tail -n 3 "$LOG_STDERR")"
+    echo "❌ $ERR"
+    send_telemetry "FAILED" 1 "$ERR" "$LATEST_SIZE" "$CHECKSUM" "$FINAL_BUCKET" "$FINAL_KEY" "$FINAL_URL"
+    exit 1
+  fi
+
+  echo "🧹 [5/5] Managing Azure Blob retention (Keep max \${MAX_FILES} files)..."
+  if command -v az >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+    BLOBS_JSON=$(az storage blob list --container-name "$AZURE_CONTAINER" --prefix "\${AZURE_FOLDER}/" "\${AUTH_ARGS[@]}" --query "[].name" -o json 2>/dev/null || echo "[]")
+    TOTAL_BLOBS=$(echo "$BLOBS_JSON" | jq 'length' 2>/dev/null || echo "0")
+    if (( TOTAL_BLOBS > MAX_FILES )); then
+      PRUNE_COUNT=$(( TOTAL_BLOBS - MAX_FILES ))
+      echo "Pruning \${PRUNE_COUNT} oldest archives from Azure Blob..."
+      echo "$BLOBS_JSON" | jq -r 'sort | .[:'"$PRUNE_COUNT"'] | .[]' | while read -r OLD_BLOB; do
+        if [ -n "$OLD_BLOB" ]; then
+          az storage blob delete --container-name "$AZURE_CONTAINER" --name "$OLD_BLOB" "\${AUTH_ARGS[@]}" 2>/dev/null || true
+        fi
+      done
+    fi
+  fi
+  rm -f "$ZIP_FILE"
+
 elif [ "$DESTINATION" = "shared_drive" ]; then
   DEST_FILE="\${SHARED_DRIVE_PATH}/\${ZIP_FILENAME}"
   FINAL_BUCKET="Shared Drive"
@@ -702,9 +998,20 @@ export function generateZipScript(cfg: GeneratorConfig): string {
   const apiKey = cfg.apiKey || 'bkp_live_secret_key_12345';
   const project = cfg.projectName || 'my_web_app';
   const sourcePath = cfg.sourcePath || '/var/www/html';
+
+  // Cloud targets
   const s3Bucket = cfg.s3Bucket || 'my-backup-vault';
   const s3Folder = cfg.s3Folder || `${project}_files_backup`;
-  const stagingPath = cfg.backupPath || (dest === 's3' ? '/var/backups/zip' : '/tmp/backup_staging');
+  const gcsBucket = cfg.gcsBucket || 'my-gcp-backup-vault';
+  const gcsFolder = cfg.gcsFolder || `${project}_files_backup`;
+  const azureAccount = cfg.azureStorageAccount || 'mybackupstorage';
+  const azureContainer = cfg.azureContainer || 'backups';
+  const azureFolder = cfg.azureFolder || `${project}_files_backup`;
+  const azureSas = cfg.azureSasToken || '';
+  const azureConn = cfg.azureConnectionString || '';
+
+  // Local / mount targets
+  const stagingPath = cfg.backupPath || (dest === 'local' ? '/var/backups/zip' : '/tmp/backup_staging');
   const localBackupDir = cfg.localBackupDir || '/var/backups/zip';
   const sharedDrivePath = cfg.sharedDrivePath || '/mnt/backup_share';
   const retentionDays = cfg.retentionDays || 30;
@@ -715,7 +1022,11 @@ export function generateZipScript(cfg: GeneratorConfig): string {
 
   const targetLabel =
     dest === 's3'
-      ? `s3://${s3Bucket}/${s3Folder}`
+      ? `AWS S3 (s3://${s3Bucket}/${s3Folder})`
+      : dest === 'gcs'
+      ? `Google Cloud Storage (gs://${gcsBucket}/${gcsFolder})`
+      : dest === 'azure'
+      ? `Azure Blob Storage (${azureAccount}/${azureContainer}/${azureFolder})`
       : dest === 'local'
       ? `Local Disk (${localBackupDir})`
       : `Shared Drive (${sharedDrivePath})`;
@@ -745,9 +1056,16 @@ SOURCE_PATH="\${SOURCE_PATH:-${sourcePath}}"
 EXCLUDE_PATTERNS=(${excludes})
 
 # --- Destination & Retention Policy ---
-DESTINATION="\${DESTINATION:-${dest}}"  # Options: s3, local, shared_drive
+DESTINATION="\${DESTINATION:-${dest}}"  # Options: s3, gcs, azure, local, shared_drive
 S3_BUCKET="\${S3_BUCKET:-${s3Bucket}}"
 S3_FOLDER_NAME="\${S3_FOLDER_NAME:-${s3Folder}}"
+GCS_BUCKET="\${GCS_BUCKET:-${gcsBucket}}"
+GCS_FOLDER_NAME="\${GCS_FOLDER_NAME:-${gcsFolder}}"
+AZURE_STORAGE_ACCOUNT="\${AZURE_STORAGE_ACCOUNT:-${azureAccount}}"
+AZURE_CONTAINER="\${AZURE_CONTAINER:-${azureContainer}}"
+AZURE_FOLDER="\${AZURE_FOLDER:-${azureFolder}}"
+AZURE_SAS_TOKEN="\${AZURE_SAS_TOKEN:-${azureSas}}"
+AZURE_CONNECTION_STRING="\${AZURE_CONNECTION_STRING:-${azureConn}}"
 LOCAL_BACKUP_DIR="\${LOCAL_BACKUP_DIR:-${localBackupDir}}"
 SHARED_DRIVE_PATH="\${SHARED_DRIVE_PATH:-${sharedDrivePath}}"
 MAX_FILES="\${MAX_FILES:-${maxFiles}}"
@@ -769,6 +1087,11 @@ while [[ "$#" -gt 0 ]]; do
     --destination) DESTINATION="$2"; shift 2 ;;
     --s3-bucket) S3_BUCKET="$2"; shift 2 ;;
     --s3-folder) S3_FOLDER_NAME="$2"; shift 2 ;;
+    --gcs-bucket) GCS_BUCKET="$2"; shift 2 ;;
+    --gcs-folder) GCS_FOLDER_NAME="$2"; shift 2 ;;
+    --azure-account) AZURE_STORAGE_ACCOUNT="$2"; shift 2 ;;
+    --azure-container) AZURE_CONTAINER="$2"; shift 2 ;;
+    --azure-folder) AZURE_FOLDER="$2"; shift 2 ;;
     --local-dir) LOCAL_BACKUP_DIR="$2"; shift 2 ;;
     --shared-dir) SHARED_DRIVE_PATH="$2"; shift 2 ;;
     --retention-days) RETENTION_DAYS="$2"; shift 2 ;;
@@ -963,6 +1286,120 @@ if [ "$DESTINATION" = "s3" ]; then
   fi
   rm -f "$ZIP_FILE"
 
+elif [ "$DESTINATION" = "gcs" ]; then
+  GCS_KEY="\${GCS_FOLDER_NAME}/\${ZIP_FILENAME}"
+  GCS_URL="gs://\${GCS_BUCKET}/\${GCS_KEY}"
+  FINAL_BUCKET="gs://\${GCS_BUCKET}"
+  FINAL_KEY="$GCS_KEY"
+  FINAL_URL="$GCS_URL"
+
+  echo "🌐 [3/4] Uploading to Google Cloud Storage: \${GCS_URL}..."
+  UPLOAD_OK=false
+  if command -v gcloud >/dev/null 2>&1; then
+    if gcloud storage cp "$ZIP_FILE" "$GCS_URL" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
+      UPLOAD_OK=true
+    fi
+  elif command -v gsutil >/dev/null 2>&1; then
+    if gsutil cp "$ZIP_FILE" "$GCS_URL" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
+      UPLOAD_OK=true
+    fi
+  else
+    echo "❌ Neither 'gcloud' nor 'gsutil' CLI was found!" >>"$LOG_STDERR"
+  fi
+
+  if [ "$UPLOAD_OK" != true ]; then
+    ERR="GCS upload failed: $(tail -n 3 "$LOG_STDERR")"
+    echo "❌ $ERR"
+    send_telemetry "FAILED" 1 "$ERR" "$LATEST_SIZE" "$CHECKSUM" "$FINAL_BUCKET" "$FINAL_KEY" "$FINAL_URL"
+    exit 1
+  fi
+
+  echo "🧹 [4/4] Managing GCS retention (Keep max \${MAX_FILES} files)..."
+  if command -v gcloud >/dev/null 2>&1; then
+    GCS_FILES=($(gcloud storage ls "gs://\${GCS_BUCKET}/\${GCS_FOLDER_NAME}/*.zip" 2>/dev/null | sort || true))
+    TOTAL_GCS=\${#GCS_FILES[@]}
+    if (( TOTAL_GCS > MAX_FILES )); then
+      PRUNE_COUNT=$(( TOTAL_GCS - MAX_FILES ))
+      echo "Pruning \${PRUNE_COUNT} oldest archives from GCS..."
+      for (( i=0; i<PRUNE_COUNT; i++ )); do
+        gcloud storage rm "\${GCS_FILES[$i]}" 2>/dev/null || true
+      done
+    fi
+  elif command -v gsutil >/dev/null 2>&1; then
+    GCS_FILES=($(gsutil ls "gs://\${GCS_BUCKET}/\${GCS_FOLDER_NAME}/*.zip" 2>/dev/null | sort || true))
+    TOTAL_GCS=\${#GCS_FILES[@]}
+    if (( TOTAL_GCS > MAX_FILES )); then
+      PRUNE_COUNT=$(( TOTAL_GCS - MAX_FILES ))
+      echo "Pruning \${PRUNE_COUNT} oldest archives from GCS..."
+      for (( i=0; i<PRUNE_COUNT; i++ )); do
+        gsutil rm "\${GCS_FILES[$i]}" 2>/dev/null || true
+      done
+    fi
+  fi
+  rm -f "$ZIP_FILE"
+
+elif [ "$DESTINATION" = "azure" ]; then
+  AZURE_BLOB_NAME="\${AZURE_FOLDER}/\${ZIP_FILENAME}"
+  AZURE_BLOB_URL="https://\${AZURE_STORAGE_ACCOUNT}.blob.core.windows.net/\${AZURE_CONTAINER}/\${AZURE_BLOB_NAME}"
+  FINAL_BUCKET="Azure: \${AZURE_CONTAINER}"
+  FINAL_KEY="$AZURE_BLOB_NAME"
+  FINAL_URL="$AZURE_BLOB_URL"
+
+  echo "🔷 [3/4] Uploading to Azure Blob Storage: \${AZURE_BLOB_URL}..."
+  UPLOAD_OK=false
+  AUTH_ARGS=()
+  if [ -n "$AZURE_CONNECTION_STRING" ]; then
+    AUTH_ARGS+=(--connection-string "$AZURE_CONNECTION_STRING")
+  elif [ -n "$AZURE_SAS_TOKEN" ]; then
+    AUTH_ARGS+=(--account-name "$AZURE_STORAGE_ACCOUNT" --sas-token "$AZURE_SAS_TOKEN")
+  else
+    AUTH_ARGS+=(--account-name "$AZURE_STORAGE_ACCOUNT" --auth-mode login)
+  fi
+
+  if command -v az >/dev/null 2>&1; then
+    if az storage blob upload \\
+      --container-name "$AZURE_CONTAINER" \\
+      --name "$AZURE_BLOB_NAME" \\
+      --file "$ZIP_FILE" \\
+      --overwrite true \\
+      "\${AUTH_ARGS[@]}" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
+      UPLOAD_OK=true
+    fi
+  elif command -v azcopy >/dev/null 2>&1; then
+    DEST_URL="https://\${AZURE_STORAGE_ACCOUNT}.blob.core.windows.net/\${AZURE_CONTAINER}/\${AZURE_BLOB_NAME}"
+    if [ -n "$AZURE_SAS_TOKEN" ]; then
+      DEST_URL="\${DEST_URL}?\${AZURE_SAS_TOKEN#\\?}"
+    fi
+    if azcopy copy "$ZIP_FILE" "$DEST_URL" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
+      UPLOAD_OK=true
+    fi
+  else
+    echo "❌ Neither Azure CLI ('az') nor 'azcopy' was found!" >>"$LOG_STDERR"
+  fi
+
+  if [ "$UPLOAD_OK" != true ]; then
+    ERR="Azure Blob upload failed: $(tail -n 3 "$LOG_STDERR")"
+    echo "❌ $ERR"
+    send_telemetry "FAILED" 1 "$ERR" "$LATEST_SIZE" "$CHECKSUM" "$FINAL_BUCKET" "$FINAL_KEY" "$FINAL_URL"
+    exit 1
+  fi
+
+  echo "🧹 [4/4] Managing Azure Blob retention (Keep max \${MAX_FILES} files)..."
+  if command -v az >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+    BLOBS_JSON=$(az storage blob list --container-name "$AZURE_CONTAINER" --prefix "\${AZURE_FOLDER}/" "\${AUTH_ARGS[@]}" --query "[].name" -o json 2>/dev/null || echo "[]")
+    TOTAL_BLOBS=$(echo "$BLOBS_JSON" | jq 'length' 2>/dev/null || echo "0")
+    if (( TOTAL_BLOBS > MAX_FILES )); then
+      PRUNE_COUNT=$(( TOTAL_BLOBS - MAX_FILES ))
+      echo "Pruning \${PRUNE_COUNT} oldest archives from Azure Blob..."
+      echo "$BLOBS_JSON" | jq -r 'sort | .[:'"$PRUNE_COUNT"'] | .[]' | while read -r OLD_BLOB; do
+        if [ -n "$OLD_BLOB" ]; then
+          az storage blob delete --container-name "$AZURE_CONTAINER" --name "$OLD_BLOB" "\${AUTH_ARGS[@]}" 2>/dev/null || true
+        fi
+      done
+    fi
+  fi
+  rm -f "$ZIP_FILE"
+
 elif [ "$DESTINATION" = "shared_drive" ]; then
   DEST_FILE="\${SHARED_DRIVE_PATH}/\${ZIP_FILENAME}"
   FINAL_BUCKET="Shared Drive"
@@ -1021,7 +1458,12 @@ export function generateCurlSnippet(cfg: GeneratorConfig): string {
   const apiKey = cfg.apiKey || 'bkp_live_secret_key_12345';
   const project = cfg.projectName || 'my_custom_project';
   const retention = cfg.retentionDays || 30;
-  const s3Bucket = dest === 's3' ? cfg.s3Bucket || 'my-backup-vault' : dest === 'local' ? 'Local Storage' : 'Shared Drive';
+
+  let targetBucket = cfg.s3Bucket || 'my-backup-vault';
+  if (dest === 'gcs') targetBucket = `gs://${cfg.gcsBucket || 'my-gcp-vault'}`;
+  else if (dest === 'azure') targetBucket = `Azure: ${cfg.azureContainer || 'backups'}`;
+  else if (dest === 'local') targetBucket = 'Local Storage';
+  else if (dest === 'shared_drive') targetBucket = 'Shared Drive';
 
   return `# ==============================================================================
 # Paste this block at the end of your existing backup bash script:
@@ -1048,7 +1490,7 @@ curl -s -X POST "${apiUrl}" \\
     \\"end_time\\": \\"$END_TIME\\",
     \\"duration_seconds\\": 12,
     \\"backup_size_bytes\\": $ARCHIVE_SIZE,
-    \\"s3_bucket\\": \\"${s3Bucket}\\",
+    \\"s3_bucket\\": \\"${targetBucket}\\",
     \\"retention_days\\": ${retention},
     \\"zip_filename\\": \\"$(basename "$ARCHIVE_PATH")\\"
   }"
@@ -1073,47 +1515,102 @@ export function generateInstallCommands(
   storageCommand: string;
   storageHelp: string;
 } {
-  // If S3 is NOT selected, awscli is omitted!
-  const isS3 = storageDestination === 's3';
-  const baseToolsDeb = isS3 ? 'zip unzip jq awscli curl' : 'zip unzip jq curl';
-  const baseToolsRhel = isS3 ? 'zip unzip jq awscli curl' : 'zip unzip jq curl';
-
-  let debPkgs = baseToolsDeb;
-  let rhelPkgs = baseToolsRhel;
+  let dbDeb = '';
+  let dbRhel = '';
 
   if (backupType === 'postgres') {
-    debPkgs = `postgresql-client ${baseToolsDeb}`;
-    rhelPkgs = `postgresql ${baseToolsRhel}`;
+    dbDeb = 'postgresql-client ';
+    dbRhel = 'postgresql ';
   } else if (backupType === 'mysql') {
-    debPkgs = `default-mysql-client ${baseToolsDeb}`;
-    rhelPkgs = `mysql ${baseToolsRhel}`;
+    dbDeb = 'default-mysql-client ';
+    dbRhel = 'mysql ';
   }
 
   const primaryDir = targetPath || stagingPath;
 
-  let storageTitle = '☁️ 4. AWS S3 Credentials Configuration';
-  let storageCommand = 'aws configure';
-  let storageHelp =
-    'Configure AWS credentials with S3 read/write permissions on the client machine via IAM Instance Profile or access keys.';
-
-  if (storageDestination === 'local') {
-    storageTitle = '💻 4. Local Storage Verification';
-    storageCommand = `df -h ${primaryDir}`;
-    storageHelp = `Verify available storage capacity on the local filesystem. No AWS account or AWS CLI required!`;
-  } else if (storageDestination === 'shared_drive') {
-    storageTitle = '📁 4. Network Shared Drive Mount Verification';
-    storageCommand = `df -h ${primaryDir}`;
-    storageHelp = `Ensure your NFS or SMB/CIFS network drive is mounted at '${primaryDir}' before running the backup script.`;
+  if (storageDestination === 's3') {
+    return {
+      debian: `sudo apt update && sudo apt install -y ${dbDeb}zip unzip jq awscli curl`,
+      rhel: `sudo yum install -y ${dbRhel}zip unzip jq awscli curl`,
+      prep: `sudo mkdir -p ${primaryDir} /opt/scripts
+sudo chmod 777 ${primaryDir}
+sudo chmod +x /opt/scripts/*.sh`,
+      storageTitle: '☁️ 4. AWS S3 Credentials Configuration',
+      storageCommand: 'aws configure',
+      storageHelp:
+        'Configure AWS credentials with S3 read/write permissions on the client machine via IAM Instance Profile or access keys.',
+    };
   }
 
+  if (storageDestination === 'gcs') {
+    return {
+      debian: `sudo apt update && sudo apt install -y ${dbDeb}zip unzip jq curl apt-transport-https ca-certificates gnupg
+echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
+curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
+sudo apt update && sudo apt install -y google-cloud-cli`,
+      rhel: `sudo tee -a /etc/yum.repos.d/google-cloud-sdk.repo << 'EOF'
+[google-cloud-cli]
+name=Google Cloud CLI
+baseurl=https://packages.cloud.google.com/yum/repos/cloud-sdk-el8-x86_64
+enabled=1
+gpgcheck=1
+repo_gpgcheck=0
+gpgkey=https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+EOF
+sudo yum install -y ${dbRhel}google-cloud-cli zip unzip jq curl`,
+      prep: `sudo mkdir -p ${primaryDir} /opt/scripts
+sudo chmod 777 ${primaryDir}
+sudo chmod +x /opt/scripts/*.sh`,
+      storageTitle: '🌐 4. Google Cloud Storage Authentication (GCS)',
+      storageCommand: `gcloud auth activate-service-account --key-file=/opt/gcp-sa-key.json
+# Or on Google Compute Engine VM: Attach a service account with Cloud Storage write access.`,
+      storageHelp:
+        'Authenticate with GCP using a Service Account JSON key with "Storage Object Admin" role on your bucket, or attach a Service Account to your Google Cloud VM.',
+    };
+  }
+
+  if (storageDestination === 'azure') {
+    return {
+      debian: `curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+sudo apt update && sudo apt install -y ${dbDeb}zip unzip jq curl`,
+      rhel: `sudo rpm --import https://packages.microsoft.com/keys/microsoft.asc
+sudo dnf install -y https://packages.microsoft.com/config/rhel/8/packages-microsoft-prod.rpm
+sudo dnf install -y azure-cli ${dbRhel}zip unzip jq curl`,
+      prep: `sudo mkdir -p ${primaryDir} /opt/scripts
+sudo chmod 777 ${primaryDir}
+sudo chmod +x /opt/scripts/*.sh`,
+      storageTitle: '🔷 4. Azure Blob Storage Authentication',
+      storageCommand: `az login
+# Or on Azure VM: az login --identity
+# Or export SAS Token: export AZURE_SAS_TOKEN="sp=racwd&st=..."`,
+      storageHelp:
+        'Authenticate using Azure CLI ("az login"), Azure Managed Identity ("az login --identity" on Azure VMs), or supply a Container SAS Token or Connection String.',
+    };
+  }
+
+  if (storageDestination === 'local') {
+    return {
+      debian: `sudo apt update && sudo apt install -y ${dbDeb}zip unzip jq curl`,
+      rhel: `sudo yum install -y ${dbRhel}zip unzip jq curl`,
+      prep: `sudo mkdir -p ${primaryDir} /opt/scripts
+sudo chmod 777 ${primaryDir}
+sudo chmod +x /opt/scripts/*.sh`,
+      storageTitle: '💻 4. Local Storage Verification',
+      storageCommand: `df -h ${primaryDir}`,
+      storageHelp:
+        'Verify available storage capacity on the local filesystem. No cloud provider account or cloud CLI required.',
+    };
+  }
+
+  // shared_drive
   return {
-    debian: `sudo apt update && sudo apt install -y ${debPkgs}`,
-    rhel: `sudo yum install -y ${rhelPkgs}`,
+    debian: `sudo apt update && sudo apt install -y ${dbDeb}zip unzip jq curl`,
+    rhel: `sudo yum install -y ${dbRhel}zip unzip jq curl`,
     prep: `sudo mkdir -p ${primaryDir} /opt/scripts
 sudo chmod 777 ${primaryDir}
 sudo chmod +x /opt/scripts/*.sh`,
-    storageTitle,
-    storageCommand,
-    storageHelp,
+    storageTitle: '📁 4. Network Shared Drive Mount Verification',
+    storageCommand: `df -h ${primaryDir}`,
+    storageHelp: `Ensure your NFS or SMB/CIFS network drive is mounted at '${primaryDir}' before running the backup script.`,
   };
 }

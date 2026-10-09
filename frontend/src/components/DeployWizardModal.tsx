@@ -58,7 +58,7 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
   // Workload selection
   const [backupType, setBackupType] = useState<'postgres' | 'mysql' | 'zip' | 'curl'>('postgres');
 
-  // Storage Destination selection: s3 | local | shared_drive
+  // Storage Destination selection: s3 | gcs | azure | local | shared_drive
   const [storageDestination, setStorageDestination] = useState<StorageDestination>('s3');
 
   // Form Configuration State
@@ -68,9 +68,22 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
   const [serverId, setServerId] = useState<string>(initialServerId || '');
   const [environment, setEnvironment] = useState<string>('production');
 
-  // Storage Target State
+  // AWS S3 Target State
   const [s3Bucket, setS3Bucket] = useState<string>('my-company-backup-vault');
   const [s3Folder, setS3Folder] = useState<string>('ecommerce-prod_db_backup');
+
+  // Google Cloud Storage (GCS) State
+  const [gcsBucket, setGcsBucket] = useState<string>('my-gcp-backup-vault');
+  const [gcsFolder, setGcsFolder] = useState<string>('ecommerce-prod_db_backup');
+
+  // Azure Blob Storage State
+  const [azureStorageAccount, setAzureStorageAccount] = useState<string>('mybackupstorage');
+  const [azureContainer, setAzureContainer] = useState<string>('backups');
+  const [azureFolder, setAzureFolder] = useState<string>('ecommerce-prod_db_backup');
+  const [azureSasToken, setAzureSasToken] = useState<string>('');
+  const [azureConnectionString, setAzureConnectionString] = useState<string>('');
+
+  // Local / Shared Drive / Staging State
   const [localBackupDir, setLocalBackupDir] = useState<string>('/var/backups/postgres');
   const [sharedDrivePath, setSharedDrivePath] = useState<string>('/mnt/backup_share');
   const [backupPath, setBackupPath] = useState<string>('/var/backups/postgres');
@@ -104,13 +117,15 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
   // Auto-sync folder name with project name if user hasn't explicitly changed it
   useEffect(() => {
     if (projectName) {
-      if (backupType === 'postgres') {
-        setS3Folder(`${projectName}_postgres_backup`);
-      } else if (backupType === 'mysql') {
-        setS3Folder(`${projectName}_mysql_backup`);
-      } else if (backupType === 'zip') {
-        setS3Folder(`${projectName}_zip_backup`);
-      }
+      const folder =
+        backupType === 'postgres'
+          ? `${projectName}_postgres_backup`
+          : backupType === 'mysql'
+          ? `${projectName}_mysql_backup`
+          : `${projectName}_zip_backup`;
+      setS3Folder(folder);
+      setGcsFolder(folder);
+      setAzureFolder(folder);
     }
   }, [projectName, backupType]);
 
@@ -185,6 +200,13 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
     minSizeKb: Number(minSizeKb) || 35,
     s3Bucket: s3Bucket.trim() || 'my-backup-vault',
     s3Folder: s3Folder.trim() || 'backups',
+    gcsBucket: gcsBucket.trim() || 'my-gcp-backup-vault',
+    gcsFolder: gcsFolder.trim() || 'backups',
+    azureStorageAccount: azureStorageAccount.trim() || 'mybackupstorage',
+    azureContainer: azureContainer.trim() || 'backups',
+    azureFolder: azureFolder.trim() || 'backups',
+    azureSasToken: azureSasToken.trim() || undefined,
+    azureConnectionString: azureConnectionString.trim() || undefined,
     backupPath: backupPath.trim() || '/var/backups',
     localBackupDir: localBackupDir.trim() || '/var/backups',
     sharedDrivePath: sharedDrivePath.trim() || '/mnt/backup_share',
@@ -201,7 +223,16 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
   // Generate code outputs based on backupType and storageDestination
   let generatedScript = '';
   let defaultScriptName = 'backup.sh';
-  const destTag = storageDestination === 's3' ? 's3' : storageDestination === 'local' ? 'local' : 'shared';
+  const destTag =
+    storageDestination === 's3'
+      ? 's3'
+      : storageDestination === 'gcs'
+      ? 'gcs'
+      : storageDestination === 'azure'
+      ? 'azure'
+      : storageDestination === 'local'
+      ? 'local'
+      : 'shared';
 
   if (backupType === 'postgres') {
     generatedScript = generatePostgresScript(currentConfig);
@@ -222,6 +253,10 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
   const destArg =
     storageDestination === 's3'
       ? `--destination "s3" --s3-bucket "${s3Bucket}"`
+      : storageDestination === 'gcs'
+      ? `--destination "gcs" --gcs-bucket "${gcsBucket}"`
+      : storageDestination === 'azure'
+      ? `--destination "azure" --azure-account "${azureStorageAccount}" --azure-container "${azureContainer}"`
       : storageDestination === 'local'
       ? `--destination "local" --local-dir "${localBackupDir}"`
       : `--destination "shared_drive" --shared-dir "${sharedDrivePath}"`;
@@ -275,11 +310,11 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
               <div className="flex items-center space-x-2">
                 <h2 className="text-lg font-bold text-white tracking-tight">Deploy New Server Wizard</h2>
                 <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
-                  1-Click Script Generator
+                  1-Click Multi-Cloud Generator
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                Pre-configured backup agent and crontab generator tailored for your production infrastructure.
+                Pre-configured backup agents for AWS S3, Google Cloud Storage, Azure Blob, Local Disk, and Shared Network Drives.
               </p>
             </div>
           </div>
@@ -570,16 +605,18 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                     onChange={(e) => setStorageDestination(e.target.value as StorageDestination)}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white font-semibold focus:outline-none focus:border-emerald-500 text-xs cursor-pointer appearance-none"
                   >
-                    <option value="s3">☁️ AWS S3 Bucket (Cloud Object Storage)</option>
+                    <option value="s3">☁️ AWS S3 Bucket (Amazon Web Services)</option>
+                    <option value="gcs">🌐 Google Cloud Storage (GCP Bucket)</option>
+                    <option value="azure">🔷 Azure Blob Storage (Microsoft Azure)</option>
                     <option value="local">💻 Local Server Path (Store on Same Server)</option>
                     <option value="shared_drive">📁 Mapped Shared Drive / NFS / CIFS Mount</option>
                   </select>
                   <ChevronDown className="h-4 w-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
                 </div>
 
-                {/* Conditional Destination Specific Inputs */}
+                {/* AWS S3 Inputs */}
                 {storageDestination === 's3' && (
-                  <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-3">
+                  <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-3 animate-in fade-in">
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="block text-slate-400 mb-1">AWS S3 Bucket *</label>
@@ -616,8 +653,124 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                   </div>
                 )}
 
+                {/* Google Cloud Storage (GCS) Inputs */}
+                {storageDestination === 'gcs' && (
+                  <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-3 animate-in fade-in">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-slate-400 mb-1">GCS Bucket Name *</label>
+                        <input
+                          type="text"
+                          value={gcsBucket}
+                          onChange={(e) => setGcsBucket(e.target.value)}
+                          placeholder="my-gcp-backup-vault"
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-400 mb-1">GCS Folder Prefix</label>
+                        <input
+                          type="text"
+                          value={gcsFolder}
+                          onChange={(e) => setGcsFolder(e.target.value)}
+                          placeholder={`${projectName}_backup`}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 mb-1">Local Staging Directory (Temporary)</label>
+                      <input
+                        type="text"
+                        value={backupPath}
+                        onChange={(e) => setBackupPath(e.target.value)}
+                        placeholder="/var/backups"
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                      />
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-blue-950/40 border border-blue-800/30 text-blue-300 text-[11px] flex items-center space-x-2">
+                      <Cloud className="h-4 w-4 text-blue-400 shrink-0" />
+                      <span>
+                        Backups stream directly to Google Cloud Storage (<code>gs://{gcsBucket}/{gcsFolder}</code>) via <code>gcloud storage</code> or <code>gsutil</code> with automated retention pruning.
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Azure Blob Storage Inputs */}
+                {storageDestination === 'azure' && (
+                  <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-3 animate-in fade-in">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-slate-400 mb-1">Storage Account Name *</label>
+                        <input
+                          type="text"
+                          value={azureStorageAccount}
+                          onChange={(e) => setAzureStorageAccount(e.target.value)}
+                          placeholder="mybackupstorage"
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-400 mb-1">Container Name *</label>
+                        <input
+                          type="text"
+                          value={azureContainer}
+                          onChange={(e) => setAzureContainer(e.target.value)}
+                          placeholder="backups"
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-slate-400 mb-1">Blob Folder Prefix</label>
+                        <input
+                          type="text"
+                          value={azureFolder}
+                          onChange={(e) => setAzureFolder(e.target.value)}
+                          placeholder={`${projectName}_backup`}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-400 mb-1">SAS Token (Optional)</label>
+                        <input
+                          type="text"
+                          value={azureSasToken}
+                          onChange={(e) => setAzureSasToken(e.target.value)}
+                          placeholder="sp=racwd&st=..."
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 mb-1">Local Staging Directory (Temporary)</label>
+                      <input
+                        type="text"
+                        value={backupPath}
+                        onChange={(e) => setBackupPath(e.target.value)}
+                        placeholder="/var/backups"
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                      />
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-cyan-950/40 border border-cyan-800/30 text-cyan-300 text-[11px] flex items-center space-x-2">
+                      <Cloud className="h-4 w-4 text-cyan-400 shrink-0" />
+                      <span>
+                        Backups upload to Azure Blob Container (<code>{azureContainer}</code>) via <code>az</code> CLI or <code>azcopy</code> (supports SAS Token, Connection String, or Managed Identity).
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Local Server Storage Inputs */}
                 {storageDestination === 'local' && (
-                  <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-3">
+                  <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-3 animate-in fade-in">
                     <div>
                       <label className="block text-slate-400 mb-1">Target Local Storage Directory *</label>
                       <input
@@ -638,14 +791,15 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                     <div className="p-2.5 rounded-xl bg-emerald-950/40 border border-emerald-800/30 text-emerald-300 text-[11px] flex items-center space-x-2">
                       <HardDrive className="h-4 w-4 text-emerald-400 shrink-0" />
                       <span>
-                        No AWS S3 required! Backups are compressed and stored permanently in this directory on the same server, with automatic local retention pruning.
+                        No cloud account required! Backups are compressed and stored permanently in this directory on the same server, with automatic local retention pruning.
                       </span>
                     </div>
                   </div>
                 )}
 
+                {/* Shared Drive Inputs */}
                 {storageDestination === 'shared_drive' && (
-                  <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-3">
+                  <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-3 animate-in fade-in">
                     <div>
                       <label className="block text-slate-400 mb-1">Target Mapped Shared Drive Path *</label>
                       <input
@@ -693,6 +847,10 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                     <label className="block text-slate-400 mb-1">
                       {storageDestination === 's3'
                         ? 'Max Files in S3'
+                        : storageDestination === 'gcs'
+                        ? 'Max Files in GCS'
+                        : storageDestination === 'azure'
+                        ? 'Max Blobs'
                         : storageDestination === 'local'
                         ? 'Max Local Files'
                         : 'Max Shared Files'}
@@ -801,7 +959,7 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                         : outputTab === 'command'
                         ? generatedCliCommand
                         : outputTab === 'crontab'
-                        ? generatedCrontab
+                        ? generateCrontabLine(targetScriptPath, cronSchedule)
                         : `${installCommands.debian}\n\n${installCommands.prep}\n\n# ${installCommands.storageTitle}\n${installCommands.storageCommand}`;
                     copyText(toCopy, outputTab);
                   }}
@@ -836,6 +994,10 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                       <strong className="text-emerald-400">
                         {storageDestination === 's3'
                           ? 'AWS S3'
+                          : storageDestination === 'gcs'
+                          ? 'Google Cloud Storage'
+                          : storageDestination === 'azure'
+                          ? 'Azure Blob Storage'
                           : storageDestination === 'local'
                           ? 'Local Storage'
                           : 'Shared Drive'}
@@ -932,6 +1094,10 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                   <strong className="text-emerald-400 font-mono">
                     {storageDestination === 's3'
                       ? `s3://${s3Bucket}`
+                      : storageDestination === 'gcs'
+                      ? `gs://${gcsBucket}`
+                      : storageDestination === 'azure'
+                      ? `Azure: ${azureContainer}`
                       : storageDestination === 'local'
                       ? localBackupDir
                       : sharedDrivePath}
