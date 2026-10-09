@@ -13,6 +13,7 @@ import {
   UserLoginLog,
   ApiKeyItem,
   SlaHeatmapResponse,
+  SystemSettingsResponse,
 } from '../types';
 
 const TOKEN_KEY = 'backup_monitor_auth_token';
@@ -399,4 +400,31 @@ export const api = {
   async getHealth(): Promise<{ status: string; uptime: number; database: string; swagger?: boolean }> {
     return request('/health');
   },
+
+  // Dynamic System Settings
+  async getSettings(): Promise<SystemSettingsResponse> {
+    return request<SystemSettingsResponse>('/api/v1/settings');
+  },
+
+  async updateSettings(settings: Record<string, string>): Promise<{
+    success: boolean;
+    updatedCount: number;
+    message: string;
+  }> {
+    return request('/api/v1/settings', {
+      method: 'PATCH',
+      body: JSON.stringify({ settings }),
+    });
+  },
+
+  async testChannel(channel: 'google_chat' | 'slack' | 'discord' | 'telegram' | 'email'): Promise<{
+    success: boolean;
+    message: string;
+  }> {
+    return request('/api/v1/settings/test-channel', {
+      method: 'POST',
+      body: JSON.stringify({ channel }),
+    });
+  },
 };
+

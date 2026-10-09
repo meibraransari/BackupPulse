@@ -10,6 +10,7 @@ import { config } from './config/env';
 import { setupSwagger } from './swagger';
 import { seedInitialAdmin } from './services/auth.service';
 import { initCronJobs } from './services/cron.service';
+import { initSettings } from './services/settings.service';
 
 import { healthRoutes } from './routes/health.route';
 import { authRoutes } from './routes/auth.route';
@@ -22,6 +23,7 @@ import { userRoutes } from './routes/user.route';
 import { apiKeyRoutes } from './routes/apikey.route';
 import { metricsRoutes } from './routes/metrics.route';
 import { scriptRoutes } from './routes/script.route';
+import { settingsRoutes } from './routes/settings.route';
 
 async function bootstrap() {
   // Fastify logger configuration across all modes
@@ -148,6 +150,7 @@ async function bootstrap() {
   await fastify.register(apiKeyRoutes);
   await fastify.register(metricsRoutes);
   await fastify.register(scriptRoutes);
+  await fastify.register(settingsRoutes);
 
   // Serve static frontend build if present (for single container deployment)
   const frontendDistPath = path.resolve(__dirname, '../../frontend/dist');
@@ -188,6 +191,9 @@ async function bootstrap() {
     console.log(`💓 Health Check: http://${config.HOST}:${config.PORT}/health`);
     console.log(`📝 Console Logging: ${config.ENABLE_CONSOLE_LOG ? 'ENABLED (' + config.LOG_LEVEL + ')' : 'DISABLED'}`);
     console.log(`====================================================`);
+
+    // Initialize database-backed dynamic system settings
+    await initSettings();
 
     // Seed admin user and start background cron
     await seedInitialAdmin();

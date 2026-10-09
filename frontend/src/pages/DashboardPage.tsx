@@ -15,9 +15,10 @@ import { ApiKeysModal } from '../components/ApiKeysModal';
 import { DeployWizardModal } from '../components/DeployWizardModal';
 import { SlaHeatmap } from '../components/SlaHeatmap';
 import { DrillPulseView } from '../components/DrillPulseView';
+import { SettingsView } from '../components/SettingsView';
 import { api } from '../services/api';
 import { BackupFilters, BackupReport, DashboardStats, ProjectBreakdown, TrendItem, User } from '../types';
-import { RefreshCw, CheckCircle2, Server, Table, Users, Sparkles } from 'lucide-react';
+import { Home, RefreshCw, CheckCircle2, Server, Table, Users, Sparkles, Sliders, ShieldCheck } from 'lucide-react';
 
 interface DashboardPageProps {
   user: User | null;
@@ -65,7 +66,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
   const [actionToast, setActionToast] = useState<string | null>(null);
 
   // View toggle & Modal states
-  const [activeTab, setActiveTab] = useState<'telemetry' | 'drills' | 'fleet' | 'users'>('telemetry');
+  const [activeTab, setActiveTab] = useState<'telemetry' | 'drills' | 'fleet' | 'users' | 'settings'>('telemetry');
   const [showNotificationLogs, setShowNotificationLogs] = useState<boolean>(false);
   const [showHousekeeping, setShowHousekeeping] = useState<boolean>(false);
   const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
@@ -202,6 +203,23 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
     setRefreshing(false);
   };
 
+  // Dedicated Home Button action: resets filters, sets activeTab to 'telemetry', and reloads dashboard telemetry
+  const handleGoHome = useCallback(async () => {
+    setActiveTab('telemetry');
+    setFilters(initialFilters);
+    setSelectedReport(null);
+    setResolvingReport(null);
+    setRefreshing(true);
+    try {
+      await Promise.all([loadDashboardData(), loadBackups()]);
+    } catch (err) {
+      console.error('Error refreshing home data:', err);
+    } finally {
+      setRefreshing(false);
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [loadDashboardData, loadBackups]);
+
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col lg:pl-64">
       {/* Persistent Enterprise Sidebar */}
@@ -209,6 +227,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
         user={currentUser}
         activeTab={activeTab}
         onTabChange={setActiveTab}
+        onGoHome={handleGoHome}
         onOpenProfile={() => setShowProfileModal(true)}
         onOpenNotificationLogs={() => setShowNotificationLogs(true)}
         onOpenHousekeeping={() => setShowHousekeeping(true)}
@@ -221,18 +240,31 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
         {/* Page Title & View Switcher */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-white">
-              {activeTab === 'telemetry' && 'Production Backup Overview'}
-              {activeTab === 'fleet' && 'Server Fleet Inventory'}
-              {activeTab === 'users' && 'Access & User Directory'}
+            <h1 className="text-2xl font-bold tracking-tight text-white flex items-center space-x-2.5">
+              <span>
+                {activeTab === 'telemetry' && 'Production Backup Overview'}
+                {activeTab === 'drills' && 'Disaster Recovery DrillPulse'}
+                {activeTab === 'fleet' && 'Server Fleet Inventory'}
+                {activeTab === 'users' && 'Access & User Directory'}
+                {activeTab === 'settings' && 'System Configuration & Settings'}
+              </span>
+              {activeTab === 'settings' && (
+                <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  Zero-Restart
+                </span>
+              )}
             </h1>
             <p className="text-xs sm:text-sm text-slate-400 mt-1">
               {activeTab === 'telemetry' &&
                 'Live status, cron logs, size anomaly guards, and automated cloud sync reports across 100+ servers.'}
+              {activeTab === 'drills' &&
+                'Automated Disaster Recovery sandbox restore drills, row count validations, and SOC2 audit compliance logs.'}
               {activeTab === 'fleet' &&
                 "100+ servers at-a-glance, Dead Man's Snitch stale server tracking, and alert mute controls."}
               {activeTab === 'users' &&
                 'Team member profile administration, access roles, and real-time login audit logs.'}
+              {activeTab === 'settings' &&
+                'Database-backed configuration for alert channels, email routing, retention rules, and master keys.'}
             </p>
           </div>
 
@@ -240,18 +272,31 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
             {/* View Switcher Tabs */}
             <div className="flex items-center space-x-1 bg-slate-900 p-1 rounded-2xl border border-slate-800">
               <button
-                onClick={() => setActiveTab('telemetry')}
+                onClick={handleGoHome}
                 className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
                   activeTab === 'telemetry'
                     ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/30'
                     : 'text-slate-400 hover:text-white'
                 }`}
+                title="Go to Home / Telemetry (Reset filters & refresh)"
               >
-                <Table className="h-3.5 w-3.5" />
-                <span>Telemetry</span>
+                <Home className="h-3.5 w-3.5" />
+                <span>Home</span>
                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-950/60 font-mono">
                   {pagination.total}
                 </span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('drills')}
+                className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                  activeTab === 'drills'
+                    ? 'bg-teal-600 text-white shadow-md shadow-teal-900/30'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <ShieldCheck className="h-3.5 w-3.5" />
+                <span>DrillPulse</span>
               </button>
 
               <button
@@ -285,6 +330,20 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
                   </span>
                 )}
               </button>
+
+              {currentUser?.role === 'admin' && (
+                <button
+                  onClick={() => setActiveTab('settings')}
+                  className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                    activeTab === 'settings'
+                      ? 'bg-purple-600 text-white shadow-md shadow-purple-900/30'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Sliders className="h-3.5 w-3.5" />
+                  <span>Settings</span>
+                </button>
+              )}
             </div>
 
             {/* Deploy New Server Wizard Action Button */}
@@ -383,9 +442,17 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
             }}
             onOpenDeployWizard={() => setShowDeployWizard(true)}
           />
-        ) : (
+        ) : activeTab === 'users' ? (
           /* Multi-User Directory & Login Tracker View */
           <UserManagementView currentUser={currentUser} />
+        ) : (
+          /* Dynamic System Settings & Zero-Restart Configuration View */
+          <SettingsView
+            onSettingsSaved={() => {
+              loadDashboardData();
+              loadBackups();
+            }}
+          />
         )}
       </main>
 

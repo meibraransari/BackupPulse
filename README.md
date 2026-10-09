@@ -35,6 +35,8 @@ A high-performance Node.js & React telemetry platform designed to monitor automa
        ▼
 [BackupPulse Dashboard] (React + Vite + Tailwind CSS)
        ├──► 🧭 Enterprise Dark Sidebar (Workspaces, Instant Actions, Profile, API Link)
+       ├──► 🏠 1-Click Home Navigation (Logo & Home button reset all filters & refresh telemetry)
+       ├──► ⚙️ Zero-Restart Dynamic Settings Engine (PostgreSQL 'system_settings' table & hot-reload)
        ├──► 🚀 Deploy New Server Wizard (1-Click script generator with AWS S3, GCS, Azure, Local, NFS)
        ├──► 📅 365-Day Backup SLA Heatmap & Calendar View (Interactive GitHub-style uptime reliability matrix)
        ├──► 🧪 Automated Restoration Drills ("DrillPulse" ephemeral sandbox DR verification)
@@ -87,6 +89,51 @@ docker compose logs -f app
   * Default Password: `Admin@123456`
 * **Swagger OpenAPI Docs**: [http://localhost:3000/api/docs](http://localhost:3000/api/docs) (Toggle with `ENABLE_SWAGGER=false` in production)
 * **Health Check**: [http://localhost:3000/health](http://localhost:3000/health)
+
+---
+
+## ⚙️ Zero-Restart Dynamic Settings Engine (Database-Backed Configuration)
+
+BackupPulse features a **Dynamic Configuration Engine** backed by PostgreSQL (`system_settings` table).
+
+### The Problem It Solves
+Traditionally, modifying notification webhooks, SMTP credentials, alert cron intervals, or retention periods in containerized applications required:
+1. SSHing into production servers.
+2. Manually editing the `.env` file.
+3. Restarting the Docker container (`docker compose restart app`), causing service interruption.
+4. Risking that environment variables get lost or out-of-sync when cloning, migrating, or backing up the database.
+
+### The Solution: Zero-Restart Database Settings
+- **PostgreSQL Persistence**: All operational and notification settings are stored in the database (`system_settings` table).
+- **Included in Database Backups**: Taking a standard `pg_dump` of BackupPulse includes all system configurations, webhook endpoints, and alert schedules. Migrating or restoring the database restores 100% of your environment.
+- **Immediate In-Memory Hot-Reload**: When an administrator saves changes in the **System Settings** page, values are updated directly in memory. Active mail dispatchers and webhook clients use new credentials immediately, and active `node-cron` background tasks are automatically rescheduled on-the-fly **without restarting the container**.
+- **Masked Secrets**: Sensitive fields (SMTP passwords, SendGrid API keys, Telegram Bot tokens, Master API tokens) are masked in the UI (`••••••••`) and preserved unless explicitly replaced.
+- **Instant Channel Verification**: Directly verify Google Chat, Slack, Discord, Telegram, or Email gateways with 1-click test buttons in the UI.
+
+### What Stays in `.env` vs What Moves to Database
+
+| Setting Scope | Storage | Examples |
+| :--- | :--- | :--- |
+| **Minimal Bootstrap Only** | `.env` | `DATABASE_URL`, `PORT`, `HOST`, `JWT_SECRET`, `INITIAL_ADMIN_USERNAME`, `INITIAL_ADMIN_PASSWORD` |
+| **Dynamic Operational Settings** | Database (`system_settings`) | `APP_BASE_URL`, `INGESTION_API_KEY`, `REPORT_CRON`, `INSTANT_ALERT_ON_FAILURE`, `ENABLE_GOOGLE_CHAT`, `GOOGLE_CHAT_WEBHOOK_URL`, `ENABLE_SLACK`, `SLACK_WEBHOOK_URL`, `ENABLE_DISCORD`, `DISCORD_WEBHOOK_URL`, `ENABLE_TELEGRAM`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `ENABLE_EMAIL`, `EMAIL_PROVIDER`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SENDGRID_API_KEY`, `AWS_SES_*`, `DB_RETENTION_DAYS`, `ENABLE_HOUSEKEEPING`, `HOUSEKEEPING_CRON` |
+
+*Note: On first database boot, BackupPulse automatically seeds the `system_settings` table using `.env` fallback values, providing seamless backward compatibility.*
+
+### REST API Endpoints
+
+- `GET /api/v1/settings`: Retrieves all system settings grouped by category with masked secrets (Admin role required).
+- `PATCH /api/v1/settings`: Updates settings in the database and immediately updates in-memory services without restart (Admin role required).
+- `POST /api/v1/settings/test-channel`: Dispatches a live test message to `google_chat`, `slack`, `discord`, `telegram`, or `email` (Admin role required).
+
+---
+
+## 🏠 1-Click Home Navigation & Telemetry Reset
+
+Clicking the top-left **BackupPulse Logo / Brand Header** or the **Home / Telemetry** tab in the sidebar provides an instant 1-click landing experience:
+- Automatically resets all active search queries, status filters, date pickers, and project tag selections back to the default state.
+- Smoothly navigates to the primary **Telemetry** workspace.
+- Refreshes live metrics and telemetry data from the API.
+- Smoothly scrolls the window to the top.
 
 ---
 

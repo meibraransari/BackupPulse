@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
+  Home,
   Database,
   Table,
   Server,
@@ -11,6 +12,7 @@ import {
   Trash2,
   LogOut,
   Settings,
+  Sliders,
   User as UserIcon,
   Loader2,
   ExternalLink,
@@ -32,8 +34,9 @@ import { useTimezone } from '../context/TimezoneContext';
 
 interface SidebarProps {
   user: User | null;
-  activeTab: 'telemetry' | 'drills' | 'fleet' | 'users';
-  onTabChange: (tab: 'telemetry' | 'drills' | 'fleet' | 'users') => void;
+  activeTab: 'telemetry' | 'drills' | 'fleet' | 'users' | 'settings';
+  onTabChange: (tab: 'telemetry' | 'drills' | 'fleet' | 'users' | 'settings') => void;
+  onGoHome: () => void;
   onOpenProfile: () => void;
   onOpenNotificationLogs: () => void;
   onOpenHousekeeping: () => void;
@@ -46,6 +49,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   user,
   activeTab,
   onTabChange,
+  onGoHome,
   onOpenProfile,
   onOpenNotificationLogs,
   onOpenHousekeeping,
@@ -102,8 +106,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const navItems = [
     {
       id: 'telemetry' as const,
-      label: 'Backup Telemetry',
-      icon: Table,
+      label: 'Home / Telemetry',
+      icon: Home,
       badge: 'Live',
     },
     {
@@ -124,24 +128,44 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Users,
       badge: user?.role === 'admin' ? 'Admin' : undefined,
     },
+    ...(user?.role === 'admin'
+      ? [
+          {
+            id: 'settings' as const,
+            label: 'System Settings',
+            icon: Sliders,
+            badge: 'Admin',
+          },
+        ]
+      : []),
   ];
 
   const sidebarContent = (
     <div className="flex flex-col h-full bg-slate-900 border-r border-slate-800 w-64 select-none">
-      {/* Brand Header */}
+      {/* Brand Header (Clickable: returns to Home / Telemetry) */}
       <div className="p-5 border-b border-slate-800 flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+        <button
+          type="button"
+          onClick={() => {
+            onGoHome();
+            setMobileOpen(false);
+          }}
+          className="flex items-center space-x-3 text-left group cursor-pointer focus:outline-none"
+          title="Return to Home / Telemetry (Reset filters & refresh)"
+        >
+          <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20 group-hover:scale-105 transition-transform">
             <Database className="h-5 w-5 text-white" />
           </div>
           <div>
             <div className="flex items-center space-x-2">
-              <span className="font-bold text-base tracking-tight text-white">BackupPulse</span>
+              <span className="font-bold text-base tracking-tight text-white group-hover:text-emerald-400 transition-colors">
+                BackupPulse
+              </span>
               <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" title="System Live" />
             </div>
             <p className="text-[11px] text-slate-400">100+ Production Fleet</p>
           </div>
-        </div>
+        </button>
 
         {/* Mobile close button */}
         <button
@@ -164,7 +188,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               key={item.id}
               onClick={() => {
-                onTabChange(item.id);
+                if (item.id === 'telemetry') {
+                  onGoHome();
+                } else {
+                  onTabChange(item.id);
+                }
                 setMobileOpen(false);
               }}
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
@@ -281,6 +309,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         )}
 
+        {/* System Settings (Admin Only) */}
+        {user?.role === 'admin' && (
+          <button
+            onClick={() => {
+              onTabChange('settings');
+              setMobileOpen(false);
+            }}
+            className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
+              activeTab === 'settings'
+                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/30'
+                : 'text-emerald-300 hover:text-white hover:bg-emerald-950/40'
+            }`}
+          >
+            <Sliders className="h-4 w-4 text-emerald-400" />
+            <span>System Settings</span>
+          </button>
+        )}
+
         {/* Timezone Switcher */}
         <button
           onClick={toggleTimezone}
@@ -393,12 +439,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
           >
             <Menu className="h-5 w-5" />
           </button>
-          <div className="flex items-center space-x-2">
+          <button
+            type="button"
+            onClick={() => onGoHome()}
+            className="flex items-center space-x-2 cursor-pointer focus:outline-none"
+            title="Return to Home / Telemetry"
+          >
             <div className="h-7 w-7 rounded-lg bg-emerald-600 flex items-center justify-center">
               <Database className="h-4 w-4 text-white" />
             </div>
-            <span className="font-bold text-sm text-white">BackupPulse</span>
-          </div>
+            <span className="font-bold text-sm text-white hover:text-emerald-400 transition-colors">
+              BackupPulse
+            </span>
+          </button>
         </div>
 
         <div className="flex items-center space-x-2">

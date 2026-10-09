@@ -57,6 +57,9 @@ postgres_data/
 docker_data/
 *.sql
 *.dump
+# Ensure Prisma versioned migrations ARE tracked
+!backend/prisma/migrations/**/*.sql
+
 
 # ------------------------------------------------------------------------------
 # Backup Archives & Temporary Directories

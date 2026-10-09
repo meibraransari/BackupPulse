@@ -197,3 +197,28 @@ export interface SlaHeatmapResponse {
     inactiveDays: number;
   };
 }
+
+export interface SystemSettingItem {
+  key: string;
+  value: string;
+  category: string;
+  label: string;
+  description: string;
+  isEncrypted: boolean;
+  type: 'string' | 'number' | 'boolean' | 'select' | 'password';
+  options?: string[];
+  isConfigured: boolean;
+  updatedAt: string;
+  updatedBy: string | null;
+}
+
+export interface SystemSettingsCategory {
+  id: string;
+  name: string;
+}
+
+export interface SystemSettingsResponse {
+  settings: SystemSettingItem[];
+  categories: SystemSettingsCategory[];
+}
+
