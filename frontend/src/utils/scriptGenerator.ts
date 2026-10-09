@@ -360,7 +360,7 @@ if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
 
     if [ "$READY" = true ]; then
       echo "📥 Restoring backup dump into ephemeral sandbox container..."
-      unzip -p "$ZIP_FILE" | docker exec -i "$DRILL_CONTAINER_NAME" pg_restore -U postgres -d drill_test_db --no-owner --no-privileges 2>"${TEMP_LOG_DIR}/pg_drill.log" || true
+      unzip -p "$ZIP_FILE" | docker exec -i "$DRILL_CONTAINER_NAME" pg_restore -U postgres -d drill_test_db --no-owner --no-privileges 2>"\${TEMP_LOG_DIR}/pg_drill.log" || true
       
       RESTORE_DRILL_TABLES=$(docker exec "$DRILL_CONTAINER_NAME" psql -U postgres -d drill_test_db -t -A -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" 2>/dev/null || echo "0")
       RESTORE_DRILL_TABLES=$(echo "$RESTORE_DRILL_TABLES" | tr -d '[:space:]')
@@ -913,7 +913,7 @@ if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
 
     if [ "$READY" = true ]; then
       echo "📥 Restoring backup into ephemeral sandbox container..."
-      unzip -p "$ZIP_FILE" | docker exec -i "$DRILL_CONTAINER_NAME" mysql -u root -pdrillpass drill_test_db 2>"${TEMP_LOG_DIR}/mysql_drill.log" || true
+      unzip -p "$ZIP_FILE" | docker exec -i "$DRILL_CONTAINER_NAME" mysql -u root -pdrillpass drill_test_db 2>"\${TEMP_LOG_DIR}/mysql_drill.log" || true
       
       RESTORE_DRILL_TABLES=$(docker exec "$DRILL_CONTAINER_NAME" mysql -u root -pdrillpass -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'drill_test_db';" 2>/dev/null || echo "0")
       RESTORE_DRILL_TABLES=$(echo "$RESTORE_DRILL_TABLES" | tr -d '[:space:]')
