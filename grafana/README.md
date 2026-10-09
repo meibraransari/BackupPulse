@@ -56,6 +56,12 @@ scrape_configs:
           service: 'backuppulse'
 ```
 
+### ⚡ Automatic Historical Seeding from PostgreSQL
+When BackupPulse starts, it automatically queries the PostgreSQL database (`backup_reports`, `api_keys`, `server_configs`) to seed Prometheus counters and gauges. This ensures that:
+- Historical backups recorded over weeks, months, or years are immediately exposed in Prometheus metrics without waiting for new backups to occur.
+- Total backup counts (`backuppulse_backup_runs_total`, `backuppulse_total_backups_all_time`) accurately reflect the full database history right after startup or container recreation.
+- Live gauges for 24h rolling totals, failures, and Dead Man's Snitch stale server counts (`backuppulse_stale_servers_count`) are refreshed dynamically on each scrape.
+
 ---
 
 ## 🐳 Full Stack Docker Compose Integration

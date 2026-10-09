@@ -17,8 +17,8 @@ A high-performance Node.js & React telemetry platform designed to monitor automa
        ▼ (HTTP POST with x-api-key)
 [BackupPulse Backend] (Fastify + TypeScript)
        │
-       ├──► Live Swagger UI: /api/docs
-       ├──► Prometheus Metrics Endpoint: /metrics
+       ├──► Live Swagger UI: /api/docs (Dynamic Zero-Restart Toggle in Settings)
+       ├──► Prometheus Metrics Endpoint: /metrics (Pre-seeded on boot from PostgreSQL)
        ├──► Health Check: /health
        ├──► Rate-Limiting Guard: @fastify/rate-limit (Brute-force & Cron spam protection)
        ├──► Scoped Token Validator: Master API Key or Per-Server/Per-Project Scoped Tokens
@@ -34,10 +34,10 @@ A high-performance Node.js & React telemetry platform designed to monitor automa
        │
        ▼
 [BackupPulse Dashboard] (React + Vite + Tailwind CSS)
-       ├──► 🧭 Enterprise Dark Sidebar (Workspaces, Instant Actions, Profile, API Link)
+       ├──► 🧭 Enterprise Dark Sidebar (Core Workspaces, DevOps Operations, Profile, Timezone)
        ├──► 🏠 1-Click Home Navigation (Logo & Home button reset all filters & refresh telemetry)
-       ├──► ⚙️ Zero-Restart Dynamic Settings Engine (PostgreSQL 'system_settings' table & hot-reload)
-       ├──► 🚀 Deploy New Server Wizard (1-Click script generator with AWS S3, GCS, Azure, Local, NFS)
+       ├──► ⚙️ Zero-Restart Dynamic Settings Engine (PostgreSQL 'system_settings' table, hot-reload, single-card per service, multi-line category filters)
+       ├──► 🚀 Deploy New Server Wizard (Two-line tab cards, 1-Click script generator with AWS S3, GCS, Azure, Local, NFS & single-curl destination support)
        ├──► 📅 365-Day Backup SLA Heatmap & Calendar View (Interactive GitHub-style uptime reliability matrix)
        ├──► 🧪 Automated Restoration Drills ("DrillPulse" ephemeral sandbox DR verification)
        ├──► 🏢 Multi-Tenant Project Permissions & Team RBAC (Strict workspace tagging & tenant isolation)
@@ -55,7 +55,7 @@ A high-performance Node.js & React telemetry platform designed to monitor automa
        ├──► 🧹 Database Storage & Housekeeping Modal (Retention Controls & Force Purge)
        ├──► Advanced Multi-Filter & Resizable Columns (Project, Host, Status, Date)
        ├──► Detail Drawer & Professional Incident Resolution Modal
-       └──► Instant Test Actions (Test Google Chat, Email, Slack, Discord, Telegram, Export CSV/JSON)
+       └──► Instant Test Actions (Dedicated test triggers inside each System Settings card: Google Chat, Email, Slack, Discord, Telegram, Export CSV/JSON)
 ```
 
 ---
@@ -155,22 +155,28 @@ BackupPulse includes an enterprise multi-channel notification and alert dispatch
 When enabled, the exact second any backup reports `status === 'FAILED'` or is flagged with a critical size drop anomaly (`isAnomaly === true`), high-priority alerts are immediately dispatched to **all enabled channels** (Google Chat, Email, Slack, Discord, Telegram) without waiting for the scheduled morning digest.
 - **5-Minute Deduplication Cooldown**: Automatically prevents alert spam from rapid or broken cron loops on individual servers while recording every run in the database.
 
-### ⚙️ Dynamic Notification Configuration (System Settings Dashboard)
+### ⚙️ Dynamic Configuration & System Settings Dashboard
 
-All notification webhooks, SMTP / SendGrid / SES credentials, and alert cron schedules are managed directly in the Web Dashboard under **System Settings** (`⚙️ System Settings`). There is **zero requirement to edit `.env` or restart containers**:
+All operational settings, Swagger documentation toggles, notification webhooks, SMTP / SendGrid / SES credentials, alert schedules, and database housekeeping policies are managed directly in the Web Dashboard under **System Settings** (`⚙️ System Settings`). There is **zero requirement to edit `.env` or restart containers**:
 
 - **Instant Hot-Reload**: Changes take effect in-memory immediately upon saving.
-- **Persistent in PostgreSQL**: Saved in the `system_settings` table, ensuring notification endpoints are safely included in standard database backups (`pg_dump`).
-- **Dedicated Single-Card Controls**:
+- **Persistent in PostgreSQL**: Saved in the `system_settings` table, ensuring all endpoints and credentials are safely included in standard database backups (`pg_dump`).
+- **Clean Single-Card Architecture**: Each integration and service is cleanly isolated in its own dedicated card, eliminating confusion between different email providers or notification channels:
+  - 🌐 **Dynamic Swagger OpenAPI Docs**: Toggle interactive `/api/docs` on/off dynamically for production security hardening without rebuilding or restarting containers.
   - ⚡ **Alerts & Cron Settings**: Toggle instant failure alerts and customize the morning digest cron (e.g., `0 9 * * *`).
-  - 💬 **Google Chat**: Incoming webhook URL and 1-click test button.
-  - ✉️ **Email Dispatch**: Toggle emails, choose provider (`smtp`, `sendgrid`, or `ses`), set sender name/address, and comma-separated recipients.
-  - 📨 **SMTP Relay**: Host, port (`587` / `465` / `25`), TLS toggle, username, and masked password.
-  - 🚀 **SendGrid Web API**: API key configuration with masked storage and instant test dispatch.
-  - ☁️ **AWS SES**: AWS region, optional IAM Access Key ID and Secret Access Key (auto-falls back to AWS instance/pod IAM roles).
-  - 💬 **Slack**: Block Kit incoming webhook URL and test button.
-  - 🎮 **Discord**: Rich Embed webhook URL and test button.
-  - ✈️ **Telegram**: Bot token, destination chat ID, and test button.
+  - 💬 **Google Chat**: Incoming Cards v2 webhook URL with a dedicated 1-click test button.
+  - ✉️ **Email Dispatch (General)**: Toggle email delivery, select active provider (`smtp`, `sendgrid`, or `ses`), set sender identity, and define comma-separated recipients with a 1-click test dispatch button.
+  - 📨 **SMTP Relay**: Dedicated host, port (`587` / `465` / `25`), TLS toggle, username, and masked password card.
+  - 🚀 **SendGrid Web API**: Dedicated SendGrid API key card with masked storage and instant test dispatch.
+  - ☁️ **AWS SES**: Dedicated AWS region, optional IAM Access Key ID and Secret Access Key (with automatic fallback to AWS instance/pod IAM roles).
+  - 💬 **Slack**: Block Kit incoming webhook URL with a dedicated 1-click test button.
+  - 🎮 **Discord**: Rich Embed incoming webhook URL with a dedicated 1-click test button.
+  - ✈️ **Telegram**: Bot token, destination chat ID, and a dedicated 1-click test button.
+  - 🧹 **Database Retention & Housekeeping**: Retention window (days), automated cleanup toggle, and housekeeping cron schedule.
+  - 🔑 **API Ingestion & Hub Configuration**: Public hub base URL and central master API key.
+- **Multi-Line Wrapping Category Pills & Real-Time Search**:
+  - Quickly filter settings by service category (`All Settings`, `General & Security`, `Alerts & Cron`, `Google Chat`, `Email & SMTP`, `SendGrid`, `AWS SES`, `Slack`, `Discord`, `Telegram`, `Housekeeping`) without horizontal scrollbars.
+  - Spacious search bar aligned alongside category pills for instant, real-time setting discovery.
 
 Administrators can also view and update these settings programmatically via `GET /api/v1/settings` and `PATCH /api/v1/settings` (or dispatch test alerts via `POST /api/v1/settings/test-channel`).
 
@@ -405,11 +411,20 @@ Setting up and standardizing backup scripts across dozens or hundreds of dispara
 
 BackupPulse features a built-in **Deploy New Server Wizard** accessible directly from the dashboard:
 
+- **Two-Line Card Tab Navigation**:
+  - 📜 **Full Script**: Complete, production-grade bash backup agent with automated compression, integrity checksums, remote uploads, and error trapping.
+  - ⚡ **1-Liner Run**: Copy-paste single command or curl installation script for rapid terminal deployment.
+  - 🩺 **Preflight Check**: 10-second environment & connectivity verification script to test prerequisites before running backups.
+  - ⏱️ **Crontab Builder**: Visual schedule generator with log redirects and frequency templates.
+  - 📋 **Prerequisites**: Required packages, binaries (`awscli`, `curl`, `jq`, `zip`), and permissions tailored to the selected engine and destination.
+- **Dedicated Actions Toolbar Row**:
+  - 1-click **Copy Script** to clipboard with instant visual feedback.
+  - 1-click **Download (.sh)** button to save the customized script directly to your local workstation.
 - **Supported Workload Engines**:
   - 🐘 **PostgreSQL**: Native `pg_dump` with custom compressed format, password isolation, and table row counts.
   - 🐬 **MySQL / MariaDB**: Online, non-blocking `mysqldump` with `--single-transaction --quick --routines --triggers`.
   - 🗜️ **Directory & File Zip**: Full directory packaging with configurable exclusions (`node_modules/*`, `.git/*`, `cache/*`).
-  - ⚡ **Single curl Snippet**: Minimal JSON snippet to paste into existing proprietary or legacy shell scripts.
+  - ⚡ **Single curl Snippet**: Minimal JSON snippet to paste into existing proprietary or legacy shell scripts. **Full storage target selection supported** (AWS S3, Google Cloud Storage, Azure Blob Storage, Local Storage, Shared Mapped Drive) to populate accurate storage keys, URLs, filenames, and retention metadata automatically.
 - **5 Supported Storage Targets**:
   - ☁️ **AWS S3**: Upload via AWS CLI with automatic historical retention pruning (`MAX_FILES`).
   - 🌐 **Google Cloud Storage (GCS)**: Stream to `gs://bucket/prefix` using `gcloud storage` or `gsutil`.
@@ -694,18 +709,23 @@ BackupPulse provides full enterprise identity and role-based access management:
 
 ## 🧭 Persistent Enterprise Sidebar Navigation
 
-The web UI is organized around a persistent, responsive dark sidebar:
-- **Workspace Navigation**:
-  - `Backup Telemetry Records`: Filterable and resizable data grid with inline incident resolution.
-  - `Server Fleet Inventory`: 100+ servers health matrix with grid and table modes, anomaly badges, and host mute toggles.
-  - `Users & Access Directory`: Team member management and real-time login audit tracker.
-- **Quick-Access Actions**:
-  - 💬 **Test Google Chat**: Dispatch live Cards v2 test webhook with delivery feedback.
-  - ✉️ **Test SMTP Email**: Send HTML test message to configured recipients.
-  - 📊 **Notification Audit Logs**: Review transmission receipts and inspection payloads.
-  - 🧹 **Storage & Retention**: Inspect database sizes, configure retention, and trigger immediate housekeeping purge.
-  - 📖 **Interactive Swagger UI**: One-click external link to `/api/docs`.
+The web UI is organized around a persistent, responsive dark sidebar with streamlined sections:
+- **Core Workspaces**:
+  - 🏠 **Home / Telemetry**: Filterable and resizable data grid with inline incident resolution, live KPI counters, and 1-click filter reset.
+  - 🧪 **DR Verification Drills**: DrillPulse ephemeral sandbox disaster recovery verification matrix with table counts and execution logs.
+  - 🖥️ **Server Fleet Inventory**: 100+ servers health matrix with grid and table modes, anomaly badges, and host mute toggles.
+  - 👥 **User Management**: Team member access directory, multi-tenant RBAC project tagging, and live login audit tracker.
+  - ⚙️ **System Settings** *(Admin only)*: Zero-restart configuration engine with single-card service management.
+- **DevOps Operations**:
+  - 📖 **Interactive Swagger UI**: One-click external link to `/api/docs` (dynamically hidden when disabled in System Settings).
+  - 📊 **Notification Audit Logs**: Review transmission receipts, event types, delivery statuses, and inspection payloads.
+  - 🧹 **Storage & Retention**: Inspect database sizes, configure retention policies, and trigger immediate housekeeping purges.
+  - 🚀 **Deploy Server Wizard**: Interactive wizard for generating customized backup agents, preflight checks, and crontabs.
+  - 🔑 **API Ingestion Tokens** *(Admin only)*: Manage per-server and per-project scoped authentication tokens.
+  - 🌐 **Timezone Switcher**: 1-click toggle between UTC and Local Browser Time.
 - **Profile & Logout Footer**: User avatar, identity chip, role badge, profile modal trigger, and sign-out button.
+
+*Note: Notification channel testing is handled directly within each service card in **System Settings** for a clean, distraction-free sidebar.*
 
 ---
 
@@ -746,13 +766,20 @@ BackupPulse natively exports production-grade Prometheus metrics via `prom-clien
 
 | Metric | Type | Description |
 | :--- | :--- | :--- |
-| `backuppulse_backup_runs_total` | Counter | Total backup reports ingested, labeled by `status`, `project`, `server_id`, `backup_type` |
+| `backuppulse_backup_runs_total` | Counter | Total backup reports ingested, labeled by `status`, `project`, `server_id`, `backup_type` (seeded from PostgreSQL on boot) |
+| `backuppulse_total_backups_all_time` | Gauge | Total count of all backup reports currently stored in PostgreSQL database |
+| `backuppulse_total_backups_24h` | Gauge | Total count of backup reports recorded in the rolling last 24 hours |
 | `backuppulse_failures_24h` | Gauge | Total backup failures recorded across the fleet in the rolling last 24 hours |
-| `backuppulse_stale_servers_count` | Gauge | Number of active production servers missing scheduled backups (`>26h` staleness) |
+| `backuppulse_stale_servers_count` | Gauge | Number of active production servers missing scheduled backups (`>26h` staleness Dead Man's Snitch) |
 | `backuppulse_archive_size_bytes` | Gauge | Size in bytes of the most recently ingested backup archive by project and server |
-| `backuppulse_duration_seconds` | Gauge | Execution time in seconds of the most recently ingested backup run |
+| `backuppulse_duration_seconds` | Gauge | Execution time in seconds of the most recently ingested backup run by project and server |
 | `backuppulse_active_api_keys` | Gauge | Count of active, unrevoked scoped API tokens in PostgreSQL |
 | Standard Node.js Metrics | Gauges/Counters | Process CPU, resident memory (`process_resident_memory_bytes`), event loop lag, and GC stats |
+
+### ⚡ Automatic Database Seeding on Startup & Hot Scrapes
+To ensure external monitoring systems like **Grafana** reflect complete historical telemetry (rather than starting at zero or missing long-term data after a restart):
+- **Startup Initialization**: On backend boot, `initMetrics()` queries PostgreSQL to seed historical backup run counters, latest archive sizes, and run durations across all servers and projects.
+- **Dynamic Scrapes**: Every scrape of `/metrics` dynamically updates rolling 24-hour totals, failure counts, active API keys, and Dead Man's Snitch stale server calculations in real-time.
 
 ### Sample Prometheus Scrape Config (`prometheus.yml`)
 ```yaml
