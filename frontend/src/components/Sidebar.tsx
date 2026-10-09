@@ -6,20 +6,15 @@ import {
   Server,
   Users,
   BookOpen,
-  Bell,
-  Mail,
   Send,
   Trash2,
   LogOut,
   Settings,
   Sliders,
   User as UserIcon,
-  Loader2,
   ExternalLink,
   ChevronRight,
   ShieldCheck,
-  CheckCircle2,
-  AlertCircle,
   Menu,
   X,
   HardDrive,
@@ -58,9 +53,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLogout,
 }) => {
   const { timezone, toggleTimezone } = useTimezone();
-  const [testingGChat, setTestingGChat] = useState(false);
-  const [testingSmtp, setTestingSmtp] = useState(false);
-  const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [swaggerEnabled, setSwaggerEnabled] = useState<boolean>(true);
 
@@ -74,34 +66,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       })
       .catch(() => {});
   }, []);
-
-  const handleTestGChat = async () => {
-    setTestingGChat(true);
-    setToastMessage(null);
-    try {
-      const res = await api.testGoogleChat();
-      setToastMessage({ type: 'success', text: res.message });
-    } catch (err: any) {
-      setToastMessage({ type: 'error', text: err.message });
-    } finally {
-      setTestingGChat(false);
-      setTimeout(() => setToastMessage(null), 5000);
-    }
-  };
-
-  const handleTestSmtp = async () => {
-    setTestingSmtp(true);
-    setToastMessage(null);
-    try {
-      const res = await api.testSmtp();
-      setToastMessage({ type: 'success', text: res.message });
-    } catch (err: any) {
-      setToastMessage({ type: 'error', text: err.message });
-    } finally {
-      setTestingSmtp(false);
-      setTimeout(() => setToastMessage(null), 5000);
-    }
-  };
 
   const navItems = [
     {
@@ -309,24 +273,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         )}
 
-        {/* System Settings (Admin Only) */}
-        {user?.role === 'admin' && (
-          <button
-            onClick={() => {
-              onTabChange('settings');
-              setMobileOpen(false);
-            }}
-            className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
-              activeTab === 'settings'
-                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/30'
-                : 'text-emerald-300 hover:text-white hover:bg-emerald-950/40'
-            }`}
-          >
-            <Sliders className="h-4 w-4 text-emerald-400" />
-            <span>System Settings</span>
-          </button>
-        )}
-
         {/* Timezone Switcher */}
         <button
           onClick={toggleTimezone}
@@ -340,35 +286,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <span className="font-semibold text-cyan-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800 text-[10px]">
             {timezone === 'UTC' ? '🌐 UTC' : '🕒 Local'}
           </span>
-        </button>
-
-        {/* Test Google Chat */}
-        <button
-          onClick={handleTestGChat}
-          disabled={testingGChat}
-          className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-emerald-300 hover:text-white hover:bg-emerald-950/40 transition-colors disabled:opacity-50"
-        >
-          {testingGChat ? (
-            <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
-          ) : (
-            <Bell className="h-4 w-4 text-emerald-400" />
-          )}
-          <span>Test Google Chat</span>
-        </button>
-
-        {/* Test Email Delivery (SMTP / SendGrid / AWS SES) */}
-        <button
-          onClick={handleTestSmtp}
-          disabled={testingSmtp}
-          className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-sky-300 hover:text-white hover:bg-sky-950/40 transition-colors disabled:opacity-50"
-          title="Send test email via active provider (SMTP, SendGrid, or AWS SES)"
-        >
-          {testingSmtp ? (
-            <Loader2 className="h-4 w-4 animate-spin text-sky-400" />
-          ) : (
-            <Mail className="h-4 w-4 text-sky-400" />
-          )}
-          <span>Test Email Delivery</span>
         </button>
       </div>
 
@@ -479,25 +396,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       )}
 
-      {/* Floating Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 animate-bounce">
-          <div
-            className={`flex items-center space-x-2 px-4 py-3 rounded-xl shadow-2xl border text-sm ${
-              toastMessage.type === 'success'
-                ? 'bg-slate-900 border-emerald-500/50 text-emerald-300'
-                : 'bg-slate-900 border-red-500/50 text-red-300'
-            }`}
-          >
-            {toastMessage.type === 'success' ? (
-              <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-            ) : (
-              <AlertCircle className="h-4 w-4 text-red-400" />
-            )}
-            <span>{toastMessage.text}</span>
-          </div>
-        </div>
-      )}
     </>
   );
 };
