@@ -35,6 +35,11 @@ A high-performance Node.js & React telemetry platform designed to monitor automa
        ▼
 [BackupPulse Dashboard] (React + Vite + Tailwind CSS)
        ├──► 🧭 Enterprise Dark Sidebar (Workspaces, Instant Actions, Profile, API Link)
+       ├──► 🚀 Deploy New Server Wizard (1-Click script generator with AWS S3, GCS, Azure, Local, NFS)
+       ├──► 📅 365-Day Backup SLA Heatmap & Calendar View (Interactive GitHub-style uptime reliability matrix)
+       ├──► 🧪 Automated Restoration Drills ("DrillPulse" ephemeral sandbox DR verification)
+       ├──► 🏢 Multi-Tenant Project Permissions & Team RBAC (Strict workspace tagging & tenant isolation)
+       ├──► 🩺 1-Line Pre-Flight Verification Script (agent-check.sh POSIX environment diagnostics)
        ├──► 🌐 Timezone Display Switcher (Persistent 1-Click Toggle: UTC vs Local Browser Time)
        ├──► 🔑 Per-Server & Per-Project API Tokens Modal (1-Click Revocation & Copy Secret)
        ├──► Summary KPI Cards (Total Backups, Success Rate, Failed count, Storage)
@@ -377,6 +382,121 @@ chmod +x scripts/zip_s3_backup.sh
 
 ---
 
+## 🚀 1-Click Script Generator & Deployment Wizard
+
+Setting up and standardizing backup scripts across dozens or hundreds of disparate Linux servers often leads to syntax inconsistencies, missing error handling, and manual configuration errors. 
+
+BackupPulse features a built-in **Deploy New Server Wizard** accessible directly from the dashboard:
+
+- **Supported Workload Engines**:
+  - 🐘 **PostgreSQL**: Native `pg_dump` with custom compressed format, password isolation, and table row counts.
+  - 🐬 **MySQL / MariaDB**: Online, non-blocking `mysqldump` with `--single-transaction --quick --routines --triggers`.
+  - 🗜️ **Directory & File Zip**: Full directory packaging with configurable exclusions (`node_modules/*`, `.git/*`, `cache/*`).
+  - ⚡ **Single curl Snippet**: Minimal JSON snippet to paste into existing proprietary or legacy shell scripts.
+- **5 Supported Storage Targets**:
+  - ☁️ **AWS S3**: Upload via AWS CLI with automatic historical retention pruning (`MAX_FILES`).
+  - 🌐 **Google Cloud Storage (GCS)**: Stream to `gs://bucket/prefix` using `gcloud storage` or `gsutil`.
+  - 🔷 **Azure Blob Storage**: Upload via `az` CLI or `azcopy` (supports SAS Tokens, Connection Strings, or Azure Managed Identity).
+  - 💻 **Local Server Path**: Store backups locally on the same server (`/var/backups/...`) with automated local disk retention cleanup.
+  - 📁 **Mapped Shared Drive**: Copy directly to mounted network shares (NFS, SMB, CIFS).
+- **Interactive Crontab Schedule Builder**:
+  - Visual time picker (similar to crontab.guru) with minute, hour, day, month, and day-of-week selections, generating exact crontab strings with log redirects.
+- **In-Wizard Scoped API Token Provisioning**:
+  - Generate a secure, project-scoped API key in 1 click directly inside the wizard with automated embedding into the generated script.
+
+---
+
+## 🧪 Automated Restoration Drills / Disaster Recovery Verification ("DrillPulse")
+
+> *"A backup that has never been restored is just a hypothesis."*
+
+Many DevOps teams discover their backups are unusable only during an actual disaster due to corrupted zip headers, syntax differences between database versions, or missing decryption keys.
+
+BackupPulse provides **Automated Restoration Verification ("DrillPulse")**:
+- **Optional Deployment Checkbox**: Easily enabled during script generation in the Deploy Wizard with zero breaking changes to existing setups.
+- **Ephemeral Sandbox Container Restoration**:
+  - **PostgreSQL**: Launches an isolated temporary Docker container (`postgres:alpine` on in-memory `tmpfs`), restores the fresh dump via `pg_restore`, and verifies public table counts (`SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public'`).
+  - **MySQL**: Launches an ephemeral Docker container (`mysql:8.0` on tmpfs), restores the database dump, and validates table counts.
+  - **Directory Zip**: Executes test extraction (`unzip -q -t`) and verifies uncompressed file inventory counts.
+  - **Immediate Safe Cleanup**: Ephemeral containers are automatically destroyed (`docker rm -f`) immediately after verification, consuming zero persistent storage.
+  - **Graceful Fallback**: If Docker is not present on legacy bare-metal machines, the agent executes binary archive checksum and integrity validation (`unzip -t`) without failing the backup.
+- **Telemetry Ingestion & Verification Flags**:
+  - Ingests `restore_drill_status` (`SUCCESS` | `FAILED` | `SKIPPED`), `restore_drill_duration_seconds`, `restore_drill_verified_tables`, and `restore_drill_log`.
+- **UI & Audit Visibility**:
+  - **Telemetry Table**: Highlights certified backups with a `🧪 DR Pass` or `🧪 DR Fail` status badge.
+  - **Detail Modal**: Dedicated **Disaster Recovery Restoration Drill** card with entity count, duration, and complete sandbox execution logs.
+  - **SOC2 & ISO 27001 Compliance**: Provides immutable proof for compliance auditors that backup archives are consistently verified and restorable.
+
+---
+
+## 📅 365-Day Backup SLA Heatmap & Calendar View
+
+While a 7-day trend chart is great for daily operational work, compliance officers, MSPs, and executive managers require a long-term view of backup consistency across all production servers over 30, 90, or 365 days.
+
+BackupPulse features a **GitHub-style Contribution Heatmap & SLA Calendar**:
+- **Comprehensive Daily SLA Metrics**:
+  - 🟢 **Dark Green**: 100% successful runs on that date.
+  - 🟡 **Amber**: Partial success or size drop warnings.
+  - 🔴 **Red**: 1 or more failed backup runs on that date.
+  - ⚪ **Muted Slate**: No scheduled runs or maintenance window.
+- **Interactive Hover & Filter**:
+  - Hovering over any cell displays the exact date, total runs, success/failure breakdown, and daily SLA percentage.
+  - Clicking any date instantly filters the entire telemetry data table down to that exact day.
+- **Flexible Historical Ranges**:
+  - 1-click toggling between **30 Days**, **90 Days**, and **365 Days (Full Year)**.
+- **Executive Reliability Cards**:
+  - Real-time aggregation of **Overall Fleet SLA %**, **Total Ingested Runs**, **100% Perfect Days**, and **Failed Incidents**.
+
+---
+
+## 🏢 Multi-Tenant Project Permissions & Team RBAC
+
+For MSPs, growing agencies, and multi-team enterprises, operators should only see the servers and backups relevant to their department or client (e.g. Team A manages ERP backups, while Team B manages CRM backups).
+
+BackupPulse enforces **Strict Multi-Tenant Project Permissions**:
+- **Granular Scopes**:
+  - **Administrators**: Maintain global, unrestricted platform access.
+  - **Operators & Viewers**: Can be assigned specific project tags (e.g., `["LJS_ERP", "CRM_PROD"]`) or granted global access.
+- **Zero Data-Leak Enforcement**:
+  - Project scoping is enforced across **all backend endpoints**:
+    - Telemetry queries (`GET /api/v1/backups`)
+    - CSV/JSON exports (`GET /api/v1/backups/export`)
+    - KPI statistics (`GET /api/v1/dashboard/stats`)
+    - Trends and SLA Heatmap (`GET /api/v1/dashboard/heatmap`)
+    - Server Fleet Matrix (`GET /api/v1/dashboard/fleet`)
+    - Project and Server dropdown options (`GET /api/v1/backups/projects`, `GET /api/v1/backups/servers`)
+    - Incident status resolution mutations (`PATCH /api/v1/backups/:id/status`)
+- **Admin User Management UI**:
+  - User Directory allows administrators to assign projects using interactive tag pills loaded live from active workloads, with support for typing custom project names.
+  - User table lists the project access scope assigned to each team member.
+
+---
+
+## 🩺 1-Line Pre-Flight Verification Script (agent-check.sh)
+
+When deploying backup scripts to bare-metal servers or cloud VMs, administrators frequently face missing packages (`pg_dump`, `mysqldump`, `aws-cli`, `az`, `gsutil`, `zip`) or outbound firewall restrictions reaching the central hub.
+
+BackupPulse includes a lightweight **1-Line Pre-Flight Checker**:
+```bash
+curl -fsSL "https://backuppulse.yourdomain.com/api/v1/scripts/preflight?type=postgres&dest=s3&drill=true" | bash
+```
+
+### Diagnostics Verified in ~10 Seconds:
+1. **Core POSIX Utilities**: `curl`, `gzip`, `awk`, `date`, `sha256sum`, and `zip`.
+2. **Target Engine Client**: `pg_dump` and `psql` (PostgreSQL), `mysqldump` and `mysqladmin` (MySQL), or directory archiving tools.
+3. **Storage Target Authentication**:
+   - AWS CLI (`aws --version`, `aws sts get-caller-identity`).
+   - Google Cloud SDK (`gcloud --version`, active service account authorization).
+   - Azure CLI / AzCopy (`az --version`, logged-in accounts).
+   - Local or Shared Drive directory write permissions and ownership.
+4. **Network Egress to BackupPulse Hub**: Direct HTTP ping validating port and API reachability.
+5. **Disk Space Capacity**: Checks local staging directory free capacity (`df -h`).
+6. **Docker Daemon Engine**: Verifies Docker daemon status if DrillPulse sandbox testing is enabled.
+
+Exposed directly within the **Deploy New Server Wizard** under the **🩺 Pre-Flight Check** tab with 1-click copy support.
+
+---
+
 ## 📡 Backend API Reference
 
 | Method | Endpoint | Description | Auth |
@@ -384,11 +504,13 @@ chmod +x scripts/zip_s3_backup.sh
 | `GET` | `/health` | Server uptime & DB connection check (includes `swagger` enabled flag) | None |
 | `GET` | `/metrics` | Standard Prometheus metrics exposition (counters, gauges, memory, uptime) | None |
 | `GET` | `/api/docs` | Interactive Swagger UI sandbox (enabled when `ENABLE_SWAGGER=true`) | None |
+| `GET` | `/api/v1/scripts/preflight` | Dynamic 1-line POSIX pre-flight diagnostic script for client machines | None |
 | `POST` | `/api/v1/backups/report` | Telemetry ingestion from shell script (rate limit: 120/min, scoped/master key) | `x-api-key` |
 | `POST` | `/api/v1/auth/login` | Admin/Operator/Viewer authentication (rate limit: 10/min) | None |
 | `GET` | `/api/v1/auth/me` | Current session user profile & permissions | Bearer JWT |
 | `GET` | `/api/v1/dashboard/stats` | 24h & all-time summary KPIs | Bearer JWT |
 | `GET` | `/api/v1/dashboard/trends` | Daily trends for charts (last 7-30 days) | Bearer JWT |
+| `GET` | `/api/v1/dashboard/heatmap` | 30, 90, or 365-day SLA heatmap & metrics (supports project & server scoping) | Bearer JWT |
 | `GET` | `/api/v1/dashboard/fleet` | Aggregated 100+ servers fleet health, storage, and staleness matrix | Bearer JWT |
 | `GET` | `/api/v1/backups` | Filtered & paginated backup records (supports `isAnomaly` and `availability`: `ALL` / `ACTIVE` / `EXPIRED`) | Bearer JWT |
 | `GET` | `/api/v1/backups/:id` | Full details, logs, S3 paths, retention days, and availability status | Bearer JWT |
