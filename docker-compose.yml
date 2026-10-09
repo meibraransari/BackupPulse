@@ -50,7 +50,6 @@ services:
       NODE_ENV: production
       PORT: ${PORT:-3000}
       HOST: 0.0.0.0
-      ENABLE_SWAGGER: ${ENABLE_SWAGGER:-true}
       DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_secure_pass_123}@postgres:5432/${POSTGRES_DB:-backup_monitor_db}?schema=public}
       JWT_SECRET: ${JWT_SECRET:-production_jwt_secret_please_change_me_super_secure_987654321}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}

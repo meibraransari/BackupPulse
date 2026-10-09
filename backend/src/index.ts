@@ -26,6 +26,9 @@ import { scriptRoutes } from './routes/script.route';
 import { settingsRoutes } from './routes/settings.route';
 
 async function bootstrap() {
+  // Initialize database-backed dynamic system settings early
+  await initSettings();
+
   // Fastify logger configuration across all modes
   const fastify = Fastify({
     logger: config.ENABLE_CONSOLE_LOG
@@ -96,11 +99,31 @@ async function bootstrap() {
     });
   }
 
-  // Setup Swagger Documentation at /api/docs if enabled
-  if (config.ENABLE_SWAGGER) {
-    // Pre-routing hook to fix Swagger-UI relative paths & aliases
-    fastify.addHook('onRequest', async (request, reply) => {
-      const rawUrl = request.raw.url || '';
+  // Setup Swagger Documentation at /api/docs with dynamic System Settings toggle
+  await setupSwagger(fastify);
+
+  // Dynamic onRequest hook for Swagger UI & security guard
+  fastify.addHook('onRequest', async (request, reply) => {
+    const rawUrl = request.raw.url || '';
+
+    // Check if URL targets Swagger docs or aliases
+    const isDocUrl =
+      rawUrl === '/api/docs' ||
+      rawUrl.startsWith('/api/docs/') ||
+      rawUrl.startsWith('/api/docs?') ||
+      rawUrl === '/docs' ||
+      rawUrl.startsWith('/docs/') ||
+      rawUrl.startsWith('/docs?') ||
+      rawUrl.startsWith('/api/api/docs/');
+
+    if (isDocUrl) {
+      // Dynamic check against config.ENABLE_SWAGGER (updated live via System Settings)
+      if (!config.ENABLE_SWAGGER) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Swagger API documentation is disabled in System Settings.',
+        });
+      }
 
       // 1. Fix duplicate /api/api/docs/ prefix if requested
       if (rawUrl.startsWith('/api/api/docs/')) {
@@ -109,7 +132,6 @@ async function bootstrap() {
       }
 
       // 2. Redirect /api/docs (without trailing slash) to /api/docs/ (with trailing slash)
-      // This is required so Swagger-UI resolves relative assets like ./static/swagger-ui.css correctly
       if (rawUrl === '/api/docs' || rawUrl.startsWith('/api/docs?')) {
         const query = rawUrl.includes('?') ? rawUrl.substring(rawUrl.indexOf('?')) : '';
         return reply.redirect(302, `/api/docs/${query}`);
@@ -120,23 +142,8 @@ async function bootstrap() {
         const query = rawUrl.includes('?') ? rawUrl.substring(rawUrl.indexOf('?')) : '';
         return reply.redirect(302, `/api/docs/${query}`);
       }
-    });
-
-    await setupSwagger(fastify);
-  } else {
-    // When Swagger is disabled in production, block /api/docs and /docs with 404
-    const handleDisabledDocs = async (_request: FastifyRequest, reply: FastifyReply) => {
-      return reply.status(404).send({
-        error: 'Not Found',
-        message: 'Swagger API documentation is disabled in this environment (ENABLE_SWAGGER=false).',
-      });
-    };
-
-    fastify.get('/api/docs', handleDisabledDocs);
-    fastify.get('/api/docs/*', handleDisabledDocs);
-    fastify.get('/docs', handleDisabledDocs);
-    fastify.get('/docs/*', handleDisabledDocs);
-  }
+    }
+  });
 
   // Register API Routes
   await fastify.register(healthRoutes);
@@ -191,9 +198,6 @@ async function bootstrap() {
     console.log(`💓 Health Check: http://${config.HOST}:${config.PORT}/health`);
     console.log(`📝 Console Logging: ${config.ENABLE_CONSOLE_LOG ? 'ENABLED (' + config.LOG_LEVEL + ')' : 'DISABLED'}`);
     console.log(`====================================================`);
-
-    // Initialize database-backed dynamic system settings
-    await initSettings();
 
     // Seed admin user and start background cron
     await seedInitialAdmin();

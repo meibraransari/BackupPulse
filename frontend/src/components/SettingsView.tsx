@@ -23,6 +23,7 @@ import {
   Server,
   Cloud,
   Key,
+  BookOpen,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { SystemSettingItem, SystemSettingsCategory } from '../types';
@@ -39,6 +40,10 @@ interface SettingCardDefinition {
   icon: any;
   iconColor: string;
   badge?: string;
+  actionLink?: {
+    label: string;
+    href: string;
+  };
   testChannel?: 'google_chat' | 'slack' | 'discord' | 'telegram' | 'email';
   testButtonLabel?: string;
   settingKeys: string[];
@@ -54,6 +59,22 @@ const SETTING_CARDS: SettingCardDefinition[] = [
     icon: Layers,
     iconColor: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
     settingKeys: ['APP_BASE_URL', 'INGESTION_API_KEY', 'ENABLE_CONSOLE_LOG', 'LOG_LEVEL'],
+  },
+
+  // 2. Swagger OpenAPI Documentation UI (Single Cohesive Card)
+  {
+    id: 'swagger',
+    category: 'general',
+    title: 'Swagger OpenAPI Documentation UI',
+    subtitle: 'Interactive REST API explorer & schema documentation at /api/docs (toggle off for production security hardening).',
+    icon: BookOpen,
+    iconColor: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20',
+    badge: 'OpenAPI',
+    actionLink: {
+      label: 'Open /api/docs',
+      href: '/api/docs/',
+    },
+    settingKeys: ['ENABLE_SWAGGER'],
   },
 
   // 2. Alerts & Cron Schedules
@@ -486,26 +507,42 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsSaved }) =
                     </div>
                   </div>
 
-                  {/* Channel Test Button inside this card */}
-                  {card.testChannel && (
-                    <button
-                      onClick={() => handleTestChannel(card.testChannel!)}
-                      disabled={test?.loading}
-                      className="self-start sm:self-auto flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-colors shrink-0 disabled:opacity-50"
-                      title={`Verify ${card.title} channel`}
-                    >
-                      {test?.loading ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" />
-                      ) : test?.success ? (
-                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
-                      ) : test?.success === false ? (
-                        <AlertCircle className="h-3.5 w-3.5 text-rose-400" />
-                      ) : (
-                        <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
-                      )}
-                      <span>{test?.loading ? 'Testing...' : card.testButtonLabel || 'Test Connection'}</span>
-                    </button>
-                  )}
+                  <div className="flex items-center space-x-2 shrink-0">
+                    {/* Action Link (e.g. Open Swagger Docs UI) */}
+                    {card.actionLink && (
+                      <a
+                        href={card.actionLink.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold text-cyan-300 bg-cyan-950/40 hover:bg-cyan-900/60 border border-cyan-800/60 transition-colors shadow-sm"
+                        title={card.actionLink.label}
+                      >
+                        <span>{card.actionLink.label}</span>
+                        <ExternalLink className="h-3.5 w-3.5 text-cyan-400" />
+                      </a>
+                    )}
+
+                    {/* Channel Test Button inside this card */}
+                    {card.testChannel && (
+                      <button
+                        onClick={() => handleTestChannel(card.testChannel!)}
+                        disabled={test?.loading}
+                        className="self-start sm:self-auto flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-colors shrink-0 disabled:opacity-50"
+                        title={`Verify ${card.title} channel`}
+                      >
+                        {test?.loading ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" />
+                        ) : test?.success ? (
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                        ) : test?.success === false ? (
+                          <AlertCircle className="h-3.5 w-3.5 text-rose-400" />
+                        ) : (
+                          <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
+                        )}
+                        <span>{test?.loading ? 'Testing...' : card.testButtonLabel || 'Test Connection'}</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Card Fields Body */}

@@ -53,6 +53,15 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     options: ['info', 'debug', 'warn', 'error'],
     getDefaultValue: () => config.LOG_LEVEL || 'info',
   },
+  {
+    key: 'ENABLE_SWAGGER',
+    category: 'general',
+    label: 'Swagger OpenAPI Documentation UI',
+    description: 'Enable interactive API documentation at /api/docs and OpenAPI JSON schema (disable for production security hardening)',
+    isEncrypted: false,
+    type: 'boolean',
+    getDefaultValue: () => (process.env.ENABLE_SWAGGER !== undefined ? process.env.ENABLE_SWAGGER : 'true'),
+  },
 
   // 2. Automated Alerts & Schedules
   {
@@ -330,6 +339,9 @@ export function syncConfigFromSettings(settingsMap: Map<string, string>): void {
   }
   if (settingsMap.has('LOG_LEVEL')) {
     config.LOG_LEVEL = settingsMap.get('LOG_LEVEL') || 'info';
+  }
+  if (settingsMap.has('ENABLE_SWAGGER')) {
+    config.ENABLE_SWAGGER = settingsMap.get('ENABLE_SWAGGER') === 'true';
   }
 
   if (settingsMap.has('REPORT_CRON')) {

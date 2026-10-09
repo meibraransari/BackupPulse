@@ -87,7 +87,7 @@ docker compose logs -f app
 * **Web Dashboard**: [http://localhost:3000](http://localhost:3000)
   * Default Username: `admin`
   * Default Password: `Admin@123456`
-* **Swagger OpenAPI Docs**: [http://localhost:3000/api/docs](http://localhost:3000/api/docs) (Toggle with `ENABLE_SWAGGER=false` in production)
+* **Swagger OpenAPI Docs**: [http://localhost:3000/api/docs](http://localhost:3000/api/docs) (Toggle dynamically in **System Settings** for production security hardening)
 * **Health Check**: [http://localhost:3000/health](http://localhost:3000/health)
 
 ---
@@ -115,7 +115,7 @@ Traditionally, modifying notification webhooks, SMTP credentials, alert cron int
 | Setting Scope | Storage | Examples |
 | :--- | :--- | :--- |
 | **Minimal Bootstrap Only** | `.env` | `DATABASE_URL`, `PORT`, `HOST`, `JWT_SECRET`, `INITIAL_ADMIN_USERNAME`, `INITIAL_ADMIN_PASSWORD` |
-| **Dynamic Operational Settings** | Database (`system_settings`) | `APP_BASE_URL`, `INGESTION_API_KEY`, `REPORT_CRON`, `INSTANT_ALERT_ON_FAILURE`, `ENABLE_GOOGLE_CHAT`, `GOOGLE_CHAT_WEBHOOK_URL`, `ENABLE_SLACK`, `SLACK_WEBHOOK_URL`, `ENABLE_DISCORD`, `DISCORD_WEBHOOK_URL`, `ENABLE_TELEGRAM`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `ENABLE_EMAIL`, `EMAIL_PROVIDER`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SENDGRID_API_KEY`, `AWS_SES_*`, `DB_RETENTION_DAYS`, `ENABLE_HOUSEKEEPING`, `HOUSEKEEPING_CRON` |
+| **Dynamic Operational Settings** | Database (`system_settings`) | `APP_BASE_URL`, `INGESTION_API_KEY`, `ENABLE_SWAGGER`, `REPORT_CRON`, `INSTANT_ALERT_ON_FAILURE`, `ENABLE_GOOGLE_CHAT`, `GOOGLE_CHAT_WEBHOOK_URL`, `ENABLE_SLACK`, `SLACK_WEBHOOK_URL`, `ENABLE_DISCORD`, `DISCORD_WEBHOOK_URL`, `ENABLE_TELEGRAM`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `ENABLE_EMAIL`, `EMAIL_PROVIDER`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SENDGRID_API_KEY`, `AWS_SES_*`, `DB_RETENTION_DAYS`, `ENABLE_HOUSEKEEPING`, `HOUSEKEEPING_CRON` |
 
 *Note: On first database boot, BackupPulse automatically seeds the `system_settings` table using `.env` fallback values, providing seamless backward compatibility.*
 
@@ -520,7 +520,7 @@ Exposed directly within the **Deploy New Server Wizard** under the **🩺 Pre-Fl
 | :--- | :--- | :--- | :--- |
 | `GET` | `/health` | Server uptime & DB connection check (includes `swagger` enabled flag) | None |
 | `GET` | `/metrics` | Standard Prometheus metrics exposition (counters, gauges, memory, uptime) | None |
-| `GET` | `/api/docs` | Interactive Swagger UI sandbox (enabled when `ENABLE_SWAGGER=true`) | None |
+| `GET` | `/api/docs` | Interactive Swagger UI sandbox (toggleable dynamically in System Settings) | None |
 | `GET` | `/api/v1/scripts/preflight` | Dynamic 1-line POSIX pre-flight diagnostic script for client machines | None |
 | `POST` | `/api/v1/backups/report` | Telemetry ingestion from shell script (rate limit: 120/min, scoped/master key) | `x-api-key` |
 | `POST` | `/api/v1/auth/login` | Admin/Operator/Viewer authentication (rate limit: 10/min) | None |
