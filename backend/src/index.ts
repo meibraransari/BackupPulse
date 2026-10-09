@@ -11,6 +11,7 @@ import { setupSwagger } from './swagger';
 import { seedInitialAdmin } from './services/auth.service';
 import { initCronJobs } from './services/cron.service';
 import { initSettings } from './services/settings.service';
+import { initMetrics } from './services/metrics.service';
 
 import { healthRoutes } from './routes/health.route';
 import { authRoutes } from './routes/auth.route';
@@ -202,6 +203,9 @@ async function bootstrap() {
     // Seed admin user and start background cron
     await seedInitialAdmin();
     initCronJobs();
+
+    // Initialize Prometheus metrics with PostgreSQL database state
+    await initMetrics();
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);

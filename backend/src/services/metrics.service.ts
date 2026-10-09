@@ -49,6 +49,76 @@ export const activeApiKeysGauge = new client.Gauge({
   registers: [register],
 });
 
+export const totalBackupsAllTimeGauge = new client.Gauge({
+  name: 'backuppulse_total_backups_all_time',
+  help: 'Total count of all backup reports currently stored in PostgreSQL database',
+  registers: [register],
+});
+
+export const totalBackups24hGauge = new client.Gauge({
+  name: 'backuppulse_total_backups_24h',
+  help: 'Count of backup reports recorded in the past 24 hours',
+  registers: [register],
+});
+
+/**
+ * Initialize metric collectors with existing PostgreSQL database state on startup
+ */
+export async function initMetrics(): Promise<void> {
+  try {
+    // 1. Seed historical backup runs counter from database
+    const runsSummary = await prisma.backupReport.groupBy({
+      by: ['status', 'projectName', 'serverId', 'backupType'],
+      _count: { id: true },
+    });
+
+    backupRunsTotal.reset();
+    for (const item of runsSummary) {
+      backupRunsTotal.inc(
+        {
+          status: item.status,
+          project: item.projectName,
+          server: item.serverId,
+          backup_type: item.backupType,
+        },
+        item._count.id
+      );
+    }
+
+    // 2. Seed gauges for latest size and duration per server & project
+    const latestReports = await prisma.backupReport.findMany({
+      distinct: ['serverId', 'projectName'],
+      orderBy: { createdAt: 'desc' },
+      select: {
+        serverId: true,
+        projectName: true,
+        backupSizeBytes: true,
+        durationSeconds: true,
+      },
+    });
+
+    for (const r of latestReports) {
+      backupSizeBytesGauge.set(
+        { project: r.projectName, server: r.serverId },
+        Number(r.backupSizeBytes)
+      );
+      backupDurationSecondsGauge.set(
+        { project: r.projectName, server: r.serverId },
+        r.durationSeconds
+      );
+    }
+
+    // 3. Refresh dynamic snapshot gauges
+    await refreshDynamicMetrics();
+    const totalSeeded = runsSummary.reduce((acc, curr) => acc + curr._count.id, 0);
+    console.log(
+      `[METRICS] Initialized Prometheus metrics from database (${totalSeeded} total backups seeded across ${latestReports.length} server streams).`
+    );
+  } catch (err: any) {
+    console.warn('[METRICS] Error initializing metrics from database:', err.message);
+  }
+}
+
 /**
  * Record a newly ingested backup run into Prometheus metric collectors
  */
@@ -87,7 +157,15 @@ export function recordBackupMetrics(report: {
  */
 export async function refreshDynamicMetrics(): Promise<void> {
   try {
+    const totalAllTime = await prisma.backupReport.count();
+    totalBackupsAllTimeGauge.set(totalAllTime);
+
     const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const total24h = await prisma.backupReport.count({
+      where: { createdAt: { gte: since24h } },
+    });
+    totalBackups24hGauge.set(total24h);
+
     const failures24h = await prisma.backupReport.count({
       where: {
         createdAt: { gte: since24h },
