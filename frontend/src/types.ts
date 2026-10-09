@@ -5,6 +5,7 @@ export interface User {
   fullName?: string;
   avatar?: string;
   role: string; // admin, operator, viewer
+  assignedProjects?: string[];
   isActive?: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -53,6 +54,10 @@ export interface BackupReport {
   isExpired?: boolean;
   daysRemaining?: number | null;
   daysAgoExpired?: number | null;
+  restoreDrillStatus?: 'SUCCESS' | 'FAILED' | 'SKIPPED' | null;
+  restoreDrillDurationSeconds?: number | null;
+  restoreDrillVerifiedTables?: number | null;
+  restoreDrillLog?: string | null;
   createdAt: string;
 }
 
@@ -168,4 +173,27 @@ export interface HousekeepingStatus {
   backupReports: { total: number; eligibleForCleanup: number };
   notificationLogs: { total: number; eligibleForCleanup: number };
   userLoginLogs?: { total: number; eligibleForCleanup: number };
+}
+
+export interface SlaHeatmapDayItem {
+  date: string;
+  total: number;
+  success: number;
+  failed: number;
+  warning: number;
+  successRate: number;
+  status: 'ALL_PASSED' | 'PARTIAL' | 'CRITICAL_FAILED' | 'NO_RUNS';
+}
+
+export interface SlaHeatmapResponse {
+  days: SlaHeatmapDayItem[];
+  summary: {
+    daysTracked: number;
+    totalBackups: number;
+    overallSla: number;
+    perfectDays: number;
+    partialDays: number;
+    failedDays: number;
+    inactiveDays: number;
+  };
 }

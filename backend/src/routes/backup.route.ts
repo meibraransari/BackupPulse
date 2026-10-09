@@ -5,6 +5,7 @@ import { config } from '../config/env';
 import { formatBytes } from '../services/gchat.service';
 import { recordBackupMetrics } from '../services/metrics.service';
 import { dispatchInstantFailureAlert } from '../services/alert-dispatcher.service';
+import { buildProjectWhereClause, getProjectScope } from '../utils/rbac';
 
 export async function backupRoutes(fastify: FastifyInstance) {
   // Ingestion API from Shell Script (Rate limited to 120 per minute to prevent accidental spam)
@@ -54,6 +55,10 @@ export async function backupRoutes(fastify: FastifyInstance) {
             stderr_log: { type: 'string' },
             retention_days: { type: 'integer', description: 'Days to retain backup archive in S3 bucket before deletion' },
             metadata: { type: 'object' },
+            restore_drill_status: { type: 'string' },
+            restore_drill_duration_seconds: { type: 'integer' },
+            restore_drill_verified_tables: { type: 'integer' },
+            restore_drill_log: { type: 'string' },
           },
         },
         response: {
@@ -239,6 +244,10 @@ export async function backupRoutes(fastify: FastifyInstance) {
           anomalyReason,
           retentionDays,
           expiresAt,
+          restoreDrillStatus: body.restore_drill_status || null,
+          restoreDrillDurationSeconds: body.restore_drill_duration_seconds !== undefined ? Number(body.restore_drill_duration_seconds) : null,
+          restoreDrillVerifiedTables: body.restore_drill_verified_tables !== undefined ? Number(body.restore_drill_verified_tables) : null,
+          restoreDrillLog: body.restore_drill_log ? body.restore_drill_log.slice(0, 65535) : null,
         },
       });
 
@@ -317,8 +326,16 @@ export async function backupRoutes(fastify: FastifyInstance) {
 
       const where: any = {};
 
-      if (query.projectName && query.projectName !== 'ALL') {
-        where.projectName = query.projectName;
+      // RBAC Project Scope Enforcement
+      const user = (request as any).user;
+      const projectScope = buildProjectWhereClause(user, query.projectName);
+      if (projectScope.error) {
+        return reply.status(403).send({ error: projectScope.error });
+      }
+      Object.assign(where, projectScope.where);
+
+      if (query.restoreDrillStatus && query.restoreDrillStatus !== 'ALL') {
+        where.restoreDrillStatus = query.restoreDrillStatus.toUpperCase();
       }
 
       if (query.serverId && query.serverId !== 'ALL') {
@@ -544,6 +561,13 @@ export async function backupRoutes(fastify: FastifyInstance) {
         return reply.status(404).send({ error: 'Backup report not found' });
       }
 
+      const { isRestricted, allowedProjects } = getProjectScope(authUser);
+      if (isRestricted && !allowedProjects.includes(existing.projectName)) {
+        return reply.status(403).send({
+          error: `Forbidden: You do not have permission to resolve reports for project '${existing.projectName}'.`,
+        });
+      }
+
       const existingMeta = (existing.metadata as Record<string, any>) || {};
       const updatedMeta = {
         ...existingMeta,
@@ -578,8 +602,13 @@ export async function backupRoutes(fastify: FastifyInstance) {
         security: [{ bearerAuth: [] }],
       },
     },
-    async (_request, reply) => {
+    async (request, reply) => {
+      const user = (request as any).user;
+      const { isRestricted, allowedProjects } = getProjectScope(user);
+      const where: any = isRestricted ? { projectName: { in: allowedProjects } } : {};
+
       const projects = await prisma.backupReport.findMany({
+        where,
         select: { projectName: true },
         distinct: ['projectName'],
         orderBy: { projectName: 'asc' },
@@ -599,8 +628,13 @@ export async function backupRoutes(fastify: FastifyInstance) {
         security: [{ bearerAuth: [] }],
       },
     },
-    async (_request, reply) => {
+    async (request, reply) => {
+      const user = (request as any).user;
+      const { isRestricted, allowedProjects } = getProjectScope(user);
+      const where: any = isRestricted ? { projectName: { in: allowedProjects } } : {};
+
       const servers = await prisma.backupReport.findMany({
+        where,
         select: { serverId: true, hostname: true },
         distinct: ['serverId'],
         orderBy: { serverId: 'asc' },
@@ -637,7 +671,12 @@ export async function backupRoutes(fastify: FastifyInstance) {
       const query = request.query as any;
       const where: any = {};
 
-      if (query.projectName && query.projectName !== 'ALL') where.projectName = query.projectName;
+      const user = (request as any).user;
+      const projectScope = buildProjectWhereClause(user, query.projectName);
+      if (projectScope.error) {
+        return reply.status(403).send({ error: projectScope.error });
+      }
+      Object.assign(where, projectScope.where);
       if (query.serverId && query.serverId !== 'ALL') where.serverId = query.serverId;
       if (query.status && query.status !== 'ALL') where.status = query.status.toUpperCase();
       if (query.backupType && query.backupType !== 'ALL') where.backupType = query.backupType.toLowerCase();

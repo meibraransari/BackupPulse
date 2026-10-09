@@ -21,6 +21,7 @@ import { serverRoutes } from './routes/server.route';
 import { userRoutes } from './routes/user.route';
 import { apiKeyRoutes } from './routes/apikey.route';
 import { metricsRoutes } from './routes/metrics.route';
+import { scriptRoutes } from './routes/script.route';
 
 async function bootstrap() {
   // Fastify logger configuration across all modes
@@ -146,6 +147,7 @@ async function bootstrap() {
   await fastify.register(userRoutes);
   await fastify.register(apiKeyRoutes);
   await fastify.register(metricsRoutes);
+  await fastify.register(scriptRoutes);
 
   // Serve static frontend build if present (for single container deployment)
   const frontendDistPath = path.resolve(__dirname, '../../frontend/dist');

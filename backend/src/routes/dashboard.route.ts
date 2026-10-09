@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { prisma } from '../db/prisma';
 import { formatBytes } from '../services/gchat.service';
+import { buildProjectWhereClause } from '../utils/rbac';
 
 export async function dashboardRoutes(fastify: FastifyInstance) {
   // Summary Stats
@@ -14,7 +15,11 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
         security: [{ bearerAuth: [] }],
       },
     },
-    async (_request, reply) => {
+    async (request, reply) => {
+      const user = (request as any).user;
+      const projectScope = buildProjectWhereClause(user);
+      const scopeWhere = projectScope.where || {};
+
       const now = new Date();
       const last24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
@@ -27,13 +32,13 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
         uniqueProjects,
         totalStorageAgg,
       ] = await Promise.all([
-        prisma.backupReport.count(),
-        prisma.backupReport.count({ where: { createdAt: { gte: last24h } } }),
-        prisma.backupReport.count({ where: { createdAt: { gte: last24h }, status: 'SUCCESS' } }),
-        prisma.backupReport.count({ where: { createdAt: { gte: last24h }, status: 'FAILED' } }),
-        prisma.backupReport.findMany({ select: { serverId: true }, distinct: ['serverId'] }),
-        prisma.backupReport.findMany({ select: { projectName: true }, distinct: ['projectName'] }),
-        prisma.backupReport.aggregate({ _sum: { backupSizeBytes: true } }),
+        prisma.backupReport.count({ where: scopeWhere }),
+        prisma.backupReport.count({ where: { ...scopeWhere, createdAt: { gte: last24h } } }),
+        prisma.backupReport.count({ where: { ...scopeWhere, createdAt: { gte: last24h }, status: 'SUCCESS' } }),
+        prisma.backupReport.count({ where: { ...scopeWhere, createdAt: { gte: last24h }, status: 'FAILED' } }),
+        prisma.backupReport.findMany({ where: scopeWhere, select: { serverId: true }, distinct: ['serverId'] }),
+        prisma.backupReport.findMany({ where: scopeWhere, select: { projectName: true }, distinct: ['projectName'] }),
+        prisma.backupReport.aggregate({ where: scopeWhere, _sum: { backupSizeBytes: true } }),
       ]);
 
       const successRate = total24h > 0 ? Math.round((success24h / total24h) * 100) : 100;
@@ -71,12 +76,18 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
+      const user = (request as any).user;
       const query = request.query as any;
       const days = Math.min(60, Math.max(3, parseInt(query.days || '7', 10)));
       const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
+      const projectScope = buildProjectWhereClause(user, query.projectName);
+      if (projectScope.error) {
+        return reply.status(403).send({ error: projectScope.error });
+      }
+
       const reports = await prisma.backupReport.findMany({
-        where: { createdAt: { gte: since } },
+        where: { ...(projectScope.where || {}), createdAt: { gte: since } },
         select: {
           status: true,
           backupSizeBytes: true,
@@ -119,8 +130,12 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
         security: [{ bearerAuth: [] }],
       },
     },
-    async (_request, reply) => {
+    async (request, reply) => {
+      const user = (request as any).user;
+      const projectScope = buildProjectWhereClause(user);
+
       const projects = await prisma.backupReport.groupBy({
+        where: projectScope.where || {},
         by: ['projectName'],
         _count: { id: true },
         _sum: { backupSizeBytes: true },
@@ -158,12 +173,15 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
+      const user = (request as any).user;
+      const projectScope = buildProjectWhereClause(user);
       const query = request.query as any;
       const search = query.search?.trim().toLowerCase();
       const statusFilter = query.status?.toUpperCase() || 'ALL';
 
-      // Find all reports with server metadata
+      // Find all reports with server metadata scoped by RBAC
       const allReports = await prisma.backupReport.findMany({
+        where: projectScope.where || {},
         orderBy: { createdAt: 'desc' },
         select: {
           serverId: true,
@@ -312,6 +330,141 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
           warning: fleetList.filter((s) => s.isMonitored && s.status === 'WARNING').length,
           stale: fleetList.filter((s) => s.isMonitored && s.status === 'STALE').length,
           muted: fleetList.filter((s) => !s.isMonitored).length,
+        },
+      });
+    }
+  );
+
+  // 5. 365-Day Backup SLA Heatmap & Calendar View
+  fastify.get(
+    '/api/v1/dashboard/heatmap',
+    {
+      preValidation: [(fastify as any).authenticate],
+      schema: {
+        description: 'Get historical daily SLA heatmap aggregation for 30, 90, or 365 days',
+        tags: ['Dashboard'],
+        security: [{ bearerAuth: [] }],
+        querystring: {
+          type: 'object',
+          properties: {
+            days: { type: 'integer', default: 365 },
+            projectName: { type: 'string' },
+            serverId: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const user = (request as any).user;
+      const query = request.query as any;
+      const days = Math.min(365, Math.max(7, parseInt(query.days || '365', 10)));
+      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+      const projectScope = buildProjectWhereClause(user, query.projectName);
+      if (projectScope.error) {
+        return reply.status(403).send({ error: projectScope.error });
+      }
+
+      const where: any = {
+        ...(projectScope.where || {}),
+        createdAt: { gte: since },
+      };
+
+      if (query.serverId && query.serverId !== 'ALL') {
+        where.serverId = query.serverId;
+      }
+
+      const reports = await prisma.backupReport.findMany({
+        where,
+        select: {
+          status: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      // Build daily map for all days from `days` ago to today
+      const heatmapMap: Record<
+        string,
+        {
+          date: string;
+          total: number;
+          success: number;
+          failed: number;
+          warning: number;
+          successRate: number;
+          status: 'ALL_PASSED' | 'PARTIAL' | 'CRITICAL_FAILED' | 'NO_RUNS';
+        }
+      > = {};
+
+      const now = new Date();
+      for (let i = days - 1; i >= 0; i--) {
+        const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+        const dateKey = d.toISOString().split('T')[0];
+        heatmapMap[dateKey] = {
+          date: dateKey,
+          total: 0,
+          success: 0,
+          failed: 0,
+          warning: 0,
+          successRate: 100,
+          status: 'NO_RUNS',
+        };
+      }
+
+      for (const r of reports) {
+        const dateKey = r.createdAt.toISOString().split('T')[0];
+        if (heatmapMap[dateKey]) {
+          heatmapMap[dateKey].total++;
+          if (r.status === 'SUCCESS') heatmapMap[dateKey].success++;
+          else if (r.status === 'FAILED') heatmapMap[dateKey].failed++;
+          else if (r.status === 'WARNING') heatmapMap[dateKey].warning++;
+        }
+      }
+
+      let totalBackups = 0;
+      let totalSuccess = 0;
+      let perfectDays = 0;
+      let partialDays = 0;
+      let failedDays = 0;
+      let inactiveDays = 0;
+
+      const dayItems = Object.values(heatmapMap).map((item) => {
+        if (item.total === 0) {
+          item.status = 'NO_RUNS';
+          item.successRate = 100;
+          inactiveDays++;
+        } else {
+          item.successRate = Math.round((item.success / item.total) * 100);
+          totalBackups += item.total;
+          totalSuccess += item.success;
+
+          if (item.failed === 0) {
+            item.status = 'ALL_PASSED';
+            perfectDays++;
+          } else if (item.success > 0) {
+            item.status = 'PARTIAL';
+            partialDays++;
+          } else {
+            item.status = 'CRITICAL_FAILED';
+            failedDays++;
+          }
+        }
+        return item;
+      });
+
+      const overallSla = totalBackups > 0 ? Math.round((totalSuccess / totalBackups) * 100) : 100;
+
+      return reply.send({
+        days: dayItems,
+        summary: {
+          daysTracked: days,
+          totalBackups,
+          overallSla,
+          perfectDays,
+          partialDays,
+          failedDays,
+          inactiveDays,
         },
       });
     }

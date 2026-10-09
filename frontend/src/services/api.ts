@@ -12,6 +12,7 @@ import {
   User,
   UserLoginLog,
   ApiKeyItem,
+  SlaHeatmapResponse,
 } from '../types';
 
 const TOKEN_KEY = 'backup_monitor_auth_token';
@@ -110,6 +111,7 @@ export const api = {
     role?: string;
     avatar?: string;
     isActive?: boolean;
+    assignedProjects?: string[];
   }): Promise<{ success: boolean; user: User }> {
     return request('/api/v1/users', {
       method: 'POST',
@@ -126,6 +128,7 @@ export const api = {
       avatar?: string;
       isActive?: boolean;
       newPassword?: string;
+      assignedProjects?: string[];
     }
   ): Promise<{ success: boolean; user: User }> {
     return request(`/api/v1/users/${id}`, {
@@ -168,6 +171,14 @@ export const api = {
 
   async getDashboardTrends(days = 7): Promise<TrendItem[]> {
     return request<TrendItem[]>(`/api/v1/dashboard/trends?days=${days}`);
+  },
+
+  async getSlaHeatmap(days = 365, projectName?: string, serverId?: string): Promise<SlaHeatmapResponse> {
+    const params = new URLSearchParams();
+    params.append('days', days.toString());
+    if (projectName && projectName !== 'ALL') params.append('projectName', projectName);
+    if (serverId && serverId !== 'ALL') params.append('serverId', serverId);
+    return request<SlaHeatmapResponse>(`/api/v1/dashboard/heatmap?${params.toString()}`);
   },
 
   async getProjectBreakdown(): Promise<ProjectBreakdown[]> {

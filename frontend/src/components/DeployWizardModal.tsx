@@ -23,6 +23,7 @@ import {
   Archive,
   HardDrive,
   ChevronDown,
+  Activity,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { ApiKeyItem } from '../types';
@@ -110,8 +111,11 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
   const [generatingToken, setGeneratingToken] = useState<boolean>(false);
   const [tokenGeneratedBanner, setTokenGeneratedBanner] = useState<string | null>(null);
 
+  // Disaster Recovery / Restore Drill
+  const [enableRestoreDrill, setEnableRestoreDrill] = useState<boolean>(false);
+
   // Active Output Tab
-  const [outputTab, setOutputTab] = useState<'script' | 'command' | 'crontab' | 'prereq'>('script');
+  const [outputTab, setOutputTab] = useState<'script' | 'command' | 'preflight' | 'crontab' | 'prereq'>('script');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   // Auto-sync folder name with project name if user hasn't explicitly changed it
@@ -218,7 +222,10 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
     sourcePath,
     excludePatterns,
     cronSchedule,
+    enableRestoreDrill,
   };
+
+  const preflightCmd = `curl -fsSL "${detectedOrigin}/api/v1/scripts/preflight?type=${backupType === 'zip' ? 'directory' : backupType}&dest=${storageDestination === 'shared_drive' ? 'mapped' : storageDestination}&drill=${enableRestoreDrill}" | bash`;
 
   // Generate code outputs based on backupType and storageDestination
   let generatedScript = '';
@@ -874,6 +881,33 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                     />
                   </div>
                 </div>
+
+                {/* Step 4.1: Optional Automated Restoration Drill (DrillPulse) */}
+                <div className="pt-2 border-t border-slate-800/80">
+                  <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800 hover:border-slate-700 transition-colors">
+                    <label className="flex items-start space-x-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={enableRestoreDrill}
+                        onChange={(e) => setEnableRestoreDrill(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 rounded text-emerald-500 bg-slate-900 border-slate-700 focus:ring-emerald-500/30 cursor-pointer"
+                      />
+                      <div className="space-y-1">
+                        <div className="flex items-center space-x-1.5">
+                          <span className="text-xs font-semibold text-white">
+                            🧪 Automated Restoration Drill (DrillPulse)
+                          </span>
+                          <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            DR Verified
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 leading-relaxed">
+                          Spawns an ephemeral sandbox container to restore dump and verify table counts before certification.
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -907,6 +941,19 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                 >
                   <Terminal className="h-3.5 w-3.5" />
                   <span>1-Liner Run</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setOutputTab('preflight')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-colors ${
+                    outputTab === 'preflight'
+                      ? 'bg-cyan-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Activity className="h-3.5 w-3.5" />
+                  <span>🩺 Pre-Flight Check</span>
                 </button>
 
                 <button
@@ -958,6 +1005,8 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                         ? generatedScript
                         : outputTab === 'command'
                         ? generatedCliCommand
+                        : outputTab === 'preflight'
+                        ? preflightCmd
                         : outputTab === 'crontab'
                         ? generateCrontabLine(targetScriptPath, cronSchedule)
                         : `${installCommands.debian}\n\n${installCommands.prep}\n\n# ${installCommands.storageTitle}\n${installCommands.storageCommand}`;
@@ -1029,6 +1078,58 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                     <p className="text-[11px] text-slate-400">
                       Add <code className="text-emerald-400">--dry-run</code> to the command above to test arguments and connectivity without executing real dumps or copying files.
                     </p>
+                  </div>
+                </div>
+              )}
+
+              {outputTab === 'preflight' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between text-slate-400 text-xs leading-relaxed">
+                    <span>Execute this 1-line pre-flight checker on your server to verify environment prerequisites:</span>
+                    <span className="px-2 py-0.5 rounded-md bg-cyan-950/60 border border-cyan-800/40 text-[10px] text-cyan-300 font-mono">
+                      agent-check.sh
+                    </span>
+                  </div>
+
+                  <div className="relative group">
+                    <pre className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-cyan-300 overflow-x-auto text-xs leading-relaxed select-all">
+                      {preflightCmd}
+                    </pre>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-3 text-xs text-slate-300">
+                    <div className="font-semibold text-white flex items-center space-x-1.5">
+                      <ShieldCheck className="h-4 w-4 text-cyan-400" />
+                      <span>Diagnostics verified in ~10 seconds:</span>
+                    </div>
+                    <ul className="space-y-2 text-[11px] text-slate-400">
+                      <li className="flex items-center space-x-2">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                        <span>Core POSIX utilities: <code className="text-slate-200">curl</code>, <code className="text-slate-200">gzip</code>, <code className="text-slate-200">awk</code>, <code className="text-slate-200">sha256sum</code>, <code className="text-slate-200">zip</code></span>
+                      </li>
+                      <li className="flex items-center space-x-2">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                        <span>Target engine client: <code className="text-slate-200">{backupType === 'postgres' ? 'pg_dump & psql' : backupType === 'mysql' ? 'mysqldump & mysqladmin' : 'zip'}</code></span>
+                      </li>
+                      <li className="flex items-center space-x-2">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                        <span>Storage target CLI & authentication: <strong className="text-slate-200">{storageDestination === 's3' ? 'AWS CLI credentials' : storageDestination === 'gcs' ? 'Google Cloud SDK / gsutil' : storageDestination === 'azure' ? 'Azure CLI / AzCopy' : 'Local filesystem permissions'}</strong></span>
+                      </li>
+                      <li className="flex items-center space-x-2">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                        <span>BackupPulse Hub egress network connectivity (<code className="text-slate-200">{apiUrl}</code>)</span>
+                      </li>
+                      <li className="flex items-center space-x-2">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                        <span>Local staging directory free capacity (<code className="text-slate-200">df -h</code>)</span>
+                      </li>
+                      {enableRestoreDrill && (
+                        <li className="flex items-center space-x-2 text-cyan-300">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                          <span>Docker engine active (for ephemeral DrillPulse container restoration)</span>
+                        </li>
+                      )}
+                    </ul>
                   </div>
                 </div>
               )}

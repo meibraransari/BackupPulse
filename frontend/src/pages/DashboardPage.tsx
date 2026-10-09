@@ -13,6 +13,7 @@ import { UserProfileModal } from '../components/UserProfileModal';
 import { UserManagementView } from '../components/UserManagementView';
 import { ApiKeysModal } from '../components/ApiKeysModal';
 import { DeployWizardModal } from '../components/DeployWizardModal';
+import { SlaHeatmap } from '../components/SlaHeatmap';
 import { api } from '../services/api';
 import { BackupFilters, BackupReport, DashboardStats, ProjectBreakdown, TrendItem, User } from '../types';
 import { RefreshCw, CheckCircle2, Server, Table, Users, Sparkles } from 'lucide-react';
@@ -325,6 +326,20 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
               loading={loadingStats}
               onSelectDate={handleDateClick}
               onSelectProject={handleProjectClick}
+            />
+
+            {/* 3. 365-Day Backup SLA Contribution Heatmap & Calendar Matrix */}
+            <SlaHeatmap
+              onSelectDate={(date) => {
+                if (date) {
+                  handleDateClick(date);
+                } else {
+                  setFilters((prev) => ({ ...prev, startDate: '', endDate: '', page: 1 }));
+                }
+              }}
+              selectedDate={filters.startDate && filters.startDate === filters.endDate ? filters.startDate : undefined}
+              projectName={filters.projectName !== 'ALL' ? filters.projectName : undefined}
+              serverId={filters.serverId !== 'ALL' ? filters.serverId : undefined}
             />
 
             {/* Anchor section for smooth scroll jump */}

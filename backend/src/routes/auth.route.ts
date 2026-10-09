@@ -122,7 +122,12 @@ export async function authRoutes(fastify: FastifyInstance) {
       console.log(`[AUTH] User "${user.username}" authenticated successfully from ${clientIp}`);
 
       const token = fastify.jwt.sign(
-        { id: user.id, username: user.username, role: user.role },
+        {
+          id: user.id,
+          username: user.username,
+          role: user.role,
+          assignedProjects: user.assignedProjects || [],
+        },
         { expiresIn: '7d' }
       );
 
@@ -135,6 +140,7 @@ export async function authRoutes(fastify: FastifyInstance) {
           fullName: user.fullName || null,
           avatar: user.avatar || null,
           role: user.role,
+          assignedProjects: user.assignedProjects || [],
         },
       });
     }
@@ -162,6 +168,7 @@ export async function authRoutes(fastify: FastifyInstance) {
           fullName: true,
           avatar: true,
           role: true,
+          assignedProjects: true,
           isActive: true,
           createdAt: true,
         },

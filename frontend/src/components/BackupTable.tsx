@@ -506,7 +506,25 @@ export const BackupTable: React.FC<BackupTableProps> = ({
                       </td>
 
                       {/* Type */}
-                      <td className="py-3.5 px-3.5 overflow-hidden">{getTypeBadge(report.backupType)}</td>
+                      <td className="py-3.5 px-3.5 overflow-hidden">
+                        <div className="flex items-center space-x-1.5 flex-wrap gap-y-1">
+                          {getTypeBadge(report.backupType)}
+                          {report.restoreDrillStatus && (
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                                report.restoreDrillStatus === 'SUCCESS'
+                                  ? 'bg-emerald-950/70 text-emerald-300 border-emerald-700/50'
+                                  : report.restoreDrillStatus === 'FAILED'
+                                  ? 'bg-red-950/70 text-red-300 border-red-700/50'
+                                  : 'bg-slate-800 text-slate-400 border-slate-700'
+                              }`}
+                              title={`DrillPulse DR Drill: ${report.restoreDrillStatus} (${report.restoreDrillVerifiedTables ?? 0} entities verified in ${report.restoreDrillDurationSeconds ?? 0}s)`}
+                            >
+                              🧪 {report.restoreDrillStatus === 'SUCCESS' ? 'DR Pass' : report.restoreDrillStatus === 'FAILED' ? 'DR Fail' : 'DR Skip'}
+                            </span>
+                          )}
+                        </div>
+                      </td>
 
                       {/* Size */}
                       <td className="py-3.5 px-3.5 font-mono text-xs overflow-hidden truncate">

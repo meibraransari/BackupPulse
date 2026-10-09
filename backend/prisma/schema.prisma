@@ -14,10 +14,11 @@ model User {
   fullName     String?        @map("full_name")
   avatar       String?
   passwordHash String         @map("password_hash")
-  role         String         @default("admin") // admin, operator, viewer
-  isActive     Boolean        @default(true) @map("is_active")
-  createdAt    DateTime       @default(now()) @map("created_at")
-  updatedAt    DateTime       @updatedAt @map("updated_at")
+  role             String         @default("admin") // admin, operator, viewer
+  assignedProjects String[]       @default([]) @map("assigned_projects")
+  isActive         Boolean        @default(true) @map("is_active")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
 
   loginLogs    UserLoginLog[]
 
@@ -73,12 +74,17 @@ model BackupReport {
   anomalyReason   String?  @map("anomaly_reason")
   retentionDays   Int?     @map("retention_days")
   expiresAt       DateTime? @map("expires_at")
+  restoreDrillStatus          String?   @map("restore_drill_status")
+  restoreDrillDurationSeconds Int?      @map("restore_drill_duration_seconds")
+  restoreDrillVerifiedTables  Int?      @map("restore_drill_verified_tables")
+  restoreDrillLog             String?   @map("restore_drill_log")
   createdAt       DateTime @default(now()) @map("created_at")
 
   @@index([projectName, createdAt(sort: Desc)])
   @@index([serverId, createdAt(sort: Desc)])
   @@index([status, createdAt(sort: Desc)])
   @@index([isAnomaly, createdAt(sort: Desc)])
+  @@index([restoreDrillStatus])
   @@index([expiresAt])
   @@index([createdAt(sort: Desc)])
   @@map("backup_reports")

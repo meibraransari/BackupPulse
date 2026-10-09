@@ -67,12 +67,22 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ currentU
   const [formSubmitting, setFormSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Load users
+  // Multi-Tenant Project Scoping State
+  const [availableProjects, setAvailableProjects] = useState<string[]>([]);
+  const [formProjectScope, setFormProjectScope] = useState<'all' | 'custom'>('all');
+  const [formAssignedProjects, setFormAssignedProjects] = useState<string[]>([]);
+  const [customProjectInput, setCustomProjectInput] = useState<string>('');
+
+  // Load users & available projects
   const loadUsers = useCallback(async () => {
     setLoadingUsers(true);
     try {
-      const data = await api.getUsers();
+      const [data, projects] = await Promise.all([
+        api.getUsers(),
+        api.getProjects().catch(() => []),
+      ]);
       setUsers(data);
+      if (projects) setAvailableProjects(projects);
     } catch (err) {
       console.error('Failed to load users:', err);
     } finally {
@@ -117,6 +127,9 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ currentU
     setFormRole('operator');
     setFormAvatar('');
     setFormIsActive(true);
+    setFormProjectScope('all');
+    setFormAssignedProjects([]);
+    setCustomProjectInput('');
     setFormError(null);
     setIsAddModalOpen(true);
   };
@@ -131,6 +144,15 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ currentU
     setFormRole((user.role as any) || 'operator');
     setFormAvatar(user.avatar || '');
     setFormIsActive(user.isActive !== false);
+
+    if (user.assignedProjects && user.assignedProjects.length > 0 && !user.assignedProjects.includes('*')) {
+      setFormProjectScope('custom');
+      setFormAssignedProjects(user.assignedProjects);
+    } else {
+      setFormProjectScope('all');
+      setFormAssignedProjects([]);
+    }
+    setCustomProjectInput('');
     setFormError(null);
   };
 
@@ -157,6 +179,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ currentU
         role: formRole,
         avatar: formAvatar.trim() || undefined,
         isActive: formIsActive,
+        assignedProjects: formRole === 'admin' || formProjectScope === 'all' ? [] : formAssignedProjects,
       });
       setIsAddModalOpen(false);
       await loadUsers();
@@ -182,6 +205,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ currentU
         avatar: formAvatar.trim() || undefined,
         isActive: formIsActive,
         newPassword: formPassword.trim() || undefined,
+        assignedProjects: formRole === 'admin' || formProjectScope === 'all' ? [] : formAssignedProjects,
       });
       setEditingUser(null);
       await loadUsers();
@@ -350,18 +374,38 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ currentU
                           {user.email || '—'}
                         </td>
 
-                        <td className="py-3 px-4 whitespace-nowrap">
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase border ${
-                              user.role === 'admin'
-                                ? 'bg-purple-950/80 text-purple-300 border-purple-700/50'
-                                : user.role === 'operator'
-                                ? 'bg-blue-950/80 text-blue-300 border-blue-700/50'
-                                : 'bg-slate-800 text-slate-300 border-slate-700'
-                            }`}
-                          >
-                            {user.role}
-                          </span>
+                        <td className="py-3 px-4">
+                          <div className="flex flex-col space-y-1">
+                            <div>
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase border ${
+                                  user.role === 'admin'
+                                    ? 'bg-purple-950/80 text-purple-300 border-purple-700/50'
+                                    : user.role === 'operator'
+                                    ? 'bg-blue-950/80 text-blue-300 border-blue-700/50'
+                                    : 'bg-slate-800 text-slate-300 border-slate-700'
+                                }`}
+                              >
+                                {user.role}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap gap-1 max-w-xs">
+                              {user.role === 'admin' || !user.assignedProjects || user.assignedProjects.length === 0 || user.assignedProjects.includes('*') ? (
+                                <span className="text-[10px] text-slate-400 font-mono">
+                                  {user.role === 'admin' ? 'Global Access' : 'All Projects'}
+                                </span>
+                              ) : (
+                                user.assignedProjects.map((p) => (
+                                  <span
+                                    key={p}
+                                    className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-blue-950/70 text-blue-300 border border-blue-800/50"
+                                  >
+                                    {p}
+                                  </span>
+                                ))
+                              )}
+                            </div>
+                          </div>
                         </td>
 
                         <td className="py-3 px-4 whitespace-nowrap">
@@ -602,6 +646,133 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ currentU
                 </select>
               </div>
 
+              {/* Multi-Tenant RBAC Project Permissions */}
+              {formRole !== 'admin' && (
+                <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-0.5">
+                      🏢 Multi-Tenant Project Permissions (RBAC Scope)
+                    </label>
+                    <p className="text-[11px] text-slate-400">
+                      Restrict this user to specific project tags or grant global project access.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center space-x-4">
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="add-project-scope"
+                        checked={formProjectScope === 'all'}
+                        onChange={() => setFormProjectScope('all')}
+                        className="text-emerald-500 bg-slate-900 border-slate-700 focus:ring-emerald-500 cursor-pointer"
+                      />
+                      <span className="text-slate-300 text-xs">Global (All Projects)</span>
+                    </label>
+
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="add-project-scope"
+                        checked={formProjectScope === 'custom'}
+                        onChange={() => setFormProjectScope('custom')}
+                        className="text-emerald-500 bg-slate-900 border-slate-700 focus:ring-emerald-500 cursor-pointer"
+                      />
+                      <span className="text-slate-300 text-xs">Assigned Projects Only</span>
+                    </label>
+                  </div>
+
+                  {formProjectScope === 'custom' && (
+                    <div className="space-y-2 pt-2 border-t border-slate-800/80">
+                      <label className="block text-slate-400 text-[11px]">
+                        Select allowed projects:
+                      </label>
+
+                      {availableProjects.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-1.5 bg-slate-900/60 rounded-xl border border-slate-800">
+                          {availableProjects.map((p) => {
+                            const isChecked = formAssignedProjects.includes(p);
+                            return (
+                              <button
+                                key={p}
+                                type="button"
+                                onClick={() => {
+                                  if (isChecked) {
+                                    setFormAssignedProjects(formAssignedProjects.filter((item) => item !== p));
+                                  } else {
+                                    setFormAssignedProjects([...formAssignedProjects, p]);
+                                  }
+                                }}
+                                className={`px-2 py-0.5 rounded-lg text-[11px] font-mono transition-colors border ${
+                                  isChecked
+                                    ? 'bg-blue-600 text-white border-blue-500 shadow-sm'
+                                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                                }`}
+                              >
+                                {isChecked ? '✓ ' : '+ '}{p}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="text"
+                          value={customProjectInput}
+                          onChange={(e) => setCustomProjectInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              const trimmed = customProjectInput.trim();
+                              if (trimmed && !formAssignedProjects.includes(trimmed)) {
+                                setFormAssignedProjects([...formAssignedProjects, trimmed]);
+                                setCustomProjectInput('');
+                              }
+                            }
+                          }}
+                          placeholder="Type custom project tag and click Add..."
+                          className="flex-1 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-white font-mono text-[11px] focus:outline-none focus:border-blue-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const trimmed = customProjectInput.trim();
+                            if (trimmed && !formAssignedProjects.includes(trimmed)) {
+                              setFormAssignedProjects([...formAssignedProjects, trimmed]);
+                              setCustomProjectInput('');
+                            }
+                          }}
+                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white text-[11px] font-semibold rounded-xl"
+                        >
+                          Add
+                        </button>
+                      </div>
+
+                      {formAssignedProjects.length > 0 && (
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {formAssignedProjects.map((p) => (
+                            <span
+                              key={p}
+                              className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg bg-blue-950 border border-blue-700/60 text-blue-300 text-[11px] font-mono"
+                            >
+                              <span>{p}</span>
+                              <button
+                                type="button"
+                                onClick={() => setFormAssignedProjects(formAssignedProjects.filter((item) => item !== p))}
+                                className="hover:text-white ml-0.5 text-slate-400"
+                              >
+                                ×
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div>
                 <label className="block text-slate-300 font-medium mb-1">Avatar Image URL (Optional)</label>
                 <div className="flex items-center space-x-2">
@@ -711,6 +882,133 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ currentU
                   <option value="viewer">Viewer (Read-Only Telemetry)</option>
                 </select>
               </div>
+
+              {/* Multi-Tenant RBAC Project Permissions */}
+              {formRole !== 'admin' && (
+                <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-0.5">
+                      🏢 Multi-Tenant Project Permissions (RBAC Scope)
+                    </label>
+                    <p className="text-[11px] text-slate-400">
+                      Restrict this user to specific project tags or grant global project access.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center space-x-4">
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="edit-project-scope"
+                        checked={formProjectScope === 'all'}
+                        onChange={() => setFormProjectScope('all')}
+                        className="text-emerald-500 bg-slate-900 border-slate-700 focus:ring-emerald-500 cursor-pointer"
+                      />
+                      <span className="text-slate-300 text-xs">Global (All Projects)</span>
+                    </label>
+
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="edit-project-scope"
+                        checked={formProjectScope === 'custom'}
+                        onChange={() => setFormProjectScope('custom')}
+                        className="text-emerald-500 bg-slate-900 border-slate-700 focus:ring-emerald-500 cursor-pointer"
+                      />
+                      <span className="text-slate-300 text-xs">Assigned Projects Only</span>
+                    </label>
+                  </div>
+
+                  {formProjectScope === 'custom' && (
+                    <div className="space-y-2 pt-2 border-t border-slate-800/80">
+                      <label className="block text-slate-400 text-[11px]">
+                        Select allowed projects:
+                      </label>
+
+                      {availableProjects.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-1.5 bg-slate-900/60 rounded-xl border border-slate-800">
+                          {availableProjects.map((p) => {
+                            const isChecked = formAssignedProjects.includes(p);
+                            return (
+                              <button
+                                key={p}
+                                type="button"
+                                onClick={() => {
+                                  if (isChecked) {
+                                    setFormAssignedProjects(formAssignedProjects.filter((item) => item !== p));
+                                  } else {
+                                    setFormAssignedProjects([...formAssignedProjects, p]);
+                                  }
+                                }}
+                                className={`px-2 py-0.5 rounded-lg text-[11px] font-mono transition-colors border ${
+                                  isChecked
+                                    ? 'bg-blue-600 text-white border-blue-500 shadow-sm'
+                                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                                }`}
+                              >
+                                {isChecked ? '✓ ' : '+ '}{p}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="text"
+                          value={customProjectInput}
+                          onChange={(e) => setCustomProjectInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              const trimmed = customProjectInput.trim();
+                              if (trimmed && !formAssignedProjects.includes(trimmed)) {
+                                setFormAssignedProjects([...formAssignedProjects, trimmed]);
+                                setCustomProjectInput('');
+                              }
+                            }
+                          }}
+                          placeholder="Type custom project tag and click Add..."
+                          className="flex-1 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-white font-mono text-[11px] focus:outline-none focus:border-blue-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const trimmed = customProjectInput.trim();
+                            if (trimmed && !formAssignedProjects.includes(trimmed)) {
+                              setFormAssignedProjects([...formAssignedProjects, trimmed]);
+                              setCustomProjectInput('');
+                            }
+                          }}
+                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white text-[11px] font-semibold rounded-xl"
+                        >
+                          Add
+                        </button>
+                      </div>
+
+                      {formAssignedProjects.length > 0 && (
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {formAssignedProjects.map((p) => (
+                            <span
+                              key={p}
+                              className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg bg-blue-950 border border-blue-700/60 text-blue-300 text-[11px] font-mono"
+                            >
+                              <span>{p}</span>
+                              <button
+                                type="button"
+                                onClick={() => setFormAssignedProjects(formAssignedProjects.filter((item) => item !== p))}
+                                className="hover:text-white ml-0.5 text-slate-400"
+                              >
+                                ×
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div>
                 <label className="block text-slate-300 font-medium mb-1">Reset Password (Leave empty to keep current)</label>

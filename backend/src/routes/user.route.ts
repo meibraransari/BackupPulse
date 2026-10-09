@@ -24,6 +24,7 @@ export async function userRoutes(fastify: FastifyInstance) {
                 fullName: { type: 'string', nullable: true },
                 avatar: { type: 'string', nullable: true },
                 role: { type: 'string' },
+                assignedProjects: { type: 'array', items: { type: 'string' } },
                 isActive: { type: 'boolean' },
                 createdAt: { type: 'string' },
                 updatedAt: { type: 'string' },
@@ -43,6 +44,7 @@ export async function userRoutes(fastify: FastifyInstance) {
           fullName: true,
           avatar: true,
           role: true,
+          assignedProjects: true,
           isActive: true,
           createdAt: true,
           updatedAt: true,
@@ -71,6 +73,7 @@ export async function userRoutes(fastify: FastifyInstance) {
             email: { type: 'string' },
             fullName: { type: 'string' },
             role: { type: 'string', enum: ['admin', 'operator', 'viewer'], default: 'operator' },
+            assignedProjects: { type: 'array', items: { type: 'string' } },
             avatar: { type: 'string' },
             isActive: { type: 'boolean', default: true },
           },
@@ -112,6 +115,7 @@ export async function userRoutes(fastify: FastifyInstance) {
           email: body.email?.trim() || null,
           fullName: body.fullName?.trim() || null,
           role: body.role || 'operator',
+          assignedProjects: Array.isArray(body.assignedProjects) ? body.assignedProjects : [],
           avatar: body.avatar || null,
           isActive: body.isActive !== undefined ? body.isActive : true,
         },
@@ -122,6 +126,7 @@ export async function userRoutes(fastify: FastifyInstance) {
           fullName: true,
           avatar: true,
           role: true,
+          assignedProjects: true,
           isActive: true,
           createdAt: true,
         },
@@ -154,6 +159,7 @@ export async function userRoutes(fastify: FastifyInstance) {
             email: { type: 'string' },
             fullName: { type: 'string' },
             role: { type: 'string', enum: ['admin', 'operator', 'viewer'] },
+            assignedProjects: { type: 'array', items: { type: 'string' } },
             avatar: { type: 'string' },
             isActive: { type: 'boolean' },
             newPassword: { type: 'string' },
@@ -179,6 +185,9 @@ export async function userRoutes(fastify: FastifyInstance) {
       if (body.email !== undefined) updateData.email = body.email?.trim() || null;
       if (body.fullName !== undefined) updateData.fullName = body.fullName?.trim() || null;
       if (body.role !== undefined) updateData.role = body.role;
+      if (body.assignedProjects !== undefined) {
+        updateData.assignedProjects = Array.isArray(body.assignedProjects) ? body.assignedProjects : [];
+      }
       if (body.avatar !== undefined) updateData.avatar = body.avatar || null;
       if (body.isActive !== undefined) {
         // Prevent disabling yourself
@@ -204,6 +213,7 @@ export async function userRoutes(fastify: FastifyInstance) {
           fullName: true,
           avatar: true,
           role: true,
+          assignedProjects: true,
           isActive: true,
           updatedAt: true,
         },
