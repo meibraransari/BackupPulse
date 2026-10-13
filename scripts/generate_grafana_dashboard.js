@@ -613,37 +613,58 @@ const dashboard = {
     {
       "id": 12,
       "title": "Top 10 Projects by Backup Activity",
-      "type": "barchart",
+      "type": "bargauge",
       "gridPos": { "h": 7, "w": 12, "x": 0, "y": 24 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisPlacement": "auto",
-            "fillOpacity": 80,
-            "gradientMode": "scheme",
-            "lineWidth": 1
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "blue", "value": 10 },
+              { "color": "purple", "value": 50 }
+            ]
           },
           "unit": "short"
         },
         "overrides": []
       },
       "options": {
-        "barRadius": 0.2,
-        "barWidth": 0.6,
-        "groupWidth": 0.7,
-        "legend": { "displayMode": "hidden" },
+        "displayMode": "gradient",
+        "minVizHeight": 10,
+        "minVizWidth": 0,
+        "namePlacement": "auto",
         "orientation": "horizontal",
-        "showValue": "auto",
-        "tooltip": { "mode": "single" },
-        "xTickLabelRotation": 0
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto"
       },
+      "transformations": [
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
-          "expr": "topk(10, sum by (project) (backuppulse_backup_runs_total{server=~\"$server\"}))",
+          "expr": "topk(10, sum by (project) (backuppulse_backup_runs_total{project=~\"$project\", server=~\"$server\"}))",
           "legendFormat": "{{project}}",
           "range": false,
           "instant": true,
@@ -654,37 +675,58 @@ const dashboard = {
     {
       "id": 13,
       "title": "Top 10 Longest Execution Runtimes",
-      "type": "barchart",
+      "type": "bargauge",
       "gridPos": { "h": 7, "w": 12, "x": 12, "y": 24 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "fixed", "fixedColor": "amber" },
-          "custom": {
-            "axisPlacement": "auto",
-            "fillOpacity": 80,
-            "gradientMode": "opacity",
-            "lineWidth": 1
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 60 },
+              { "color": "red", "value": 300 }
+            ]
           },
           "unit": "s"
         },
         "overrides": []
       },
       "options": {
-        "barRadius": 0.2,
-        "barWidth": 0.6,
-        "groupWidth": 0.7,
-        "legend": { "displayMode": "hidden" },
+        "displayMode": "gradient",
+        "minVizHeight": 10,
+        "minVizWidth": 0,
+        "namePlacement": "auto",
         "orientation": "horizontal",
-        "showValue": "auto",
-        "tooltip": { "mode": "single" },
-        "xTickLabelRotation": 0
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto"
       },
+      "transformations": [
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
-          "expr": "topk(10, max by (project, server) (backuppulse_backup_duration_seconds))",
+          "expr": "topk(10, max by (project, server) (backuppulse_backup_duration_seconds{project=~\"$project\", server=~\"$server\"}))",
           "legendFormat": "{{project}} ({{server}})",
           "range": false,
           "instant": true,
