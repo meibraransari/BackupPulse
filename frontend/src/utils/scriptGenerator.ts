@@ -524,17 +524,25 @@ elif [ "$DESTINATION" = "gcs" ]; then
 
   log_info "🌐 [4/5] Uploading to Google Cloud Storage: \${GCS_URL}..."
   UPLOAD_OK=false
+  GCS_UPLOAD_TEMP="\${TEMP_LOG_DIR}/gcs_upload.tmp"
   if command -v gcloud >/dev/null 2>&1; then
-    if gcloud storage cp "$ZIP_FILE" "$GCS_URL" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
+    if gcloud storage cp "$ZIP_FILE" "$GCS_URL" >>"$LOG_STDOUT" 2>"$GCS_UPLOAD_TEMP"; then
       UPLOAD_OK=true
+      cat "$GCS_UPLOAD_TEMP" >> "$LOG_STDOUT" 2>/dev/null || true
+    else
+      cat "$GCS_UPLOAD_TEMP" >> "$LOG_STDERR" 2>/dev/null || true
     fi
   elif command -v gsutil >/dev/null 2>&1; then
-    if gsutil cp "$ZIP_FILE" "$GCS_URL" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
+    if gsutil cp "$ZIP_FILE" "$GCS_URL" >>"$LOG_STDOUT" 2>"$GCS_UPLOAD_TEMP"; then
       UPLOAD_OK=true
+      cat "$GCS_UPLOAD_TEMP" >> "$LOG_STDOUT" 2>/dev/null || true
+    else
+      cat "$GCS_UPLOAD_TEMP" >> "$LOG_STDERR" 2>/dev/null || true
     fi
   else
     echo "❌ Neither 'gcloud' nor 'gsutil' CLI was found!" >>"$LOG_STDERR"
   fi
+  rm -f "$GCS_UPLOAD_TEMP" 2>/dev/null || true
 
   if [ "$UPLOAD_OK" != true ]; then
     ERR="GCS upload failed: $(tail -n 3 "$LOG_STDERR")"
@@ -1141,17 +1149,25 @@ elif [ "$DESTINATION" = "gcs" ]; then
 
   log_info "🌐 [4/5] Uploading to Google Cloud Storage: \${GCS_URL}..."
   UPLOAD_OK=false
+  GCS_UPLOAD_TEMP="\${TEMP_LOG_DIR}/gcs_upload.tmp"
   if command -v gcloud >/dev/null 2>&1; then
-    if gcloud storage cp "$ZIP_FILE" "$GCS_URL" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
+    if gcloud storage cp "$ZIP_FILE" "$GCS_URL" >>"$LOG_STDOUT" 2>"$GCS_UPLOAD_TEMP"; then
       UPLOAD_OK=true
+      cat "$GCS_UPLOAD_TEMP" >> "$LOG_STDOUT" 2>/dev/null || true
+    else
+      cat "$GCS_UPLOAD_TEMP" >> "$LOG_STDERR" 2>/dev/null || true
     fi
   elif command -v gsutil >/dev/null 2>&1; then
-    if gsutil cp "$ZIP_FILE" "$GCS_URL" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
+    if gsutil cp "$ZIP_FILE" "$GCS_URL" >>"$LOG_STDOUT" 2>"$GCS_UPLOAD_TEMP"; then
       UPLOAD_OK=true
+      cat "$GCS_UPLOAD_TEMP" >> "$LOG_STDOUT" 2>/dev/null || true
+    else
+      cat "$GCS_UPLOAD_TEMP" >> "$LOG_STDERR" 2>/dev/null || true
     fi
   else
     echo "❌ Neither 'gcloud' nor 'gsutil' CLI was found!" >>"$LOG_STDERR"
   fi
+  rm -f "$GCS_UPLOAD_TEMP" 2>/dev/null || true
 
   if [ "$UPLOAD_OK" != true ]; then
     ERR="GCS upload failed: $(tail -n 3 "$LOG_STDERR")"
@@ -1705,17 +1721,25 @@ elif [ "$DESTINATION" = "gcs" ]; then
 
   log_info "🌐 [3/4] Uploading to Google Cloud Storage: \${GCS_URL}..."
   UPLOAD_OK=false
+  GCS_UPLOAD_TEMP="\${TEMP_LOG_DIR}/gcs_upload.tmp"
   if command -v gcloud >/dev/null 2>&1; then
-    if gcloud storage cp "$ZIP_FILE" "$GCS_URL" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
+    if gcloud storage cp "$ZIP_FILE" "$GCS_URL" >>"$LOG_STDOUT" 2>"$GCS_UPLOAD_TEMP"; then
       UPLOAD_OK=true
+      cat "$GCS_UPLOAD_TEMP" >> "$LOG_STDOUT" 2>/dev/null || true
+    else
+      cat "$GCS_UPLOAD_TEMP" >> "$LOG_STDERR" 2>/dev/null || true
     fi
   elif command -v gsutil >/dev/null 2>&1; then
-    if gsutil cp "$ZIP_FILE" "$GCS_URL" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
+    if gsutil cp "$ZIP_FILE" "$GCS_URL" >>"$LOG_STDOUT" 2>"$GCS_UPLOAD_TEMP"; then
       UPLOAD_OK=true
+      cat "$GCS_UPLOAD_TEMP" >> "$LOG_STDOUT" 2>/dev/null || true
+    else
+      cat "$GCS_UPLOAD_TEMP" >> "$LOG_STDERR" 2>/dev/null || true
     fi
   else
     echo "❌ Neither 'gcloud' nor 'gsutil' CLI was found!" >>"$LOG_STDERR"
   fi
+  rm -f "$GCS_UPLOAD_TEMP" 2>/dev/null || true
 
   if [ "$UPLOAD_OK" != true ]; then
     ERR="GCS upload failed: $(tail -n 3 "$LOG_STDERR")"
