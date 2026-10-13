@@ -46,7 +46,13 @@ ENVIRONMENT="${ENVIRONMENT:-production}"
 # Project & Database Configuration
 PROJECT_NAME="${PROJECT_NAME:-demo}"
 DB_USER="${PGUSER:-${DB_USER:-localuser}}"
-DB_PASSWORD="${PGPASSWORD:-${DB_PASSWORD:-LKS#@LPS}}"
+if [ -n "${PGPASSWORD:-}" ]; then
+  DB_PASSWORD="$PGPASSWORD"
+elif [ -n "${DB_PASSWORD:-}" ]; then
+  DB_PASSWORD="$DB_PASSWORD"
+else
+  DB_PASSWORD='LKS#@LPS'
+fi
 DB_HOST="${PGHOST:-${DB_HOST:-172.31.6.60}}"
 DB_PORT="${PGPORT:-${DB_PORT:-5432}}"
 DB_NAME="${PGDATABASE:-${DB_NAME:-demo_prod}}"

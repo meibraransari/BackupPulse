@@ -40,9 +40,15 @@ ERROR_MSG="${5:-}"
 # Argument 6: Retention period in days (default: 30)
 RETENTION_DAYS="${6:-${RETENTION_DAYS:-30}}"
 
+# Argument 7: Standard output log (optional, or set via STDOUT_LOG env var)
+STDOUT_LOG="${7:-${STDOUT_LOG:-Backup executed successfully for ${PROJECT_NAME}. Archive: ${ZIP_FILENAME}}}"
+
 # ------------------------------------------------------------------------------
 # 3. SYSTEM & RUNTIME TELEMETRY (Auto-detected)
 # ------------------------------------------------------------------------------
+# Tip: If your script dumps databases before sending telemetry, always wrap passwords
+# with special characters ($, !, #, &, @, etc.) in single quotes:
+#   export PGPASSWORD='your_db_password_here'  # or MYSQL_PWD='your_db_password_here'
 SERVER_ID="$(hostname -s 2>/dev/null || echo "srv-$(hostname 2>/dev/null || echo 'node1')")"
 HOSTNAME="$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo 'localhost')"
 SERVER_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || echo '127.0.0.1')"
@@ -74,6 +80,7 @@ fi
 # ------------------------------------------------------------------------------
 # Escape string for safe JSON embedding
 clean_error=$(echo "$ERROR_MSG" | tr -d '\n\r"' | sed 's/[\]//g')
+clean_stdout=$(echo "$STDOUT_LOG" | tr -d '\n\r"' | sed 's/[\]//g')
 
 JSON_PAYLOAD=$(cat <<EOF
 {
@@ -96,7 +103,8 @@ JSON_PAYLOAD=$(cat <<EOF
   "zip_filename": "${ZIP_FILENAME}",
   "exit_code": ${EXIT_CODE},
   "retention_days": ${RETENTION_DAYS},
-  "error_message": $([ -n "$clean_error" ] && echo "\"${clean_error}\"" || echo "null")
+  "error_message": $([ -n "$clean_error" ] && echo "\"${clean_error}\"" || echo "null"),
+  "stdout_log": $([ -n "$clean_stdout" ] && echo "\"${clean_stdout}\"" || echo "null")
 }
 EOF
 )

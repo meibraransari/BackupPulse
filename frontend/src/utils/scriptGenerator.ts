@@ -7,6 +7,16 @@
 
 export type StorageDestination = 's3' | 'gcs' | 'azure' | 'local' | 'shared_drive';
 
+/**
+ * Safely escape a string for literal embedding inside bash single quotes ('...').
+ * In bash, single quotes treat every character literally (including $, !, \, ", `)
+ * with the only exception being the single quote itself, which is escaped as '\''.
+ */
+export function escapeBashSingleQuote(value: string): string {
+  if (!value) return '';
+  return value.replace(/'/g, "'\\''");
+}
+
 export interface GeneratorConfig {
   backupType: 'postgres' | 'mysql' | 'zip' | 'curl';
   storageDestination?: StorageDestination;
@@ -122,7 +132,13 @@ ENVIRONMENT="\${ENVIRONMENT:-${cfg.environment || 'production'}}"
 # --- PostgreSQL Credentials & Host ---
 PROJECT_NAME="\${PROJECT_NAME:-${project}}"
 DB_USER="\${PGUSER:-\${DB_USER:-${dbUser}}}"
-DB_PASSWORD="\${PGPASSWORD:-\${DB_PASSWORD:-${dbPass}}}"
+if [ -n "\${PGPASSWORD:-}" ]; then
+  DB_PASSWORD="\$PGPASSWORD"
+elif [ -n "\${DB_PASSWORD:-}" ]; then
+  DB_PASSWORD="\$DB_PASSWORD"
+else
+  DB_PASSWORD='${escapeBashSingleQuote(dbPass)}'
+fi
 DB_HOST="\${PGHOST:-\${DB_HOST:-${dbHost}}}"
 DB_PORT="\${PGPORT:-\${DB_PORT:-${dbPort}}}"
 DB_NAME="\${PGDATABASE:-\${DB_NAME:-${dbName}}}"
@@ -208,6 +224,12 @@ LOG_STDERR="\${TEMP_LOG_DIR}/pg_backup_\${DATE_STR}.stderr.log"
 : > "$LOG_STDOUT"
 : > "$LOG_STDERR"
 
+log_info() {
+  local msg="\$1"
+  echo "\$msg"
+  echo "[\$(date +'%Y-%m-%d %H:%M:%S')] \$msg" >> "\$LOG_STDOUT"
+}
+
 format_bytes() {
   local bytes="\${1:-0}"
   if (( bytes < 1024 )); then echo "\${bytes} B"
@@ -229,6 +251,15 @@ send_telemetry() {
   local duration_seconds="$(( end_seconds - START_SECONDS ))"
   local end_time_iso="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   local size_human="$(format_bytes "$size_bytes")"
+
+  local stdout_snip=""
+  local stderr_snip=""
+  if [ -f "$LOG_STDOUT" ] && [ -s "$LOG_STDOUT" ]; then
+    stdout_snip="$(tail -n 200 "$LOG_STDOUT" | head -c 32768)"
+  fi
+  if [ -f "$LOG_STDERR" ] && [ -s "$LOG_STDERR" ]; then
+    stderr_snip="$(tail -n 100 "$LOG_STDERR" | head -c 16384)"
+  fi
 
   if [ "$DRY_RUN" = true ]; then
     echo "[DRY-RUN] Telemetry: Status=$status, Size=$size_human, Duration=\${duration_seconds}s"
@@ -258,6 +289,8 @@ send_telemetry() {
       --argjson exit_code "$exit_code" \\
       --argjson retention_days "$RETENTION_DAYS" \\
       --arg error_message "$error_msg" \\
+      --arg stdout_log "$stdout_snip" \\
+      --arg stderr_log "$stderr_snip" \\
       --arg restore_drill_status "$RESTORE_DRILL_STATUS" \\
       --argjson restore_drill_duration_seconds "$RESTORE_DRILL_DURATION" \\
       --argjson restore_drill_verified_tables "$RESTORE_DRILL_TABLES" \\
@@ -283,11 +316,44 @@ send_telemetry() {
         exit_code: $exit_code,
         retention_days: $retention_days,
         error_message: (if $error_message == "" then null else $error_message end),
+        stdout_log: (if $stdout_log == "" then null else $stdout_log end),
+        stderr_log: (if $stderr_log == "" then null else $stderr_log end),
         restore_drill_status: (if $restore_drill_status == "" then null else $restore_drill_status end),
         restore_drill_duration_seconds: (if $restore_drill_duration_seconds == 0 then null else $restore_drill_duration_seconds end),
         restore_drill_verified_tables: (if $restore_drill_verified_tables == 0 then null else $restore_drill_verified_tables end),
         restore_drill_log: (if $restore_drill_log == "" then null else $restore_drill_log end)
       }')
+  else
+    local clean_err="$(echo "$error_msg" | tr -d '\r' | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' ' ')"
+    local clean_stdout="$(echo "$stdout_snip" | tr -d '\r' | sed 's/\\/\\\\/g; s/"/\\"/g' | awk '{printf "%s\\n", $0}' | sed 's/\\n$//')"
+    local clean_stderr="$(echo "$stderr_snip" | tr -d '\r' | sed 's/\\/\\\\/g; s/"/\\"/g' | awk '{printf "%s\\n", $0}' | sed 's/\\n$//')"
+    payload=$(cat <<EOF
+{
+  "server_id": "$SERVER_ID",
+  "hostname": "$HOSTNAME_FQDN",
+  "server_ip": "$SERVER_IP",
+  "project_name": "$PROJECT_NAME",
+  "environment": "$ENVIRONMENT",
+  "backup_type": "db",
+  "status": "$status",
+  "start_time": "$START_TIME_ISO",
+  "end_time": "$end_time_iso",
+  "duration_seconds": $duration_seconds,
+  "backup_size_bytes": $size_bytes,
+  "backup_size_human": "$size_human",
+  "s3_bucket": $([ -n "$s3_b" ] && echo "\"$s3_b\"" || echo "null"),
+  "s3_key": $([ -n "$s3_k" ] && echo "\"$s3_k\"" || echo "null"),
+  "s3_url": $([ -n "$s3_u" ] && echo "\"$s3_u\"" || echo "null"),
+  "checksum": "$checksum",
+  "zip_filename": "$ZIP_FILENAME",
+  "exit_code": $exit_code,
+  "retention_days": $RETENTION_DAYS,
+  "error_message": $([ -n "$clean_err" ] && echo "\"$clean_err\"" || echo "null"),
+  "stdout_log": $([ -n "$clean_stdout" ] && echo "\"$clean_stdout\"" || echo "null"),
+  "stderr_log": $([ -n "$clean_stderr" ] && echo "\"$clean_stderr\"" || echo "null")
+}
+EOF
+)
   fi
 
   echo "📡 Dispatching real-time telemetry to BackupPulse Central API..."
@@ -297,29 +363,33 @@ send_telemetry() {
     -d "$payload" || true
 }
 
-echo "🐘 [1/5] Checking environment & cleaning temporary staging..."
+log_info "🐘 [1/5] Checking environment & cleaning temporary staging..."
 if [ "$DESTINATION" = "shared_drive" ]; then
   if [ ! -d "$SHARED_DRIVE_PATH" ]; then
     ERR="Shared drive directory '\${SHARED_DRIVE_PATH}' does not exist or is not mounted!"
     echo "❌ $ERR"
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] ❌ $ERR" >> "$LOG_STDOUT"
     send_telemetry "FAILED" 1 "$ERR" 0 "" "Shared Drive" "$SHARED_DRIVE_PATH" ""
     exit 1
   fi
 fi
 rm -f "$SQL_FILE" 2>/dev/null || true
 
-echo "🐘 [2/5] Running pg_dump for '\${DB_NAME}' from \${DB_HOST}:\${DB_PORT}..."
+log_info "🐘 [2/5] Running pg_dump for '\${DB_NAME}' from \${DB_HOST}:\${DB_PORT}..."
 export PGPASSWORD="$DB_PASSWORD"
-if ! pg_dump --username="$DB_USER" --host="$DB_HOST" --port="$DB_PORT" --no-password --file="$SQL_FILE" --format=c "$DB_NAME" >"$LOG_STDOUT" 2>"$LOG_STDERR"; then
+if ! pg_dump --username="$DB_USER" --host="$DB_HOST" --port="$DB_PORT" --no-password --file="$SQL_FILE" --format=c "$DB_NAME" >>"$LOG_STDOUT" 2>"$LOG_STDERR"; then
   ERR="PostgreSQL dump failed: $(tail -n 3 "$LOG_STDERR")"
   echo "❌ $ERR"
+  echo "[$(date +'%Y-%m-%d %H:%M:%S')] ❌ $ERR" >> "$LOG_STDOUT"
   send_telemetry "FAILED" 1 "$ERR" 0 "" "" "" ""
   exit 1
 fi
 
-echo "📦 [3/5] Compressing SQL dump into archive..."
+log_info "📦 [3/5] Compressing SQL dump into archive..."
 if ! zip -j -r9 "$ZIP_FILE" "$SQL_FILE" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
   ERR="Zip compression failed: $(tail -n 3 "$LOG_STDERR")"
+  echo "❌ $ERR"
+  echo "[$(date +'%Y-%m-%d %H:%M:%S')] ❌ $ERR" >> "$LOG_STDOUT"
   send_telemetry "FAILED" 1 "$ERR" 0 "" "" "" ""
   exit 1
 fi
@@ -327,7 +397,7 @@ rm -f "$SQL_FILE"
 
 LATEST_SIZE=$(stat -c%s "$ZIP_FILE" 2>/dev/null || stat -f%z "$ZIP_FILE" 2>/dev/null || wc -c < "$ZIP_FILE" | tr -d ' ')
 CHECKSUM=$(sha256sum "$ZIP_FILE" 2>/dev/null | awk '{print $1}' || echo "")
-echo "📊 Archive Size: \${LATEST_SIZE} bytes ($(format_bytes "$LATEST_SIZE"))"
+log_info "📊 Archive Size: \${LATEST_SIZE} bytes ($(format_bytes "$LATEST_SIZE"))"
 
 STATUS="SUCCESS"
 ANOMALY_MSG=""
@@ -420,15 +490,16 @@ if [ "$DESTINATION" = "s3" ]; then
   FINAL_KEY="$S3_KEY"
   FINAL_URL="$S3_URL"
 
-  echo "☁️  [4/5] Uploading to AWS S3: \${S3_URL}..."
+  log_info "☁️  [4/5] Uploading to AWS S3: \${S3_URL}..."
   if ! aws s3 cp "$ZIP_FILE" "$S3_URL" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
     ERR="S3 upload failed: $(tail -n 3 "$LOG_STDERR")"
     echo "❌ $ERR"
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] ❌ $ERR" >> "$LOG_STDOUT"
     send_telemetry "FAILED" 1 "$ERR" "$LATEST_SIZE" "$CHECKSUM" "$FINAL_BUCKET" "$FINAL_KEY" "$FINAL_URL"
     exit 1
   fi
 
-  echo "🧹 [5/5] Managing S3 retention (Keep max \${MAX_FILES} files)..."
+  log_info "🧹 [5/5] Managing S3 retention (Keep max \${MAX_FILES} files)..."
   if command -v aws >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
     S3_FILES_JSON=$(aws s3 ls "s3://\${S3_BUCKET}/\${S3_FOLDER_NAME}/" 2>/dev/null | awk '{print "{\\"date\\":\\""$1" "$2"\\", \\"filename\\":\\""$4"\\"}"}' | jq -s '.' 2>/dev/null || echo "[]")
     FILE_COUNT=$(echo "$S3_FILES_JSON" | jq 'length' 2>/dev/null || echo "0")
@@ -451,7 +522,7 @@ elif [ "$DESTINATION" = "gcs" ]; then
   FINAL_KEY="$GCS_KEY"
   FINAL_URL="$GCS_URL"
 
-  echo "🌐 [4/5] Uploading to Google Cloud Storage: \${GCS_URL}..."
+  log_info "🌐 [4/5] Uploading to Google Cloud Storage: \${GCS_URL}..."
   UPLOAD_OK=false
   if command -v gcloud >/dev/null 2>&1; then
     if gcloud storage cp "$ZIP_FILE" "$GCS_URL" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
@@ -468,11 +539,12 @@ elif [ "$DESTINATION" = "gcs" ]; then
   if [ "$UPLOAD_OK" != true ]; then
     ERR="GCS upload failed: $(tail -n 3 "$LOG_STDERR")"
     echo "❌ $ERR"
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] ❌ $ERR" >> "$LOG_STDOUT"
     send_telemetry "FAILED" 1 "$ERR" "$LATEST_SIZE" "$CHECKSUM" "$FINAL_BUCKET" "$FINAL_KEY" "$FINAL_URL"
     exit 1
   fi
 
-  echo "🧹 [5/5] Managing GCS retention (Keep max \${MAX_FILES} files)..."
+  log_info "🧹 [5/5] Managing GCS retention (Keep max \${MAX_FILES} files)..."
   if command -v gcloud >/dev/null 2>&1; then
     GCS_FILES=($(gcloud storage ls "gs://\${GCS_BUCKET}/\${GCS_FOLDER_NAME}/*.zip" 2>/dev/null | sort || true))
     TOTAL_GCS=\${#GCS_FILES[@]}
@@ -503,7 +575,7 @@ elif [ "$DESTINATION" = "azure" ]; then
   FINAL_KEY="$AZURE_BLOB_NAME"
   FINAL_URL="$AZURE_BLOB_URL"
 
-  echo "🔷 [4/5] Uploading to Azure Blob Storage: \${AZURE_BLOB_URL}..."
+  log_info "🔷 [4/5] Uploading to Azure Blob Storage: \${AZURE_BLOB_URL}..."
   UPLOAD_OK=false
   AUTH_ARGS=()
   if [ -n "$AZURE_CONNECTION_STRING" ]; then
@@ -538,11 +610,12 @@ elif [ "$DESTINATION" = "azure" ]; then
   if [ "$UPLOAD_OK" != true ]; then
     ERR="Azure Blob upload failed: $(tail -n 3 "$LOG_STDERR")"
     echo "❌ $ERR"
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] ❌ $ERR" >> "$LOG_STDOUT"
     send_telemetry "FAILED" 1 "$ERR" "$LATEST_SIZE" "$CHECKSUM" "$FINAL_BUCKET" "$FINAL_KEY" "$FINAL_URL"
     exit 1
   fi
 
-  echo "🧹 [5/5] Managing Azure Blob retention (Keep max \${MAX_FILES} files)..."
+  log_info "🧹 [5/5] Managing Azure Blob retention (Keep max \${MAX_FILES} files)..."
   if command -v az >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
     BLOBS_JSON=$(az storage blob list --container-name "$AZURE_CONTAINER" --prefix "\${AZURE_FOLDER}/" "\${AUTH_ARGS[@]}" --query "[].name" -o json 2>/dev/null || echo "[]")
     TOTAL_BLOBS=$(echo "$BLOBS_JSON" | jq 'length' 2>/dev/null || echo "0")
@@ -564,16 +637,17 @@ elif [ "$DESTINATION" = "shared_drive" ]; then
   FINAL_KEY="$DEST_FILE"
   FINAL_URL="file://\${DEST_FILE}"
 
-  echo "📁 [4/5] Copying archive to shared drive: \${DEST_FILE}..."
+  log_info "📁 [4/5] Copying archive to shared drive: \${DEST_FILE}..."
   if ! cp -p "$ZIP_FILE" "$DEST_FILE" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
     ERR="Copy to shared drive failed: $(tail -n 3 "$LOG_STDERR")"
     echo "❌ $ERR"
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] ❌ $ERR" >> "$LOG_STDOUT"
     send_telemetry "FAILED" 1 "$ERR" "$LATEST_SIZE" "$CHECKSUM" "$FINAL_BUCKET" "$FINAL_KEY" "$FINAL_URL"
     exit 1
   fi
   rm -f "$ZIP_FILE"
 
-  echo "🧹 [5/5] Managing shared drive retention (Keep max \${MAX_FILES} files, \${RETENTION_DAYS} days policy)..."
+  log_info "🧹 [5/5] Managing shared drive retention (Keep max \${MAX_FILES} files, \${RETENTION_DAYS} days policy)..."
   find "$SHARED_DRIVE_PATH" -maxdepth 1 -name "\${DB_NAME}-*.zip" -type f -mtime +"\${RETENTION_DAYS}" -exec rm -f {} + 2>/dev/null || true
   ARCHIVE_LIST=($(ls -1t "$SHARED_DRIVE_PATH"/\${DB_NAME}-*.zip 2>/dev/null || true))
   TOTAL_ARCHIVES=\${#ARCHIVE_LIST[@]}
@@ -590,9 +664,9 @@ else # destination == local
   FINAL_KEY="$ZIP_FILE"
   FINAL_URL="file://\${ZIP_FILE}"
 
-  echo "💻 [4/5] Saved archive to local storage: \${ZIP_FILE}"
+  log_info "💻 [4/5] Saved archive to local storage: \${ZIP_FILE}"
 
-  echo "🧹 [5/5] Managing local retention in \${LOCAL_BACKUP_DIR} (Keep max \${MAX_FILES} files, \${RETENTION_DAYS} days policy)..."
+  log_info "🧹 [5/5] Managing local retention in \${LOCAL_BACKUP_DIR} (Keep max \${MAX_FILES} files, \${RETENTION_DAYS} days policy)..."
   find "$LOCAL_BACKUP_DIR" -maxdepth 1 -name "\${DB_NAME}-*.zip" -type f -mtime +"\${RETENTION_DAYS}" -exec rm -f {} + 2>/dev/null || true
   ARCHIVE_LIST=($(ls -1t "$LOCAL_BACKUP_DIR"/\${DB_NAME}-*.zip 2>/dev/null || true))
   TOTAL_ARCHIVES=\${#ARCHIVE_LIST[@]}
@@ -605,8 +679,8 @@ else # destination == local
   fi
 fi
 
+log_info "🎉 PostgreSQL Backup Completed Successfully!"
 send_telemetry "$STATUS" 0 "$ANOMALY_MSG" "$LATEST_SIZE" "$CHECKSUM" "$FINAL_BUCKET" "$FINAL_KEY" "$FINAL_URL"
-echo "🎉 PostgreSQL Backup Completed Successfully!"
 `;
 }
 
@@ -674,7 +748,13 @@ ENVIRONMENT="\${ENVIRONMENT:-${cfg.environment || 'production'}}"
 # --- MySQL Credentials & Host ---
 PROJECT_NAME="\${PROJECT_NAME:-${project}}"
 DB_USER="\${MYSQL_USER:-\${DB_USER:-${dbUser}}}"
-DB_PASSWORD="\${MYSQL_PWD:-\${DB_PASSWORD:-${dbPass}}}"
+if [ -n "\${MYSQL_PWD:-}" ]; then
+  DB_PASSWORD="\$MYSQL_PWD"
+elif [ -n "\${DB_PASSWORD:-}" ]; then
+  DB_PASSWORD="\$DB_PASSWORD"
+else
+  DB_PASSWORD='${escapeBashSingleQuote(dbPass)}'
+fi
 DB_HOST="\${MYSQL_HOST:-\${DB_HOST:-${dbHost}}}"
 DB_PORT="\${MYSQL_TCP_PORT:-\${DB_PORT:-${dbPort}}}"
 DB_NAME="\${MYSQL_DATABASE:-\${DB_NAME:-${dbName}}}"
@@ -760,6 +840,12 @@ LOG_STDERR="\${TEMP_LOG_DIR}/mysql_backup_\${DATE_STR}.stderr.log"
 : > "$LOG_STDOUT"
 : > "$LOG_STDERR"
 
+log_info() {
+  local msg="\$1"
+  echo "\$msg"
+  echo "[\$(date +'%Y-%m-%d %H:%M:%S')] \$msg" >> "\$LOG_STDOUT"
+}
+
 format_bytes() {
   local bytes="\${1:-0}"
   if (( bytes < 1024 )); then echo "\${bytes} B"
@@ -781,6 +867,15 @@ send_telemetry() {
   local duration_seconds="$(( end_seconds - START_SECONDS ))"
   local end_time_iso="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   local size_human="$(format_bytes "$size_bytes")"
+
+  local stdout_snip=""
+  local stderr_snip=""
+  if [ -f "$LOG_STDOUT" ] && [ -s "$LOG_STDOUT" ]; then
+    stdout_snip="$(tail -n 200 "$LOG_STDOUT" | head -c 32768)"
+  fi
+  if [ -f "$LOG_STDERR" ] && [ -s "$LOG_STDERR" ]; then
+    stderr_snip="$(tail -n 100 "$LOG_STDERR" | head -c 16384)"
+  fi
 
   if [ "$DRY_RUN" = true ]; then
     echo "[DRY-RUN] Telemetry: Status=$status, Size=$size_human, Duration=\${duration_seconds}s"
@@ -810,6 +905,8 @@ send_telemetry() {
       --argjson exit_code "$exit_code" \\
       --argjson retention_days "$RETENTION_DAYS" \\
       --arg error_message "$error_msg" \\
+      --arg stdout_log "$stdout_snip" \\
+      --arg stderr_log "$stderr_snip" \\
       --arg restore_drill_status "$RESTORE_DRILL_STATUS" \\
       --argjson restore_drill_duration_seconds "$RESTORE_DRILL_DURATION" \\
       --argjson restore_drill_verified_tables "$RESTORE_DRILL_TABLES" \\
@@ -835,11 +932,44 @@ send_telemetry() {
         exit_code: $exit_code,
         retention_days: $retention_days,
         error_message: (if $error_message == "" then null else $error_message end),
+        stdout_log: (if $stdout_log == "" then null else $stdout_log end),
+        stderr_log: (if $stderr_log == "" then null else $stderr_log end),
         restore_drill_status: (if $restore_drill_status == "" then null else $restore_drill_status end),
         restore_drill_duration_seconds: (if $restore_drill_duration_seconds == 0 then null else $restore_drill_duration_seconds end),
         restore_drill_verified_tables: (if $restore_drill_verified_tables == 0 then null else $restore_drill_verified_tables end),
         restore_drill_log: (if $restore_drill_log == "" then null else $restore_drill_log end)
       }')
+  else
+    local clean_err="$(echo "$error_msg" | tr -d '\r' | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' ' ')"
+    local clean_stdout="$(echo "$stdout_snip" | tr -d '\r' | sed 's/\\/\\\\/g; s/"/\\"/g' | awk '{printf "%s\\n", $0}' | sed 's/\\n$//')"
+    local clean_stderr="$(echo "$stderr_snip" | tr -d '\r' | sed 's/\\/\\\\/g; s/"/\\"/g' | awk '{printf "%s\\n", $0}' | sed 's/\\n$//')"
+    payload=$(cat <<EOF
+{
+  "server_id": "$SERVER_ID",
+  "hostname": "$HOSTNAME_FQDN",
+  "server_ip": "$SERVER_IP",
+  "project_name": "$PROJECT_NAME",
+  "environment": "$ENVIRONMENT",
+  "backup_type": "db",
+  "status": "$status",
+  "start_time": "$START_TIME_ISO",
+  "end_time": "$end_time_iso",
+  "duration_seconds": $duration_seconds,
+  "backup_size_bytes": $size_bytes,
+  "backup_size_human": "$size_human",
+  "s3_bucket": $([ -n "$s3_b" ] && echo "\"$s3_b\"" || echo "null"),
+  "s3_key": $([ -n "$s3_k" ] && echo "\"$s3_k\"" || echo "null"),
+  "s3_url": $([ -n "$s3_u" ] && echo "\"$s3_u\"" || echo "null"),
+  "checksum": "$checksum",
+  "zip_filename": "$ZIP_FILENAME",
+  "exit_code": $exit_code,
+  "retention_days": $RETENTION_DAYS,
+  "error_message": $([ -n "$clean_err" ] && echo "\"$clean_err\"" || echo "null"),
+  "stdout_log": $([ -n "$clean_stdout" ] && echo "\"$clean_stdout\"" || echo "null"),
+  "stderr_log": $([ -n "$clean_stderr" ] && echo "\"$clean_stderr\"" || echo "null")
+}
+EOF
+)
   fi
 
   echo "📡 Dispatching real-time telemetry to BackupPulse Central API..."
@@ -849,30 +979,34 @@ send_telemetry() {
     -d "$payload" || true
 }
 
-echo "🐬 [1/5] Checking environment & cleaning temporary staging..."
+log_info "🐬 [1/5] Checking environment & cleaning temporary staging..."
 if [ "$DESTINATION" = "shared_drive" ]; then
   if [ ! -d "$SHARED_DRIVE_PATH" ]; then
     ERR="Shared drive directory '\${SHARED_DRIVE_PATH}' does not exist or is not mounted!"
     echo "❌ $ERR"
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] ❌ $ERR" >> "$LOG_STDOUT"
     send_telemetry "FAILED" 1 "$ERR" 0 "" "Shared Drive" "$SHARED_DRIVE_PATH" ""
     exit 1
   fi
 fi
 rm -f "$SQL_FILE" 2>/dev/null || true
 
-echo "🐬 [2/5] Running online non-blocking mysqldump for '\${DB_NAME}'..."
+log_info "🐬 [2/5] Running online non-blocking mysqldump for '\${DB_NAME}'..."
 export MYSQL_PWD="$DB_PASSWORD"
 if ! mysqldump --host="$DB_HOST" --port="$DB_PORT" --user="$DB_USER" \\
   --single-transaction --quick --routines --triggers "$DB_NAME" >"$SQL_FILE" 2>"$LOG_STDERR"; then
   ERR="MySQL dump failed: $(tail -n 3 "$LOG_STDERR")"
   echo "❌ $ERR"
+  echo "[$(date +'%Y-%m-%d %H:%M:%S')] ❌ $ERR" >> "$LOG_STDOUT"
   send_telemetry "FAILED" 1 "$ERR" 0 "" "" "" ""
   exit 1
 fi
 
-echo "📦 [3/5] Compressing SQL dump into archive..."
+log_info "📦 [3/5] Compressing SQL dump into archive..."
 if ! zip -j -r9 "$ZIP_FILE" "$SQL_FILE" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
   ERR="Zip compression failed: $(tail -n 3 "$LOG_STDERR")"
+  echo "❌ $ERR"
+  echo "[$(date +'%Y-%m-%d %H:%M:%S')] ❌ $ERR" >> "$LOG_STDOUT"
   send_telemetry "FAILED" 1 "$ERR" 0 "" "" "" ""
   exit 1
 fi
@@ -880,7 +1014,7 @@ rm -f "$SQL_FILE"
 
 LATEST_SIZE=$(stat -c%s "$ZIP_FILE" 2>/dev/null || stat -f%z "$ZIP_FILE" 2>/dev/null || wc -c < "$ZIP_FILE" | tr -d ' ')
 CHECKSUM=$(sha256sum "$ZIP_FILE" 2>/dev/null | awk '{print $1}' || echo "")
-echo "📊 Archive Size: \${LATEST_SIZE} bytes ($(format_bytes "$LATEST_SIZE"))"
+log_info "📊 Archive Size: \${LATEST_SIZE} bytes ($(format_bytes "$LATEST_SIZE"))"
 
 STATUS="SUCCESS"
 ANOMALY_MSG=""
@@ -973,15 +1107,16 @@ if [ "$DESTINATION" = "s3" ]; then
   FINAL_KEY="$S3_KEY"
   FINAL_URL="$S3_URL"
 
-  echo "☁️  [4/5] Uploading to AWS S3: \${S3_URL}..."
+  log_info "☁️  [4/5] Uploading to AWS S3: \${S3_URL}..."
   if ! aws s3 cp "$ZIP_FILE" "$S3_URL" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
     ERR="S3 upload failed: $(tail -n 3 "$LOG_STDERR")"
     echo "❌ $ERR"
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] ❌ $ERR" >> "$LOG_STDOUT"
     send_telemetry "FAILED" 1 "$ERR" "$LATEST_SIZE" "$CHECKSUM" "$FINAL_BUCKET" "$FINAL_KEY" "$FINAL_URL"
     exit 1
   fi
 
-  echo "🧹 [5/5] Managing S3 retention (Keep max \${MAX_FILES} files)..."
+  log_info "🧹 [5/5] Managing S3 retention (Keep max \${MAX_FILES} files)..."
   if command -v aws >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
     S3_FILES_JSON=$(aws s3 ls "s3://\${S3_BUCKET}/\${S3_FOLDER_NAME}/" 2>/dev/null | awk '{print "{\\"date\\":\\""$1" "$2"\\", \\"filename\\":\\""$4"\\"}"}' | jq -s '.' 2>/dev/null || echo "[]")
     FILE_COUNT=$(echo "$S3_FILES_JSON" | jq 'length' 2>/dev/null || echo "0")
@@ -1004,7 +1139,7 @@ elif [ "$DESTINATION" = "gcs" ]; then
   FINAL_KEY="$GCS_KEY"
   FINAL_URL="$GCS_URL"
 
-  echo "🌐 [4/5] Uploading to Google Cloud Storage: \${GCS_URL}..."
+  log_info "🌐 [4/5] Uploading to Google Cloud Storage: \${GCS_URL}..."
   UPLOAD_OK=false
   if command -v gcloud >/dev/null 2>&1; then
     if gcloud storage cp "$ZIP_FILE" "$GCS_URL" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
@@ -1021,11 +1156,12 @@ elif [ "$DESTINATION" = "gcs" ]; then
   if [ "$UPLOAD_OK" != true ]; then
     ERR="GCS upload failed: $(tail -n 3 "$LOG_STDERR")"
     echo "❌ $ERR"
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] ❌ $ERR" >> "$LOG_STDOUT"
     send_telemetry "FAILED" 1 "$ERR" "$LATEST_SIZE" "$CHECKSUM" "$FINAL_BUCKET" "$FINAL_KEY" "$FINAL_URL"
     exit 1
   fi
 
-  echo "🧹 [5/5] Managing GCS retention (Keep max \${MAX_FILES} files)..."
+  log_info "🧹 [5/5] Managing GCS retention (Keep max \${MAX_FILES} files)..."
   if command -v gcloud >/dev/null 2>&1; then
     GCS_FILES=($(gcloud storage ls "gs://\${GCS_BUCKET}/\${GCS_FOLDER_NAME}/*.zip" 2>/dev/null | sort || true))
     TOTAL_GCS=\${#GCS_FILES[@]}
@@ -1056,7 +1192,7 @@ elif [ "$DESTINATION" = "azure" ]; then
   FINAL_KEY="$AZURE_BLOB_NAME"
   FINAL_URL="$AZURE_BLOB_URL"
 
-  echo "🔷 [4/5] Uploading to Azure Blob Storage: \${AZURE_BLOB_URL}..."
+  log_info "🔷 [4/5] Uploading to Azure Blob Storage: \${AZURE_BLOB_URL}..."
   UPLOAD_OK=false
   AUTH_ARGS=()
   if [ -n "$AZURE_CONNECTION_STRING" ]; then
@@ -1091,11 +1227,12 @@ elif [ "$DESTINATION" = "azure" ]; then
   if [ "$UPLOAD_OK" != true ]; then
     ERR="Azure Blob upload failed: $(tail -n 3 "$LOG_STDERR")"
     echo "❌ $ERR"
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] ❌ $ERR" >> "$LOG_STDOUT"
     send_telemetry "FAILED" 1 "$ERR" "$LATEST_SIZE" "$CHECKSUM" "$FINAL_BUCKET" "$FINAL_KEY" "$FINAL_URL"
     exit 1
   fi
 
-  echo "🧹 [5/5] Managing Azure Blob retention (Keep max \${MAX_FILES} files)..."
+  log_info "🧹 [5/5] Managing Azure Blob retention (Keep max \${MAX_FILES} files)..."
   if command -v az >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
     BLOBS_JSON=$(az storage blob list --container-name "$AZURE_CONTAINER" --prefix "\${AZURE_FOLDER}/" "\${AUTH_ARGS[@]}" --query "[].name" -o json 2>/dev/null || echo "[]")
     TOTAL_BLOBS=$(echo "$BLOBS_JSON" | jq 'length' 2>/dev/null || echo "0")
@@ -1117,16 +1254,17 @@ elif [ "$DESTINATION" = "shared_drive" ]; then
   FINAL_KEY="$DEST_FILE"
   FINAL_URL="file://\${DEST_FILE}"
 
-  echo "📁 [4/5] Copying archive to shared drive: \${DEST_FILE}..."
+  log_info "📁 [4/5] Copying archive to shared drive: \${DEST_FILE}..."
   if ! cp -p "$ZIP_FILE" "$DEST_FILE" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
     ERR="Copy to shared drive failed: $(tail -n 3 "$LOG_STDERR")"
     echo "❌ $ERR"
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] ❌ $ERR" >> "$LOG_STDOUT"
     send_telemetry "FAILED" 1 "$ERR" "$LATEST_SIZE" "$CHECKSUM" "$FINAL_BUCKET" "$FINAL_KEY" "$FINAL_URL"
     exit 1
   fi
   rm -f "$ZIP_FILE"
 
-  echo "🧹 [5/5] Managing shared drive retention (Keep max \${MAX_FILES} files, \${RETENTION_DAYS} days policy)..."
+  log_info "🧹 [5/5] Managing shared drive retention (Keep max \${MAX_FILES} files, \${RETENTION_DAYS} days policy)..."
   find "$SHARED_DRIVE_PATH" -maxdepth 1 -name "\${DB_NAME}-*.zip" -type f -mtime +"\${RETENTION_DAYS}" -exec rm -f {} + 2>/dev/null || true
   ARCHIVE_LIST=($(ls -1t "$SHARED_DRIVE_PATH"/\${DB_NAME}-*.zip 2>/dev/null || true))
   TOTAL_ARCHIVES=\${#ARCHIVE_LIST[@]}
@@ -1143,9 +1281,9 @@ else # destination == local
   FINAL_KEY="$ZIP_FILE"
   FINAL_URL="file://\${ZIP_FILE}"
 
-  echo "💻 [4/5] Saved archive to local storage: \${ZIP_FILE}"
+  log_info "💻 [4/5] Saved archive to local storage: \${ZIP_FILE}"
 
-  echo "🧹 [5/5] Managing local retention in \${LOCAL_BACKUP_DIR} (Keep max \${MAX_FILES} files, \${RETENTION_DAYS} days policy)..."
+  log_info "🧹 [5/5] Managing local retention in \${LOCAL_BACKUP_DIR} (Keep max \${MAX_FILES} files, \${RETENTION_DAYS} days policy)..."
   find "$LOCAL_BACKUP_DIR" -maxdepth 1 -name "\${DB_NAME}-*.zip" -type f -mtime +"\${RETENTION_DAYS}" -exec rm -f {} + 2>/dev/null || true
   ARCHIVE_LIST=($(ls -1t "$LOCAL_BACKUP_DIR"/\${DB_NAME}-*.zip 2>/dev/null || true))
   TOTAL_ARCHIVES=\${#ARCHIVE_LIST[@]}
@@ -1158,8 +1296,8 @@ else # destination == local
   fi
 fi
 
+log_info "🎉 MySQL Backup Completed Successfully!"
 send_telemetry "$STATUS" 0 "$ANOMALY_MSG" "$LATEST_SIZE" "$CHECKSUM" "$FINAL_BUCKET" "$FINAL_KEY" "$FINAL_URL"
-echo "🎉 MySQL Backup Completed Successfully!"
 `;
 }
 
@@ -1225,6 +1363,11 @@ ENVIRONMENT="\${ENVIRONMENT:-${cfg.environment || 'production'}}"
 PROJECT_NAME="\${PROJECT_NAME:-${project}}"
 SOURCE_PATH="\${SOURCE_PATH:-${sourcePath}}"
 EXCLUDE_PATTERNS=(${excludes})
+if [ -n "\${ZIP_PASSWORD:-}" ]; then
+  ARCHIVE_PASSWORD="\$ZIP_PASSWORD"
+else
+  ARCHIVE_PASSWORD='${escapeBashSingleQuote(cfg.dbPassword || '')}'
+fi
 
 # --- Destination & Retention Policy ---
 DESTINATION="\${DESTINATION:-${dest}}"  # Options: s3, gcs, azure, local, shared_drive
@@ -1255,6 +1398,7 @@ while [[ "$#" -gt 0 ]]; do
   case "$1" in
     --project) PROJECT_NAME="$2"; shift 2 ;;
     --source-path) SOURCE_PATH="$2"; shift 2 ;;
+    --password) ARCHIVE_PASSWORD="$2"; shift 2 ;;
     --destination) DESTINATION="$2"; shift 2 ;;
     --s3-bucket) S3_BUCKET="$2"; shift 2 ;;
     --s3-folder) S3_FOLDER_NAME="$2"; shift 2 ;;
@@ -1300,6 +1444,12 @@ LOG_STDERR="\${TEMP_LOG_DIR}/zip_backup_\${DATE_STR}.stderr.log"
 : > "$LOG_STDOUT"
 : > "$LOG_STDERR"
 
+log_info() {
+  local msg="\$1"
+  echo "\$msg"
+  echo "[\$(date +'%Y-%m-%d %H:%M:%S')] \$msg" >> "\$LOG_STDOUT"
+}
+
 format_bytes() {
   local bytes="\${1:-0}"
   if (( bytes < 1024 )); then echo "\${bytes} B"
@@ -1321,6 +1471,15 @@ send_telemetry() {
   local duration_seconds="$(( end_seconds - START_SECONDS ))"
   local end_time_iso="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   local size_human="$(format_bytes "$size_bytes")"
+
+  local stdout_snip=""
+  local stderr_snip=""
+  if [ -f "$LOG_STDOUT" ] && [ -s "$LOG_STDOUT" ]; then
+    stdout_snip="$(tail -n 200 "$LOG_STDOUT" | head -c 32768)"
+  fi
+  if [ -f "$LOG_STDERR" ] && [ -s "$LOG_STDERR" ]; then
+    stderr_snip="$(tail -n 100 "$LOG_STDERR" | head -c 16384)"
+  fi
 
   if [ "$DRY_RUN" = true ]; then
     echo "[DRY-RUN] Telemetry: Status=$status, Size=$size_human, Duration=\${duration_seconds}s"
@@ -1350,6 +1509,8 @@ send_telemetry() {
       --argjson exit_code "$exit_code" \\
       --argjson retention_days "$RETENTION_DAYS" \\
       --arg error_message "$error_msg" \\
+      --arg stdout_log "$stdout_snip" \\
+      --arg stderr_log "$stderr_snip" \\
       --arg restore_drill_status "$RESTORE_DRILL_STATUS" \\
       --argjson restore_drill_duration_seconds "$RESTORE_DRILL_DURATION" \\
       --argjson restore_drill_verified_tables "$RESTORE_DRILL_TABLES" \\
@@ -1375,11 +1536,44 @@ send_telemetry() {
         exit_code: $exit_code,
         retention_days: $retention_days,
         error_message: (if $error_message == "" then null else $error_message end),
+        stdout_log: (if $stdout_log == "" then null else $stdout_log end),
+        stderr_log: (if $stderr_log == "" then null else $stderr_log end),
         restore_drill_status: (if $restore_drill_status == "" then null else $restore_drill_status end),
         restore_drill_duration_seconds: (if $restore_drill_duration_seconds == 0 then null else $restore_drill_duration_seconds end),
         restore_drill_verified_tables: (if $restore_drill_verified_tables == 0 then null else $restore_drill_verified_tables end),
         restore_drill_log: (if $restore_drill_log == "" then null else $restore_drill_log end)
       }')
+  else
+    local clean_err="$(echo "$error_msg" | tr -d '\r' | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' ' ')"
+    local clean_stdout="$(echo "$stdout_snip" | tr -d '\r' | sed 's/\\/\\\\/g; s/"/\\"/g' | awk '{printf "%s\\n", $0}' | sed 's/\\n$//')"
+    local clean_stderr="$(echo "$stderr_snip" | tr -d '\r' | sed 's/\\/\\\\/g; s/"/\\"/g' | awk '{printf "%s\\n", $0}' | sed 's/\\n$//')"
+    payload=$(cat <<EOF
+{
+  "server_id": "$SERVER_ID",
+  "hostname": "$HOSTNAME_FQDN",
+  "server_ip": "$SERVER_IP",
+  "project_name": "$PROJECT_NAME",
+  "environment": "$ENVIRONMENT",
+  "backup_type": "code",
+  "status": "$status",
+  "start_time": "$START_TIME_ISO",
+  "end_time": "$end_time_iso",
+  "duration_seconds": $duration_seconds,
+  "backup_size_bytes": $size_bytes,
+  "backup_size_human": "$size_human",
+  "s3_bucket": $([ -n "$s3_b" ] && echo "\"$s3_b\"" || echo "null"),
+  "s3_key": $([ -n "$s3_k" ] && echo "\"$s3_k\"" || echo "null"),
+  "s3_url": $([ -n "$s3_u" ] && echo "\"$s3_u\"" || echo "null"),
+  "checksum": "$checksum",
+  "zip_filename": "$ZIP_FILENAME",
+  "exit_code": $exit_code,
+  "retention_days": $RETENTION_DAYS,
+  "error_message": $([ -n "$clean_err" ] && echo "\"$clean_err\"" || echo "null"),
+  "stdout_log": $([ -n "$clean_stdout" ] && echo "\"$clean_stdout\"" || echo "null"),
+  "stderr_log": $([ -n "$clean_stderr" ] && echo "\"$clean_stderr\"" || echo "null")
+}
+EOF
+)
   fi
 
   echo "📡 Dispatching real-time telemetry to BackupPulse Central API..."
@@ -1389,10 +1583,11 @@ send_telemetry() {
     -d "$payload" || true
 }
 
-echo "🗜️  [1/4] Checking environment & source path '\${SOURCE_PATH}'..."
+log_info "🗜️  [1/4] Checking environment & source path '\${SOURCE_PATH}'..."
 if [ ! -d "$SOURCE_PATH" ] && [ ! -f "$SOURCE_PATH" ]; then
   ERR="Source path '\${SOURCE_PATH}' does not exist!"
   echo "❌ $ERR"
+  echo "[$(date +'%Y-%m-%d %H:%M:%S')] ❌ $ERR" >> "$LOG_STDOUT"
   send_telemetry "FAILED" 1 "$ERR" 0 "" "" "" ""
   exit 1
 fi
@@ -1401,30 +1596,37 @@ if [ "$DESTINATION" = "shared_drive" ]; then
   if [ ! -d "$SHARED_DRIVE_PATH" ]; then
     ERR="Shared drive directory '\${SHARED_DRIVE_PATH}' does not exist or is not mounted!"
     echo "❌ $ERR"
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] ❌ $ERR" >> "$LOG_STDOUT"
     send_telemetry "FAILED" 1 "$ERR" 0 "" "Shared Drive" "$SHARED_DRIVE_PATH" ""
     exit 1
   fi
 fi
 
-echo "🗜️  [2/4] Compressing source directory '\${SOURCE_PATH}'..."
+log_info "🗜️  [2/4] Compressing source directory '\${SOURCE_PATH}'..."
 EXCLUDE_ARGS=()
 for pat in "\${EXCLUDE_PATTERNS[@]}"; do
   EXCLUDE_ARGS+=("-x" "*$pat*")
 done
 
+ZIP_PASS_OPT=()
+if [ -n "$ARCHIVE_PASSWORD" ]; then
+  ZIP_PASS_OPT=("-P" "$ARCHIVE_PASSWORD")
+fi
+
 SOURCE_DIR=$(dirname "$SOURCE_PATH")
 BASE_NAME=$(basename "$SOURCE_PATH")
 
-if ! (cd "$SOURCE_DIR" && zip -r9 "$ZIP_FILE" "$BASE_NAME" "\${EXCLUDE_ARGS[@]}") >"$LOG_STDOUT" 2>"$LOG_STDERR"; then
+if ! (cd "$SOURCE_DIR" && zip -r9 "$ZIP_FILE" "$BASE_NAME" "\${EXCLUDE_ARGS[@]}" "\${ZIP_PASS_OPT[@]}") >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
   ERR="Zip archiving failed: $(tail -n 3 "$LOG_STDERR")"
   echo "❌ $ERR"
+  echo "[$(date +'%Y-%m-%d %H:%M:%S')] ❌ $ERR" >> "$LOG_STDOUT"
   send_telemetry "FAILED" 1 "$ERR" 0 "" "" "" ""
   exit 1
 fi
 
 LATEST_SIZE=$(stat -c%s "$ZIP_FILE" 2>/dev/null || stat -f%z "$ZIP_FILE" 2>/dev/null || wc -c < "$ZIP_FILE" | tr -d ' ')
 CHECKSUM=$(sha256sum "$ZIP_FILE" 2>/dev/null | awk '{print $1}' || echo "")
-echo "📊 Archive Size: \${LATEST_SIZE} bytes ($(format_bytes "$LATEST_SIZE"))"
+log_info "📊 Archive Size: \${LATEST_SIZE} bytes ($(format_bytes "$LATEST_SIZE"))"
 
 STATUS="SUCCESS"
 ANOMALY_MSG=""
@@ -1469,15 +1671,16 @@ if [ "$DESTINATION" = "s3" ]; then
   FINAL_KEY="$S3_KEY"
   FINAL_URL="$S3_URL"
 
-  echo "☁️  [3/4] Uploading to AWS S3: \${S3_URL}..."
+  log_info "☁️  [3/4] Uploading to AWS S3: \${S3_URL}..."
   if ! aws s3 cp "$ZIP_FILE" "$S3_URL" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
     ERR="S3 upload failed: $(tail -n 3 "$LOG_STDERR")"
     echo "❌ $ERR"
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] ❌ $ERR" >> "$LOG_STDOUT"
     send_telemetry "FAILED" 1 "$ERR" "$LATEST_SIZE" "$CHECKSUM" "$FINAL_BUCKET" "$FINAL_KEY" "$FINAL_URL"
     exit 1
   fi
 
-  echo "🧹 [4/4] Managing S3 retention (Keep max \${MAX_FILES} files)..."
+  log_info "🧹 [4/4] Managing S3 retention (Keep max \${MAX_FILES} files)..."
   if command -v aws >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
     S3_FILES_JSON=$(aws s3 ls "s3://\${S3_BUCKET}/\${S3_FOLDER_NAME}/" 2>/dev/null | awk '{print "{\\"date\\":\\""$1" "$2"\\", \\"filename\\":\\""$4"\\"}"}' | jq -s '.' 2>/dev/null || echo "[]")
     FILE_COUNT=$(echo "$S3_FILES_JSON" | jq 'length' 2>/dev/null || echo "0")
@@ -1500,7 +1703,7 @@ elif [ "$DESTINATION" = "gcs" ]; then
   FINAL_KEY="$GCS_KEY"
   FINAL_URL="$GCS_URL"
 
-  echo "🌐 [3/4] Uploading to Google Cloud Storage: \${GCS_URL}..."
+  log_info "🌐 [3/4] Uploading to Google Cloud Storage: \${GCS_URL}..."
   UPLOAD_OK=false
   if command -v gcloud >/dev/null 2>&1; then
     if gcloud storage cp "$ZIP_FILE" "$GCS_URL" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
@@ -1517,11 +1720,12 @@ elif [ "$DESTINATION" = "gcs" ]; then
   if [ "$UPLOAD_OK" != true ]; then
     ERR="GCS upload failed: $(tail -n 3 "$LOG_STDERR")"
     echo "❌ $ERR"
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] ❌ $ERR" >> "$LOG_STDOUT"
     send_telemetry "FAILED" 1 "$ERR" "$LATEST_SIZE" "$CHECKSUM" "$FINAL_BUCKET" "$FINAL_KEY" "$FINAL_URL"
     exit 1
   fi
 
-  echo "🧹 [4/4] Managing GCS retention (Keep max \${MAX_FILES} files)..."
+  log_info "🧹 [4/4] Managing GCS retention (Keep max \${MAX_FILES} files)..."
   if command -v gcloud >/dev/null 2>&1; then
     GCS_FILES=($(gcloud storage ls "gs://\${GCS_BUCKET}/\${GCS_FOLDER_NAME}/*.zip" 2>/dev/null | sort || true))
     TOTAL_GCS=\${#GCS_FILES[@]}
@@ -1552,7 +1756,7 @@ elif [ "$DESTINATION" = "azure" ]; then
   FINAL_KEY="$AZURE_BLOB_NAME"
   FINAL_URL="$AZURE_BLOB_URL"
 
-  echo "🔷 [3/4] Uploading to Azure Blob Storage: \${AZURE_BLOB_URL}..."
+  log_info "🔷 [3/4] Uploading to Azure Blob Storage: \${AZURE_BLOB_URL}..."
   UPLOAD_OK=false
   AUTH_ARGS=()
   if [ -n "$AZURE_CONNECTION_STRING" ]; then
@@ -1587,11 +1791,12 @@ elif [ "$DESTINATION" = "azure" ]; then
   if [ "$UPLOAD_OK" != true ]; then
     ERR="Azure Blob upload failed: $(tail -n 3 "$LOG_STDERR")"
     echo "❌ $ERR"
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] ❌ $ERR" >> "$LOG_STDOUT"
     send_telemetry "FAILED" 1 "$ERR" "$LATEST_SIZE" "$CHECKSUM" "$FINAL_BUCKET" "$FINAL_KEY" "$FINAL_URL"
     exit 1
   fi
 
-  echo "🧹 [4/4] Managing Azure Blob retention (Keep max \${MAX_FILES} files)..."
+  log_info "🧹 [4/4] Managing Azure Blob retention (Keep max \${MAX_FILES} files)..."
   if command -v az >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
     BLOBS_JSON=$(az storage blob list --container-name "$AZURE_CONTAINER" --prefix "\${AZURE_FOLDER}/" "\${AUTH_ARGS[@]}" --query "[].name" -o json 2>/dev/null || echo "[]")
     TOTAL_BLOBS=$(echo "$BLOBS_JSON" | jq 'length' 2>/dev/null || echo "0")
@@ -1613,16 +1818,17 @@ elif [ "$DESTINATION" = "shared_drive" ]; then
   FINAL_KEY="$DEST_FILE"
   FINAL_URL="file://\${DEST_FILE}"
 
-  echo "📁 [3/4] Copying archive to shared drive: \${DEST_FILE}..."
+  log_info "📁 [3/4] Copying archive to shared drive: \${DEST_FILE}..."
   if ! cp -p "$ZIP_FILE" "$DEST_FILE" >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
     ERR="Copy to shared drive failed: $(tail -n 3 "$LOG_STDERR")"
     echo "❌ $ERR"
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] ❌ $ERR" >> "$LOG_STDOUT"
     send_telemetry "FAILED" 1 "$ERR" "$LATEST_SIZE" "$CHECKSUM" "$FINAL_BUCKET" "$FINAL_KEY" "$FINAL_URL"
     exit 1
   fi
   rm -f "$ZIP_FILE"
 
-  echo "🧹 [4/4] Managing shared drive retention (Keep max \${MAX_FILES} files, \${RETENTION_DAYS} days policy)..."
+  log_info "🧹 [4/4] Managing shared drive retention (Keep max \${MAX_FILES} files, \${RETENTION_DAYS} days policy)..."
   find "$SHARED_DRIVE_PATH" -maxdepth 1 -name "\${PROJECT_NAME}-*.zip" -type f -mtime +"\${RETENTION_DAYS}" -exec rm -f {} + 2>/dev/null || true
   ARCHIVE_LIST=($(ls -1t "$SHARED_DRIVE_PATH"/\${PROJECT_NAME}-*.zip 2>/dev/null || true))
   TOTAL_ARCHIVES=\${#ARCHIVE_LIST[@]}
@@ -1639,9 +1845,9 @@ else # destination == local
   FINAL_KEY="$ZIP_FILE"
   FINAL_URL="file://\${ZIP_FILE}"
 
-  echo "💻 [3/4] Saved archive to local storage: \${ZIP_FILE}"
+  log_info "💻 [3/4] Saved archive to local storage: \${ZIP_FILE}"
 
-  echo "🧹 [4/4] Managing local retention in \${LOCAL_BACKUP_DIR} (Keep max \${MAX_FILES} files, \${RETENTION_DAYS} days policy)..."
+  log_info "🧹 [4/4] Managing local retention in \${LOCAL_BACKUP_DIR} (Keep max \${MAX_FILES} files, \${RETENTION_DAYS} days policy)..."
   find "$LOCAL_BACKUP_DIR" -maxdepth 1 -name "\${PROJECT_NAME}-*.zip" -type f -mtime +"\${RETENTION_DAYS}" -exec rm -f {} + 2>/dev/null || true
   ARCHIVE_LIST=($(ls -1t "$LOCAL_BACKUP_DIR"/\${PROJECT_NAME}-*.zip 2>/dev/null || true))
   TOTAL_ARCHIVES=\${#ARCHIVE_LIST[@]}
@@ -1654,8 +1860,8 @@ else # destination == local
   fi
 fi
 
+log_info "🎉 Directory Zip Backup Completed Successfully!"
 send_telemetry "$STATUS" 0 "$ANOMALY_MSG" "$LATEST_SIZE" "$CHECKSUM" "$FINAL_BUCKET" "$FINAL_KEY" "$FINAL_URL"
-echo "🎉 Directory Zip Backup Completed Successfully!"
 `;
 }
 
@@ -1665,6 +1871,7 @@ export function generateCurlSnippet(cfg: GeneratorConfig): string {
   const apiKey = cfg.apiKey || 'bkp_live_secret_key_12345';
   const project = cfg.projectName || 'my_custom_project';
   const retention = cfg.retentionDays || 30;
+  const dbPass = cfg.dbPassword || '';
 
   let targetBucket = cfg.s3Bucket || 'my-backup-vault';
   if (dest === 'gcs') targetBucket = `gs://${cfg.gcsBucket || 'my-gcp-vault'}`;
@@ -1672,20 +1879,79 @@ export function generateCurlSnippet(cfg: GeneratorConfig): string {
   else if (dest === 'local') targetBucket = cfg.localBackupDir ? `Local: ${cfg.localBackupDir}` : 'Local Storage';
   else if (dest === 'shared_drive') targetBucket = cfg.sharedDrivePath ? `Shared: ${cfg.sharedDrivePath}` : 'Shared Drive';
 
+  const passwordSnippet = dbPass
+    ? `# DB_PASSWORD='${escapeBashSingleQuote(dbPass)}'
+# export PGPASSWORD='${escapeBashSingleQuote(dbPass)}'  # For PostgreSQL
+# export MYSQL_PWD='${escapeBashSingleQuote(dbPass)}'   # For MySQL`
+    : `# export PGPASSWORD='YOUR_DB_PASSWORD'  # For PostgreSQL
+# export MYSQL_PWD='YOUR_DB_PASSWORD'   # For MySQL`;
+
   return `# ==============================================================================
 # Paste this block at the end of your existing backup bash script:
 # ==============================================================================
 
-BACKUP_PULSE_STATUS="SUCCESS"  # Set to "FAILED" if your previous dump command failed
+# --- Database Credentials (if running pg_dump or mysqldump) ---
+# Note: Always enclose database passwords in single quotes to safely preserve special
+# characters ($, !, #, &, @, etc.) and prevent parameter expansion:
+${passwordSnippet}
+
+# --- Telemetry Logs & Status ---
+BACKUP_PULSE_STATUS="SUCCESS"  # Set to "FAILED" if your previous backup/dump command failed
 ARCHIVE_PATH="/path/to/your/backup_file.tar.gz"  # Change to your actual archive path
-ARCHIVE_SIZE=$(stat -c%s "$ARCHIVE_PATH" 2>/dev/null || echo 0)
+ARCHIVE_SIZE=$(stat -c%s "$ARCHIVE_PATH" 2>/dev/null || stat -f%z "$ARCHIVE_PATH" 2>/dev/null || echo 0)
 START_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 END_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-curl -s -X POST "${apiUrl}" \\
-  -H "Content-Type: application/json" \\
-  -H "x-api-key: ${apiKey}" \\
-  -d "{
+# Standard output log from backup execution (capture log file snippet or step summary)
+BACKUP_STDOUT="Backup executed successfully for ${project}. Archive: $(basename "$ARCHIVE_PATH" 2>/dev/null || echo 'archive') (\${ARCHIVE_SIZE} bytes)."
+BACKUP_STDERR=""
+
+if command -v jq >/dev/null 2>&1; then
+  PAYLOAD=$(jq -n \\
+    --arg server_id "$(hostname -s 2>/dev/null || echo 'server-unknown')" \\
+    --arg hostname "$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo 'localhost')" \\
+    --arg server_ip "$(hostname -I 2>/dev/null | awk '{print $1}' || echo '127.0.0.1')" \\
+    --arg project_name "${project}" \\
+    --arg environment "${cfg.environment || 'production'}" \\
+    --arg backup_type "db" \\
+    --arg status "$BACKUP_PULSE_STATUS" \\
+    --arg start_time "$START_TIME" \\
+    --arg end_time "$END_TIME" \\
+    --argjson duration_seconds 12 \\
+    --argjson backup_size_bytes "$ARCHIVE_SIZE" \\
+    --arg s3_bucket "${targetBucket}" \\
+    --argjson retention_days ${retention} \\
+    --arg zip_filename "$(basename "$ARCHIVE_PATH" 2>/dev/null || echo 'backup.tar.gz')" \\
+    --arg stdout_log "$BACKUP_STDOUT" \\
+    --arg stderr_log "$BACKUP_STDERR" \\${cfg.enableRestoreDrill ? `
+    --arg restore_drill_status "SUCCESS" \\
+    --argjson restore_drill_duration_seconds 15 \\
+    --argjson restore_drill_verified_tables 42 \\
+    --arg restore_drill_log "Verification PASSED: 42 tables verified in ephemeral sandbox" \\` : ''}
+    '{
+      server_id: $server_id,
+      hostname: $hostname,
+      server_ip: $server_ip,
+      project_name: $project_name,
+      environment: $environment,
+      backup_type: $backup_type,
+      status: $status,
+      start_time: $start_time,
+      end_time: $end_time,
+      duration_seconds: $duration_seconds,
+      backup_size_bytes: $backup_size_bytes,
+      s3_bucket: $s3_bucket,
+      retention_days: $retention_days,
+      zip_filename: $zip_filename,
+      stdout_log: $stdout_log,
+      stderr_log: (if $stderr_log == "" then null else $stderr_log end)${cfg.enableRestoreDrill ? `,
+      restore_drill_status: $restore_drill_status,
+      restore_drill_duration_seconds: $restore_drill_duration_seconds,
+      restore_drill_verified_tables: $restore_drill_verified_tables,
+      restore_drill_log: $restore_drill_log` : ''}
+    }')
+else
+  PAYLOAD="{
     \\"server_id\\": \\"$(hostname -s 2>/dev/null || echo 'server-unknown')\\",
     \\"hostname\\": \\"$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo 'localhost')\\",
     \\"server_ip\\": \\"$(hostname -I 2>/dev/null | awk '{print $1}' || echo '127.0.0.1')\\",
@@ -1699,12 +1965,20 @@ curl -s -X POST "${apiUrl}" \\
     \\"backup_size_bytes\\": $ARCHIVE_SIZE,
     \\"s3_bucket\\": \\"${targetBucket}\\",
     \\"retention_days\\": ${retention},
-    \\"zip_filename\\": \\"$(basename "$ARCHIVE_PATH")\\"${cfg.enableRestoreDrill ? `,
+    \\"zip_filename\\": \\"$(basename "$ARCHIVE_PATH" 2>/dev/null || echo 'backup.tar.gz')\\",
+    \\"stdout_log\\": \\"$BACKUP_STDOUT\\",
+    \\"stderr_log\\": null${cfg.enableRestoreDrill ? `,
     \\"restore_drill_status\\": \\"SUCCESS\\",
     \\"restore_drill_duration_seconds\\": 15,
     \\"restore_drill_verified_tables\\": 42,
     \\"restore_drill_log\\": \\"Verification PASSED: 42 tables verified in ephemeral sandbox\\"` : ''}
   }"
+fi
+
+curl -s -X POST "${apiUrl}" \\
+  -H "Content-Type: application/json" \\
+  -H "x-api-key: ${apiKey}" \\
+  -d "$PAYLOAD"
 `;
 }
 

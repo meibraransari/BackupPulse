@@ -507,103 +507,123 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
               </div>
             </div>
 
-            {/* Step 3: Workload Specific Connection Details */}
-            {backupType !== 'curl' && (
-              <div className="space-y-3 pt-2 border-t border-slate-800/80">
-                <label className="block text-slate-300 font-semibold">
-                  3. {backupType === 'zip' ? 'Directory Settings' : 'Database Connection'}
-                </label>
+            {/* Step 3: Workload Specific Connection Details (Configurable for all workload types) */}
+            <div className="space-y-3 pt-2 border-t border-slate-800/80">
+              <label className="block text-slate-300 font-semibold">
+                3. {backupType === 'zip' ? 'Directory Settings & Security' : backupType === 'curl' ? 'Database Credentials & Connection (Optional)' : 'Database Connection'}
+              </label>
 
-                {backupType === 'postgres' || backupType === 'mysql' ? (
-                  <>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-slate-400 mb-1">DB Name *</label>
-                        <input
-                          type="text"
-                          value={dbName}
-                          onChange={(e) => setDbName(e.target.value)}
-                          placeholder="ljscrm"
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-slate-400 mb-1">DB User *</label>
-                        <input
-                          type="text"
-                          value={dbUser}
-                          onChange={(e) => setDbUser(e.target.value)}
-                          placeholder="postgres"
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="col-span-2">
-                        <label className="block text-slate-400 mb-1">DB Host *</label>
-                        <input
-                          type="text"
-                          value={dbHost}
-                          onChange={(e) => setDbHost(e.target.value)}
-                          placeholder="127.0.0.1"
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-slate-400 mb-1">Port</label>
-                        <input
-                          type="text"
-                          value={dbPort}
-                          onChange={(e) => setDbPort(e.target.value)}
-                          placeholder={backupType === 'postgres' ? '5432' : '3306'}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
-                        />
-                      </div>
-                    </div>
-
+              {backupType === 'postgres' || backupType === 'mysql' || backupType === 'curl' ? (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="block text-slate-400 mb-1">DB Password (Optional / Stored locally)</label>
+                      <label className="block text-slate-400 mb-1">DB Name {backupType !== 'curl' && '*'}</label>
                       <input
                         type="text"
-                        value={dbPassword}
-                        onChange={(e) => setDbPassword(e.target.value)}
-                        placeholder="Secret password"
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
-                      />
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div>
-                      <label className="block text-slate-400 mb-1">Source Directory Path *</label>
-                      <input
-                        type="text"
-                        value={sourcePath}
-                        onChange={(e) => setSourcePath(e.target.value)}
-                        placeholder="/var/www/html or /opt/app"
+                        value={dbName}
+                        onChange={(e) => setDbName(e.target.value)}
+                        placeholder="ecommerce_prod"
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
                       />
                     </div>
                     <div>
-                      <label className="block text-slate-400 mb-1">Exclude Patterns</label>
+                      <label className="block text-slate-400 mb-1">DB User {backupType !== 'curl' && '*'}</label>
                       <input
                         type="text"
-                        value={excludePatterns}
-                        onChange={(e) => setExcludePatterns(e.target.value)}
-                        placeholder="node_modules/* .git/* *.log"
+                        value={dbUser}
+                        onChange={(e) => setDbUser(e.target.value)}
+                        placeholder="postgres"
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
                       />
                     </div>
-                  </>
-                )}
-              </div>
-            )}
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="col-span-2">
+                      <label className="block text-slate-400 mb-1">DB Host {backupType !== 'curl' && '*'}</label>
+                      <input
+                        type="text"
+                        value={dbHost}
+                        onChange={(e) => setDbHost(e.target.value)}
+                        placeholder="127.0.0.1"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-400 mb-1">Port</label>
+                      <input
+                        type="text"
+                        value={dbPort}
+                        onChange={(e) => setDbPort(e.target.value)}
+                        placeholder={backupType === 'postgres' ? '5432' : '3306'}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-slate-400">DB Password (Stored locally in script)</label>
+                      <span className="text-[10px] text-emerald-400 font-mono">Single-quote safe ('...')</span>
+                    </div>
+                    <input
+                      type="text"
+                      value={dbPassword}
+                      onChange={(e) => setDbPassword(e.target.value)}
+                      placeholder="Secret password (special characters $, !, #, &, @ preserved)"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Passwords with special characters ($, !, #, &, @, etc.) are safely enclosed in single quotes in the generated code to prevent bash variable expansion.
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-slate-400 mb-1">Source Directory Path *</label>
+                    <input
+                      type="text"
+                      value={sourcePath}
+                      onChange={(e) => setSourcePath(e.target.value)}
+                      placeholder="/var/www/html or /opt/app"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-400 mb-1">Exclude Patterns</label>
+                    <input
+                      type="text"
+                      value={excludePatterns}
+                      onChange={(e) => setExcludePatterns(e.target.value)}
+                      placeholder="node_modules/* .git/* *.log"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-slate-400">Archive / Encryption Password (Optional)</label>
+                      <span className="text-[10px] text-emerald-400 font-mono">Single-quote safe ('...')</span>
+                    </div>
+                    <input
+                      type="text"
+                      value={dbPassword}
+                      onChange={(e) => setDbPassword(e.target.value)}
+                      placeholder="Optional encryption password"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Special characters ($, !, #, &, @, etc.) are safely preserved in single quotes.
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
 
             {/* Step 4: Storage Destination & Retention Policy (Available for all backup types) */}
             <div className="space-y-3 pt-2 border-t border-slate-800/80">
               <label className="block text-slate-300 font-semibold">
-                {backupType === 'curl' ? '3.' : '4.'} Backup Destination & Storage Target *
+                4. Backup Destination & Storage Target *
               </label>
 
                 {/* Destination Dropdown */}

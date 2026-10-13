@@ -49,7 +49,15 @@ ENVIRONMENT="${ENVIRONMENT:-production}"
 # Project & Database Configuration
 PROJECT_NAME="${PROJECT_NAME:-MySQL_App}"
 DB_USER="${MYSQL_USER:-${DB_USER:-root}}"
-DB_PASSWORD="${MYSQL_PWD:-${MYSQL_PASSWORD:-${DB_PASSWORD:-SecretPass123}}}"
+if [ -n "${MYSQL_PWD:-}" ]; then
+  DB_PASSWORD="$MYSQL_PWD"
+elif [ -n "${MYSQL_PASSWORD:-}" ]; then
+  DB_PASSWORD="$MYSQL_PASSWORD"
+elif [ -n "${DB_PASSWORD:-}" ]; then
+  DB_PASSWORD="$DB_PASSWORD"
+else
+  DB_PASSWORD='SecretPass123'
+fi
 DB_HOST="${MYSQL_HOST:-${DB_HOST:-127.0.0.1}}"
 DB_PORT="${MYSQL_PORT:-${DB_PORT:-3306}}"
 DB_NAME="${MYSQL_DATABASE:-${DB_NAME:-app_prod}}"
