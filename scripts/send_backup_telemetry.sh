@@ -25,8 +25,8 @@ HUB_API_KEY="${BACKUP_API_KEY:-bkp_live_secret_key_12345}"
 # Argument 1: Project Name (e.g., 'billing-db', 'ecommerce-core')
 PROJECT_NAME="${1:-sample-project}"
 
-# Argument 2: Backup Type ('db', 'code', or 'full')
-BACKUP_TYPE="${2:-db}"
+# Argument 2: Backup Type ('custom', 'db', 'zip', or any custom identifier)
+BACKUP_TYPE="${2:-${BACKUP_TYPE:-custom}}"
 
 # Argument 3: Status ('SUCCESS', 'FAILED', or 'WARNING')
 STATUS="${3:-SUCCESS}"

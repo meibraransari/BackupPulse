@@ -37,7 +37,7 @@ export async function backupRoutes(fastify: FastifyInstance) {
             server_ip: { type: 'string' },
             project_name: { type: 'string' },
             environment: { type: 'string', default: 'production' },
-            backup_type: { type: 'string', enum: ['db', 'code', 'full'] },
+            backup_type: { type: 'string', minLength: 1, maxLength: 64, description: 'Type of backup (e.g., db, zip, code, full, or custom identifier)' },
             status: { type: 'string', enum: ['SUCCESS', 'FAILED', 'WARNING', 'IN_PROGRESS'] },
             start_time: { type: 'string' },
             end_time: { type: 'string' },
@@ -347,7 +347,7 @@ export async function backupRoutes(fastify: FastifyInstance) {
       }
 
       if (query.backupType && query.backupType !== 'ALL') {
-        where.backupType = query.backupType.toLowerCase();
+        where.backupType = { equals: query.backupType, mode: 'insensitive' };
       }
 
       if (query.isAnomaly !== undefined && query.isAnomaly !== '') {
@@ -679,7 +679,9 @@ export async function backupRoutes(fastify: FastifyInstance) {
       Object.assign(where, projectScope.where);
       if (query.serverId && query.serverId !== 'ALL') where.serverId = query.serverId;
       if (query.status && query.status !== 'ALL') where.status = query.status.toUpperCase();
-      if (query.backupType && query.backupType !== 'ALL') where.backupType = query.backupType.toLowerCase();
+      if (query.backupType && query.backupType !== 'ALL') {
+        where.backupType = { equals: query.backupType, mode: 'insensitive' };
+      }
 
       if (query.availability && query.availability !== 'ALL') {
         const availUpper = query.availability.toUpperCase();

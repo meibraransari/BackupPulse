@@ -315,15 +315,18 @@ export const BackupTable: React.FC<BackupTableProps> = ({
   };
 
   const getTypeBadge = (type: string) => {
+    const normalized = (type || 'db').toLowerCase();
     const colors: Record<string, string> = {
       db: 'bg-indigo-950/70 text-indigo-300 border-indigo-800/50',
       code: 'bg-cyan-950/70 text-cyan-300 border-cyan-800/50',
+      zip: 'bg-cyan-950/70 text-cyan-300 border-cyan-800/50',
       full: 'bg-emerald-950/70 text-emerald-300 border-emerald-800/50',
+      custom: 'bg-purple-950/70 text-purple-300 border-purple-800/50',
     };
     return (
       <span
         className={`px-2 py-0.5 rounded text-[11px] font-mono uppercase font-semibold border ${
-          colors[type] || 'bg-slate-800 text-slate-300 border-slate-700'
+          colors[normalized] || 'bg-purple-950/70 text-purple-300 border-purple-800/50'
         }`}
       >
         {type}

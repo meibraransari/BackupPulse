@@ -42,6 +42,7 @@ umask 133
 HUB_API_URL="${BACKUP_HUB_URL:-http://localhost:3000/api/v1/backups/report}"
 HUB_API_KEY="${BACKUP_API_KEY:-bkp_live_secret_key_12345}"
 ENVIRONMENT="${ENVIRONMENT:-production}"
+BACKUP_TYPE="${BACKUP_TYPE:-db}"
 
 # Project & Database Configuration
 PROJECT_NAME="${PROJECT_NAME:-demo}"
@@ -220,7 +221,7 @@ send_telemetry() {
       --arg server_ip "$SERVER_IP" \
       --arg project_name "$PROJECT_NAME" \
       --arg environment "$ENVIRONMENT" \
-      --arg backup_type "db" \
+      --arg backup_type "$BACKUP_TYPE" \
       --arg status "$status" \
       --arg start_time "$START_TIME_ISO" \
       --arg end_time "$end_time_iso" \
@@ -275,7 +276,7 @@ send_telemetry() {
   "server_ip": "${SERVER_IP}",
   "project_name": "${PROJECT_NAME}",
   "environment": "${ENVIRONMENT}",
-  "backup_type": "db",
+  "backup_type": "${BACKUP_TYPE}",
   "status": "${status}",
   "start_time": "${START_TIME_ISO}",
   "end_time": "${end_time_iso}",

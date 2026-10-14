@@ -19,6 +19,7 @@ export function escapeBashSingleQuote(value: string): string {
 
 export interface GeneratorConfig {
   backupType: 'postgres' | 'mysql' | 'zip' | 'curl';
+  customBackupType?: string;
   storageDestination?: StorageDestination;
   apiUrl: string;
   apiKey: string;
@@ -128,6 +129,7 @@ umask 133
 HUB_API_URL="\${BACKUP_HUB_URL:-${apiUrl}}"
 HUB_API_KEY="\${BACKUP_API_KEY:-${apiKey}}"
 ENVIRONMENT="\${ENVIRONMENT:-${cfg.environment || 'production'}}"
+BACKUP_TYPE="\${BACKUP_TYPE:-${escapeBashSingleQuote(cfg.customBackupType || 'db')}}"
 
 # --- PostgreSQL Credentials & Host ---
 PROJECT_NAME="\${PROJECT_NAME:-${project}}"
@@ -171,6 +173,7 @@ SERVER_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || echo '127.0.0.1')"
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
     --project) PROJECT_NAME="$2"; shift 2 ;;
+    --type|--backup-type) BACKUP_TYPE="$2"; shift 2 ;;
     --db-user) DB_USER="$2"; shift 2 ;;
     --db-password) DB_PASSWORD="$2"; shift 2 ;;
     --db-host) DB_HOST="$2"; shift 2 ;;
@@ -274,7 +277,7 @@ send_telemetry() {
       --arg server_ip "$SERVER_IP" \\
       --arg project_name "$PROJECT_NAME" \\
       --arg environment "$ENVIRONMENT" \\
-      --arg backup_type "db" \\
+      --arg backup_type "$BACKUP_TYPE" \\
       --arg status "$status" \\
       --arg start_time "$START_TIME_ISO" \\
       --arg end_time "$end_time_iso" \\
@@ -334,7 +337,7 @@ send_telemetry() {
   "server_ip": "$SERVER_IP",
   "project_name": "$PROJECT_NAME",
   "environment": "$ENVIRONMENT",
-  "backup_type": "db",
+  "backup_type": "$BACKUP_TYPE",
   "status": "$status",
   "start_time": "$START_TIME_ISO",
   "end_time": "$end_time_iso",
@@ -752,6 +755,7 @@ umask 133
 HUB_API_URL="\${BACKUP_HUB_URL:-${apiUrl}}"
 HUB_API_KEY="\${BACKUP_API_KEY:-${apiKey}}"
 ENVIRONMENT="\${ENVIRONMENT:-${cfg.environment || 'production'}}"
+BACKUP_TYPE="\${BACKUP_TYPE:-${escapeBashSingleQuote(cfg.customBackupType || 'db')}}"
 
 # --- MySQL Credentials & Host ---
 PROJECT_NAME="\${PROJECT_NAME:-${project}}"
@@ -795,6 +799,7 @@ SERVER_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || echo '127.0.0.1')"
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
     --project) PROJECT_NAME="$2"; shift 2 ;;
+    --type|--backup-type) BACKUP_TYPE="$2"; shift 2 ;;
     --db-user) DB_USER="$2"; shift 2 ;;
     --db-password) DB_PASSWORD="$2"; shift 2 ;;
     --db-host) DB_HOST="$2"; shift 2 ;;
@@ -898,7 +903,7 @@ send_telemetry() {
       --arg server_ip "$SERVER_IP" \\
       --arg project_name "$PROJECT_NAME" \\
       --arg environment "$ENVIRONMENT" \\
-      --arg backup_type "db" \\
+      --arg backup_type "$BACKUP_TYPE" \\
       --arg status "$status" \\
       --arg start_time "$START_TIME_ISO" \\
       --arg end_time "$end_time_iso" \\
@@ -958,7 +963,7 @@ send_telemetry() {
   "server_ip": "$SERVER_IP",
   "project_name": "$PROJECT_NAME",
   "environment": "$ENVIRONMENT",
-  "backup_type": "db",
+  "backup_type": "$BACKUP_TYPE",
   "status": "$status",
   "start_time": "$START_TIME_ISO",
   "end_time": "$end_time_iso",
@@ -1374,6 +1379,7 @@ umask 133
 HUB_API_URL="\${BACKUP_HUB_URL:-${apiUrl}}"
 HUB_API_KEY="\${BACKUP_API_KEY:-${apiKey}}"
 ENVIRONMENT="\${ENVIRONMENT:-${cfg.environment || 'production'}}"
+BACKUP_TYPE="\${BACKUP_TYPE:-${escapeBashSingleQuote(cfg.customBackupType || 'zip')}}"
 
 # --- Target Configuration ---
 PROJECT_NAME="\${PROJECT_NAME:-${project}}"
@@ -1413,6 +1419,7 @@ SERVER_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || echo '127.0.0.1')"
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
     --project) PROJECT_NAME="$2"; shift 2 ;;
+    --type|--backup-type) BACKUP_TYPE="$2"; shift 2 ;;
     --source-path) SOURCE_PATH="$2"; shift 2 ;;
     --password) ARCHIVE_PASSWORD="$2"; shift 2 ;;
     --destination) DESTINATION="$2"; shift 2 ;;
@@ -1510,7 +1517,7 @@ send_telemetry() {
       --arg server_ip "$SERVER_IP" \\
       --arg project_name "$PROJECT_NAME" \\
       --arg environment "$ENVIRONMENT" \\
-      --arg backup_type "code" \\
+      --arg backup_type "$BACKUP_TYPE" \\
       --arg status "$status" \\
       --arg start_time "$START_TIME_ISO" \\
       --arg end_time "$end_time_iso" \\
@@ -1570,7 +1577,7 @@ send_telemetry() {
   "server_ip": "$SERVER_IP",
   "project_name": "$PROJECT_NAME",
   "environment": "$ENVIRONMENT",
-  "backup_type": "code",
+  "backup_type": "$BACKUP_TYPE",
   "status": "$status",
   "start_time": "$START_TIME_ISO",
   "end_time": "$end_time_iso",
@@ -1925,6 +1932,7 @@ ARCHIVE_PATH="/path/to/your/backup_file.tar.gz"  # Change to your actual archive
 ARCHIVE_SIZE=$(stat -c%s "$ARCHIVE_PATH" 2>/dev/null || stat -f%z "$ARCHIVE_PATH" 2>/dev/null || echo 0)
 START_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 END_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+BACKUP_TYPE="${escapeBashSingleQuote(cfg.customBackupType || 'custom')}"
 
 # Standard output log from backup execution (capture log file snippet or step summary)
 BACKUP_STDOUT="Backup executed successfully for ${project}. Archive: $(basename "$ARCHIVE_PATH" 2>/dev/null || echo 'archive') (\${ARCHIVE_SIZE} bytes)."
@@ -1937,7 +1945,7 @@ if command -v jq >/dev/null 2>&1; then
     --arg server_ip "$(hostname -I 2>/dev/null | awk '{print $1}' || echo '127.0.0.1')" \\
     --arg project_name "${project}" \\
     --arg environment "${cfg.environment || 'production'}" \\
-    --arg backup_type "db" \\
+    --arg backup_type "$BACKUP_TYPE" \\
     --arg status "$BACKUP_PULSE_STATUS" \\
     --arg start_time "$START_TIME" \\
     --arg end_time "$END_TIME" \\
@@ -1981,7 +1989,7 @@ else
     \\"server_ip\\": \\"$(hostname -I 2>/dev/null | awk '{print $1}' || echo '127.0.0.1')\\",
     \\"project_name\\": \\"${project}\\",
     \\"environment\\": \\"${cfg.environment || 'production'}\\",
-    \\"backup_type\\": \\"db\\",
+    \\"backup_type\\": \\"$BACKUP_TYPE\\",
     \\"status\\": \\"$BACKUP_PULSE_STATUS\\",
     \\"start_time\\": \\"$START_TIME\\",
     \\"end_time\\": \\"$END_TIME\\",

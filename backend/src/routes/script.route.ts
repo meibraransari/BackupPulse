@@ -16,7 +16,7 @@ export async function scriptRoutes(fastify: FastifyInstance) {
         querystring: {
           type: 'object',
           properties: {
-            type: { type: 'string', enum: ['postgres', 'mysql', 'directory', 'curl', 'custom', 'generic'], default: 'postgres' },
+            type: { type: 'string', default: 'postgres' },
             dest: { type: 'string', enum: ['s3', 'gcs', 'azure', 'local', 'mapped', 'none'], default: 's3' },
             hubUrl: { type: 'string' },
             drill: { type: 'string', enum: ['true', 'false'], default: 'false' },

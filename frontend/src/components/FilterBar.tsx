@@ -261,9 +261,11 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
           >
             <option value="ALL">All Types</option>
-            <option value="db">Database Only</option>
-            <option value="code">Code Only</option>
-            <option value="full">Full (DB + Code)</option>
+            <option value="db">Database (db)</option>
+            <option value="zip">Directory (zip)</option>
+            <option value="code">Code (code)</option>
+            <option value="full">Full (db + code)</option>
+            <option value="custom">Custom</option>
           </select>
         </div>
 

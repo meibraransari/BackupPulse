@@ -49,7 +49,7 @@ ENVIRONMENT="${ENVIRONMENT:-production}"
 # Project & Source Configuration
 PROJECT_NAME="${PROJECT_NAME:-App_Files}"
 SOURCE_PATH="${SOURCE_PATH:-/var/www/html}"
-BACKUP_TYPE="${BACKUP_TYPE:-code}" # code | full
+BACKUP_TYPE="${BACKUP_TYPE:-zip}" # zip | code | full
 EXCLUDE_PATTERNS="${EXCLUDE_PATTERNS:-node_modules/* .git/* *.log tmp/* .cache/*}"
 S3_FOLDER_NAME="${S3_FOLDER_NAME:-file_backups}"
 

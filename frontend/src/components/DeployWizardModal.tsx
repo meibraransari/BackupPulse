@@ -8,6 +8,7 @@ import {
   Download,
   Key,
   FolderGit2,
+  Tag,
   Server,
   Cloud,
   Clock,
@@ -58,6 +59,7 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
 
   // Workload selection
   const [backupType, setBackupType] = useState<'postgres' | 'mysql' | 'zip' | 'curl'>('postgres');
+  const [customBackupType, setCustomBackupType] = useState<string>('db');
 
   // Storage Destination selection: s3 | gcs | azure | local | shared_drive
   const [storageDestination, setStorageDestination] = useState<StorageDestination>('s3');
@@ -140,14 +142,19 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
       setDbPort('5432');
       setBackupPath('/var/backups/postgres');
       setLocalBackupDir('/var/backups/postgres');
+      setCustomBackupType('db');
     } else if (backupType === 'mysql') {
       setDbUser('root');
       setDbPort('3306');
       setBackupPath('/var/backups/mysql');
       setLocalBackupDir('/var/backups/mysql');
+      setCustomBackupType('db');
     } else if (backupType === 'zip') {
       setBackupPath('/var/backups/zip');
       setLocalBackupDir('/var/backups/zip');
+      setCustomBackupType('zip');
+    } else if (backupType === 'curl') {
+      setCustomBackupType('custom');
     }
   }, [backupType]);
 
@@ -193,6 +200,7 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
 
   const currentConfig: GeneratorConfig = {
     backupType,
+    customBackupType: customBackupType.trim() || (backupType === 'zip' ? 'zip' : backupType === 'curl' ? 'custom' : 'db'),
     storageDestination,
     apiUrl: apiUrl.trim() || defaultApiEndpoint,
     apiKey: apiKey.trim() || 'bkp_live_secret_key_12345',
@@ -434,6 +442,29 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1 flex items-center justify-between">
+                  <span>Backup Type Identifier *</span>
+                  <span className="text-[10px] text-slate-500 font-mono">
+                    Default: {backupType === 'postgres' || backupType === 'mysql' ? 'db' : backupType === 'zip' ? 'zip' : 'custom'}
+                  </span>
+                </label>
+                <div className="relative">
+                  <Tag className="h-3.5 w-3.5 text-slate-500 absolute left-3 top-3" />
+                  <input
+                    type="text"
+                    required
+                    value={customBackupType}
+                    onChange={(e) => setCustomBackupType(e.target.value)}
+                    placeholder={backupType === 'zip' ? 'zip' : backupType === 'curl' ? 'custom' : 'db'}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                  />
+                </div>
+                <span className="text-[10px] text-slate-500 mt-1 block">
+                  Identifier recorded in telemetry reports (e.g. <code>db</code>, <code>zip</code>, <code>custom</code>, or any custom name).
+                </span>
               </div>
 
               {/* API Token Input with 1-Click Generate Button */}
