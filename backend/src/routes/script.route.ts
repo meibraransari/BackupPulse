@@ -17,7 +17,7 @@ export async function scriptRoutes(fastify: FastifyInstance) {
           type: 'object',
           properties: {
             type: { type: 'string', default: 'postgres' },
-            dest: { type: 'string', enum: ['s3', 'gcs', 'azure', 'local', 'mapped', 'none'], default: 's3' },
+            dest: { type: 'string', enum: ['s3', 'gcs', 'azure', 'local', 'mapped', 'none', 'sftp'], default: 's3' },
             hubUrl: { type: 'string' },
             drill: { type: 'string', enum: ['true', 'false'], default: 'false' },
           },
@@ -148,6 +148,33 @@ case "${backupType}" in
       print_fail "'zip' is missing for directory archiving! Install via: sudo apt-get install zip"
     fi
     ;;
+  sftp|ftp)
+    if [ "${storageDest}" = "ftp" ]; then
+      if command -v curl >/dev/null 2>&1; then
+        print_pass "cURL client is installed (supports FTP upload)."
+      else
+        print_fail "'curl' is required for FTP transfer! Install via: sudo apt-get install curl"
+      fi
+    else
+      if command -v sftp >/dev/null 2>&1; then
+        print_pass "OpenSSH SFTP client is installed."
+      elif command -v curl >/dev/null 2>&1; then
+        print_pass "cURL client is installed (supports SFTP upload)."
+      else
+        print_fail "'sftp' or 'curl' is required! Install via: sudo apt-get install openssh-client curl"
+      fi
+      if command -v sshpass >/dev/null 2>&1; then
+        print_pass "'sshpass' is available for non-interactive password SFTP."
+      else
+        print_warn "'sshpass' not found. Password SFTP will use cURL or key-based authentication."
+      fi
+    fi
+    if command -v zip >/dev/null 2>&1; then
+      print_pass "Archive utility 'zip' is available."
+    else
+      print_fail "'zip' is required to package files! Install via: sudo apt-get install zip"
+    fi
+    ;;
   curl|custom|generic|*)
     if command -v curl >/dev/null 2>&1; then
       CURL_VER=$(curl --version 2>&1 | head -n 1)
@@ -193,6 +220,13 @@ case "${storageDest}" in
       print_pass "Azure storage tool (az/azcopy) is installed."
     else
       print_fail "Azure CLI 'az' or 'azcopy' is not installed! Install Azure CLI."
+    fi
+    ;;
+  sftp)
+    if command -v sftp >/dev/null 2>&1 || command -v curl >/dev/null 2>&1; then
+      print_pass "SFTP/FTP transfer utility (sftp / curl) is installed."
+    else
+      print_fail "Neither 'sftp' nor 'curl' found! Install via: sudo apt-get install openssh-client curl"
     fi
     ;;
   local|mapped)

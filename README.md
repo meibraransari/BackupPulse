@@ -37,7 +37,7 @@ A high-performance Node.js & React telemetry platform designed to monitor automa
        ├──► 🧭 Enterprise Dark Sidebar (Core Workspaces, DevOps Operations, Profile, Timezone)
        ├──► 🏠 1-Click Home Navigation (Logo & Home button reset all filters & refresh telemetry)
        ├──► ⚙️ Zero-Restart Dynamic Settings Engine (PostgreSQL 'system_settings' table, hot-reload, single-card per service, multi-line category filters)
-       ├──► 🚀 Deploy New Server Wizard (Two-line tab cards, 1-Click script generator with AWS S3, GCS, Azure, Local, NFS & single-curl destination support)
+       ├──► 🚀 Deploy New Server Wizard (Two-line tab cards, 1-Click script generator with AWS S3, GCS, Azure, SFTP/FTP, Local, NFS & single-curl destination support)
        ├──► 📅 365-Day Backup SLA Heatmap & Calendar View (Interactive GitHub-style uptime reliability matrix)
        ├──► 🧪 Automated Restoration Drills ("DrillPulse" ephemeral sandbox DR verification)
        ├──► 🏢 Multi-Tenant Project Permissions & Team RBAC (Strict workspace tagging & tenant isolation)
@@ -421,14 +421,16 @@ BackupPulse features a built-in **Deploy New Server Wizard** accessible directly
   - 1-click **Copy Script** to clipboard with instant visual feedback.
   - 1-click **Download (.sh)** button to save the customized script directly to your local workstation.
 - **Supported Workload Engines**:
-  - 🐘 **PostgreSQL**: Native `pg_dump` with custom compressed format, password isolation, and table row counts.
-  - 🐬 **MySQL / MariaDB**: Online, non-blocking `mysqldump` with `--single-transaction --quick --routines --triggers`.
-  - 🗜️ **Directory & File Zip**: Full directory packaging with configurable exclusions (`node_modules/*`, `.git/*`, `cache/*`).
-  - ⚡ **Single curl Snippet**: Minimal JSON snippet to paste into existing proprietary or legacy shell scripts. **Full storage target selection supported** (AWS S3, Google Cloud Storage, Azure Blob Storage, Local Storage, Shared Mapped Drive) to populate accurate storage keys, URLs, filenames, and retention metadata automatically.
-- **5 Supported Storage Targets**:
+  - 🐘 **PostgreSQL**: Native `pg_dump` with custom compressed format, single-quote password isolation, stdout/stderr logging, and table row counts.
+  - 🐬 **MySQL / MariaDB**: Online, non-blocking `mysqldump` with `--single-transaction --quick --routines --triggers`, single-quote password safety, and telemetry logging.
+  - 🗜️ **Directory & File Zip**: Full directory packaging with configurable exclusions (`node_modules/*`, `.git/*`, `cache/*`), size anomaly checks, and stdout/stderr capturing.
+  - 🌐 **SFTP / FTP**: Dedicated remote server synchronization via OpenSSH `sftp` batch, `scp`, `sshpass`, or `curl` (supports SFTP port 22 & FTP port 21, Password or SSH Private Key authentication, remote folder targeting, automatic compression, remote retention pruning, and complete execution telemetry).
+  - ⚡ **Single curl Snippet**: Minimal JSON snippet to paste into existing proprietary or legacy shell scripts. Supports custom backup type labels and **full storage target selection** (AWS S3, Google Cloud Storage, Azure Blob Storage, Remote SFTP/FTP, Local Storage, Shared Mapped Drive) to populate accurate storage keys, URLs, filenames, and retention metadata automatically.
+- **6 Supported Storage Targets**:
   - ☁️ **AWS S3**: Upload via AWS CLI with automatic historical retention pruning (`MAX_FILES`).
   - 🌐 **Google Cloud Storage (GCS)**: Stream to `gs://bucket/prefix` using `gcloud storage` or `gsutil`.
   - 🔷 **Azure Blob Storage**: Upload via `az` CLI or `azcopy` (supports SAS Tokens, Connection Strings, or Azure Managed Identity).
+  - 🌐 **Remote SFTP / FTP Server**: Upload database dumps and zip archives directly to remote SFTP/FTP hosts with SSH key or password authentication and automatic remote retention pruning.
   - 💻 **Local Server Path**: Store backups locally on the same server (`/var/backups/...`) with automated local disk retention cleanup.
   - 📁 **Mapped Shared Drive**: Copy directly to mounted network shares (NFS, SMB, CIFS).
 - **Interactive Crontab Schedule Builder**:

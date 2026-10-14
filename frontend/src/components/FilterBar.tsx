@@ -263,6 +263,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             <option value="ALL">All Types</option>
             <option value="db">Database (db)</option>
             <option value="zip">Directory (zip)</option>
+            <option value="sftp">SFTP / FTP</option>
             <option value="code">Code (code)</option>
             <option value="full">Full (db + code)</option>
             <option value="custom">Custom</option>

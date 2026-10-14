@@ -321,6 +321,8 @@ export const BackupTable: React.FC<BackupTableProps> = ({
       code: 'bg-cyan-950/70 text-cyan-300 border-cyan-800/50',
       zip: 'bg-cyan-950/70 text-cyan-300 border-cyan-800/50',
       full: 'bg-emerald-950/70 text-emerald-300 border-emerald-800/50',
+      sftp: 'bg-teal-950/70 text-teal-300 border-teal-800/50',
+      ftp: 'bg-sky-950/70 text-sky-300 border-sky-800/50',
       custom: 'bg-purple-950/70 text-purple-300 border-purple-800/50',
     };
     return (

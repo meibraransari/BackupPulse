@@ -25,6 +25,7 @@ import {
   HardDrive,
   ChevronDown,
   Activity,
+  Globe,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { ApiKeyItem } from '../types';
@@ -32,6 +33,7 @@ import {
   generatePostgresScript,
   generateMysqlScript,
   generateZipScript,
+  generateSftpScript,
   generateCurlSnippet,
   generateCrontabLine,
   generateInstallCommands,
@@ -58,11 +60,21 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
   const defaultApiEndpoint = `${detectedOrigin}/api/v1/backups/report`;
 
   // Workload selection
-  const [backupType, setBackupType] = useState<'postgres' | 'mysql' | 'zip' | 'curl'>('postgres');
+  const [backupType, setBackupType] = useState<'postgres' | 'mysql' | 'zip' | 'curl' | 'sftp'>('postgres');
   const [customBackupType, setCustomBackupType] = useState<string>('db');
 
-  // Storage Destination selection: s3 | gcs | azure | local | shared_drive
+  // Storage Destination selection: s3 | gcs | azure | local | shared_drive | sftp
   const [storageDestination, setStorageDestination] = useState<StorageDestination>('s3');
+
+  // SFTP / FTP Remote Server State
+  const [sftpProtocol, setSftpProtocol] = useState<'sftp' | 'ftp'>('sftp');
+  const [sftpHost, setSftpHost] = useState<string>('sftp.example.com');
+  const [sftpPort, setSftpPort] = useState<string>('22');
+  const [sftpUser, setSftpUser] = useState<string>('backupuser');
+  const [sftpPassword, setSftpPassword] = useState<string>('SftpP@ssw0rd123');
+  const [sftpAuthMethod, setSftpAuthMethod] = useState<'password' | 'key'>('password');
+  const [sftpKeyPath, setSftpKeyPath] = useState<string>('/root/.ssh/id_rsa');
+  const [sftpRemoteDir, setSftpRemoteDir] = useState<string>('/backups');
 
   // Form Configuration State
   const [apiUrl, setApiUrl] = useState<string>(defaultApiEndpoint);
@@ -128,6 +140,8 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
           ? `${projectName}_postgres_backup`
           : backupType === 'mysql'
           ? `${projectName}_mysql_backup`
+          : backupType === 'sftp'
+          ? `${projectName}_sftp_backup`
           : `${projectName}_zip_backup`;
       setS3Folder(folder);
       setGcsFolder(folder);
@@ -153,6 +167,10 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
       setBackupPath('/var/backups/zip');
       setLocalBackupDir('/var/backups/zip');
       setCustomBackupType('zip');
+    } else if (backupType === 'sftp') {
+      setBackupPath('/tmp/backup_staging');
+      setStorageDestination('sftp');
+      setCustomBackupType('sftp');
     } else if (backupType === 'curl') {
       setCustomBackupType('custom');
     }
@@ -200,7 +218,7 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
 
   const currentConfig: GeneratorConfig = {
     backupType,
-    customBackupType: customBackupType.trim() || (backupType === 'zip' ? 'zip' : backupType === 'curl' ? 'custom' : 'db'),
+    customBackupType: customBackupType.trim() || (backupType === 'zip' ? 'zip' : backupType === 'sftp' ? 'sftp' : backupType === 'curl' ? 'custom' : 'db'),
     storageDestination,
     apiUrl: apiUrl.trim() || defaultApiEndpoint,
     apiKey: apiKey.trim() || 'bkp_live_secret_key_12345',
@@ -219,6 +237,14 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
     azureFolder: azureFolder.trim() || 'backups',
     azureSasToken: azureSasToken.trim() || undefined,
     azureConnectionString: azureConnectionString.trim() || undefined,
+    sftpProtocol,
+    sftpHost: sftpHost.trim() || 'sftp.example.com',
+    sftpPort: sftpPort.trim() || (sftpProtocol === 'ftp' ? '21' : '22'),
+    sftpUser: sftpUser.trim() || 'backupuser',
+    sftpPassword,
+    sftpAuthMethod,
+    sftpKeyPath: sftpKeyPath.trim() || '/root/.ssh/id_rsa',
+    sftpRemoteDir: sftpRemoteDir.trim() || '/backups',
     backupPath: backupPath.trim() || '/var/backups',
     localBackupDir: localBackupDir.trim() || '/var/backups',
     sharedDrivePath: sharedDrivePath.trim() || '/mnt/backup_share',
@@ -245,6 +271,8 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
       ? 'gcs'
       : storageDestination === 'azure'
       ? 'azure'
+      : storageDestination === 'sftp'
+      ? 'sftp'
       : storageDestination === 'local'
       ? 'local'
       : 'shared';
@@ -258,6 +286,9 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
   } else if (backupType === 'zip') {
     generatedScript = generateZipScript(currentConfig);
     defaultScriptName = `zip_${destTag}_backup_${projectName || 'files'}.sh`;
+  } else if (backupType === 'sftp') {
+    generatedScript = generateSftpScript(currentConfig);
+    defaultScriptName = `${sftpProtocol}_backup_${projectName || 'files'}.sh`;
   } else {
     generatedScript = generateCurlSnippet(currentConfig);
     defaultScriptName = 'send_backup_telemetry.sh';
@@ -272,6 +303,8 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
       ? `--destination "gcs" --gcs-bucket "${gcsBucket}"`
       : storageDestination === 'azure'
       ? `--destination "azure" --azure-account "${azureStorageAccount}" --azure-container "${azureContainer}"`
+      : storageDestination === 'sftp'
+      ? `--destination "sftp" --sftp-host "${sftpHost}" --sftp-user "${sftpUser}"`
       : storageDestination === 'local'
       ? `--destination "local" --local-dir "${localBackupDir}"`
       : `--destination "shared_drive" --shared-dir "${sharedDrivePath}"`;
@@ -283,6 +316,8 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
       ? `bash ${targetScriptPath} --project "${projectName}" --db-name "${dbName}" ${destArg} --retention-days ${retentionDays}`
       : backupType === 'zip'
       ? `bash ${targetScriptPath} --project "${projectName}" --source-path "${sourcePath}" ${destArg} --retention-days ${retentionDays}`
+      : backupType === 'sftp'
+      ? `bash ${targetScriptPath} --project "${projectName}" --source-path "${sourcePath}" --sftp-host "${sftpHost}" --sftp-user "${sftpUser}" --retention-days ${retentionDays}`
       : `bash ${targetScriptPath}`;
 
   const generatedCrontab = generateCrontabLine(targetScriptPath, cronSchedule);
@@ -292,7 +327,7 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
       : storageDestination === 'shared_drive'
       ? sharedDrivePath
       : backupPath;
-  const installCommands = generateInstallCommands(backupType, backupPath, storageDestination, effectiveTargetDir);
+  const installCommands = generateInstallCommands(backupType, backupPath, storageDestination, effectiveTargetDir, currentConfig);
 
   // Trigger browser file download of .sh script
   const handleDownloadScript = () => {
@@ -350,7 +385,7 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
             {/* Step 1: Workload Type Selector */}
             <div>
               <label className="block text-slate-300 font-semibold mb-2">1. Select Workload / Backup Type</label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={() => setBackupType('postgres')}
@@ -407,8 +442,26 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => setBackupType('curl')}
+                  onClick={() => setBackupType('sftp')}
                   className={`p-3 rounded-2xl border flex flex-col items-start transition-all text-left ${
+                    backupType === 'sftp'
+                      ? 'bg-emerald-950/60 border-emerald-500 text-white shadow-md shadow-emerald-950/40'
+                      : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2 mb-1">
+                    <Globe className="h-4 w-4 text-teal-400" />
+                    <span className="font-bold text-xs text-white">SFTP / FTP</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 leading-tight">
+                    Direct upload to remote SFTP / FTP server
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setBackupType('curl')}
+                  className={`p-3 rounded-2xl border flex flex-col items-start transition-all text-left col-span-2 sm:col-span-1 ${
                     backupType === 'curl'
                       ? 'bg-emerald-950/60 border-emerald-500 text-white shadow-md shadow-emerald-950/40'
                       : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
@@ -448,7 +501,7 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                 <label className="block text-slate-400 mb-1 flex items-center justify-between">
                   <span>Backup Type Identifier *</span>
                   <span className="text-[10px] text-slate-500 font-mono">
-                    Default: {backupType === 'postgres' || backupType === 'mysql' ? 'db' : backupType === 'zip' ? 'zip' : 'custom'}
+                    Default: {backupType === 'postgres' || backupType === 'mysql' ? 'db' : backupType === 'zip' ? 'zip' : backupType === 'sftp' ? 'sftp' : 'custom'}
                   </span>
                 </label>
                 <div className="relative">
@@ -458,7 +511,7 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                     required
                     value={customBackupType}
                     onChange={(e) => setCustomBackupType(e.target.value)}
-                    placeholder={backupType === 'zip' ? 'zip' : backupType === 'curl' ? 'custom' : 'db'}
+                    placeholder={backupType === 'zip' ? 'zip' : backupType === 'sftp' ? 'sftp' : backupType === 'curl' ? 'custom' : 'db'}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
                   />
                 </div>
@@ -541,10 +594,154 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
             {/* Step 3: Workload Specific Connection Details (Configurable for all workload types) */}
             <div className="space-y-3 pt-2 border-t border-slate-800/80">
               <label className="block text-slate-300 font-semibold">
-                3. {backupType === 'zip' ? 'Directory Settings & Security' : backupType === 'curl' ? 'Database Credentials & Connection (Optional)' : 'Database Connection'}
+                3. {backupType === 'zip' ? 'Directory Settings & Security' : backupType === 'sftp' ? 'Remote SFTP / FTP Server & Source' : backupType === 'curl' ? 'Database Credentials & Connection (Optional)' : 'Database Connection'}
               </label>
 
-              {backupType === 'postgres' || backupType === 'mysql' || backupType === 'curl' ? (
+              {backupType === 'sftp' ? (
+                <>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-slate-400 mb-1">Protocol *</label>
+                      <select
+                        value={sftpProtocol}
+                        onChange={(e) => {
+                          const proto = e.target.value as 'sftp' | 'ftp';
+                          setSftpProtocol(proto);
+                          if (proto === 'ftp' && sftpPort === '22') setSftpPort('21');
+                          if (proto === 'sftp' && sftpPort === '21') setSftpPort('22');
+                        }}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                      >
+                        <option value="sftp">SFTP (SSH)</option>
+                        <option value="ftp">FTP</option>
+                      </select>
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-slate-400 mb-1">Remote Server Host / IP *</label>
+                      <input
+                        type="text"
+                        value={sftpHost}
+                        onChange={(e) => setSftpHost(e.target.value)}
+                        placeholder="sftp.example.com or 192.168.1.100"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-slate-400 mb-1">Port *</label>
+                      <input
+                        type="text"
+                        value={sftpPort}
+                        onChange={(e) => setSftpPort(e.target.value)}
+                        placeholder={sftpProtocol === 'ftp' ? '21' : '22'}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-slate-400 mb-1">Username *</label>
+                      <input
+                        type="text"
+                        value={sftpUser}
+                        onChange={(e) => setSftpUser(e.target.value)}
+                        placeholder="backupuser"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  {sftpProtocol === 'sftp' && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSftpAuthMethod('password')}
+                        className={`py-1.5 px-3 rounded-xl border text-xs font-semibold transition-all ${
+                          sftpAuthMethod === 'password'
+                            ? 'bg-emerald-950/60 border-emerald-500 text-white'
+                            : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        🔑 Password Auth
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSftpAuthMethod('key')}
+                        className={`py-1.5 px-3 rounded-xl border text-xs font-semibold transition-all ${
+                          sftpAuthMethod === 'key'
+                            ? 'bg-emerald-950/60 border-emerald-500 text-white'
+                            : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        🛡️ SSH Private Key
+                      </button>
+                    </div>
+                  )}
+
+                  {sftpProtocol === 'ftp' || sftpAuthMethod === 'password' ? (
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-slate-400">Password</label>
+                        <span className="text-[10px] text-emerald-400 font-mono">Single-quote safe ('...')</span>
+                      </div>
+                      <input
+                        type="text"
+                        value={sftpPassword}
+                        onChange={(e) => setSftpPassword(e.target.value)}
+                        placeholder="Remote server password"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                      />
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        Special characters ($, !, #, &, @, etc.) are safely preserved in single quotes.
+                      </p>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-slate-400 mb-1">SSH Private Key Path *</label>
+                      <input
+                        type="text"
+                        value={sftpKeyPath}
+                        onChange={(e) => setSftpKeyPath(e.target.value)}
+                        placeholder="/root/.ssh/id_rsa or /home/deploy/.ssh/id_ed25519"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                      />
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-slate-400 mb-1">Remote Target Directory *</label>
+                    <input
+                      type="text"
+                      value={sftpRemoteDir}
+                      onChange={(e) => setSftpRemoteDir(e.target.value)}
+                      placeholder="/backups or /home/backupuser/backups"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-400 mb-1">Source Directory Path to Backup *</label>
+                    <input
+                      type="text"
+                      value={sourcePath}
+                      onChange={(e) => setSourcePath(e.target.value)}
+                      placeholder="/var/www/html or /opt/app"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-400 mb-1">Exclude Patterns</label>
+                    <input
+                      type="text"
+                      value={excludePatterns}
+                      onChange={(e) => setExcludePatterns(e.target.value)}
+                      placeholder="node_modules/* .git/* *.log"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                    />
+                  </div>
+                </>
+              ) : backupType === 'postgres' || backupType === 'mysql' || backupType === 'curl' ? (
                 <>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
@@ -667,6 +864,7 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                     <option value="s3">☁️ AWS S3 Bucket (Amazon Web Services)</option>
                     <option value="gcs">🌐 Google Cloud Storage (GCP Bucket)</option>
                     <option value="azure">🔷 Azure Blob Storage (Microsoft Azure)</option>
+                    <option value="sftp">🌐 Remote SFTP / FTP Server (SSH File Transfer)</option>
                     <option value="local">💻 Local Server Path (Store on Same Server)</option>
                     <option value="shared_drive">📁 Mapped Shared Drive / NFS / CIFS Mount</option>
                   </select>
@@ -890,6 +1088,157 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                   </div>
                 )}
 
+                {/* Remote SFTP / FTP Destination Inputs */}
+                {storageDestination === 'sftp' && (
+                  <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-3 animate-in fade-in">
+                    {backupType === 'sftp' ? (
+                      <div className="p-2.5 rounded-xl bg-teal-950/40 border border-teal-800/30 text-teal-300 text-[11px] flex items-center space-x-2">
+                        <Globe className="h-4 w-4 text-teal-400 shrink-0" />
+                        <span>
+                          Remote server target is configured in Step 3 (<code>{sftpProtocol}://{sftpUser}@{sftpHost}:{sftpPort}{sftpRemoteDir}</code>).
+                        </span>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div>
+                            <label className="block text-slate-400 mb-1">Protocol *</label>
+                            <select
+                              value={sftpProtocol}
+                              onChange={(e) => {
+                                const proto = e.target.value as 'sftp' | 'ftp';
+                                setSftpProtocol(proto);
+                                if (proto === 'ftp' && sftpPort === '22') setSftpPort('21');
+                                if (proto === 'sftp' && sftpPort === '21') setSftpPort('22');
+                              }}
+                              className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                            >
+                              <option value="sftp">SFTP (SSH)</option>
+                              <option value="ftp">FTP</option>
+                            </select>
+                          </div>
+                          <div className="col-span-2">
+                            <label className="block text-slate-400 mb-1">Remote Server Host / IP *</label>
+                            <input
+                              type="text"
+                              value={sftpHost}
+                              onChange={(e) => setSftpHost(e.target.value)}
+                              placeholder="sftp.example.com or 192.168.1.100"
+                              className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2">
+                          <div>
+                            <label className="block text-slate-400 mb-1">Port *</label>
+                            <input
+                              type="text"
+                              value={sftpPort}
+                              onChange={(e) => setSftpPort(e.target.value)}
+                              placeholder={sftpProtocol === 'ftp' ? '21' : '22'}
+                              className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                            />
+                          </div>
+                          <div className="col-span-2">
+                            <label className="block text-slate-400 mb-1">Username *</label>
+                            <input
+                              type="text"
+                              value={sftpUser}
+                              onChange={(e) => setSftpUser(e.target.value)}
+                              placeholder="backupuser"
+                              className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                            />
+                          </div>
+                        </div>
+
+                        {sftpProtocol === 'sftp' && (
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setSftpAuthMethod('password')}
+                              className={`py-1.5 px-3 rounded-xl border text-xs font-semibold transition-all ${
+                                sftpAuthMethod === 'password'
+                                  ? 'bg-emerald-950/60 border-emerald-500 text-white'
+                                  : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                              }`}
+                            >
+                              🔑 Password
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSftpAuthMethod('key')}
+                              className={`py-1.5 px-3 rounded-xl border text-xs font-semibold transition-all ${
+                                sftpAuthMethod === 'key'
+                                  ? 'bg-emerald-950/60 border-emerald-500 text-white'
+                                  : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                              }`}
+                            >
+                              🛡️ SSH Key
+                            </button>
+                          </div>
+                        )}
+
+                        {sftpProtocol === 'ftp' || sftpAuthMethod === 'password' ? (
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="text-slate-400">Password</label>
+                              <span className="text-[10px] text-emerald-400 font-mono">Single-quote safe ('...')</span>
+                            </div>
+                            <input
+                              type="text"
+                              value={sftpPassword}
+                              onChange={(e) => setSftpPassword(e.target.value)}
+                              placeholder="Remote server password"
+                              className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                            />
+                          </div>
+                        ) : (
+                          <div>
+                            <label className="block text-slate-400 mb-1">SSH Private Key Path *</label>
+                            <input
+                              type="text"
+                              value={sftpKeyPath}
+                              onChange={(e) => setSftpKeyPath(e.target.value)}
+                              placeholder="/root/.ssh/id_rsa"
+                              className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                            />
+                          </div>
+                        )}
+
+                        <div>
+                          <label className="block text-slate-400 mb-1">Remote Target Directory *</label>
+                          <input
+                            type="text"
+                            value={sftpRemoteDir}
+                            onChange={(e) => setSftpRemoteDir(e.target.value)}
+                            placeholder="/backups"
+                            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                          />
+                        </div>
+                      </>
+                    )}
+
+                    <div>
+                      <label className="block text-slate-400 mb-1">Local Staging Temp Directory</label>
+                      <input
+                        type="text"
+                        value={backupPath}
+                        onChange={(e) => setBackupPath(e.target.value)}
+                        placeholder="/tmp/backup_staging"
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                      />
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-teal-950/40 border border-teal-800/30 text-teal-300 text-[11px] flex items-center space-x-2">
+                      <Globe className="h-4 w-4 text-teal-400 shrink-0" />
+                      <span>
+                        Archives are packaged locally, then transferred to <code>{sftpProtocol}://{sftpHost}:{sftpPort}{sftpRemoteDir}</code> with automatic remote retention pruning.
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 {/* Common Retention & Anomaly Controls */}
                 <div className="grid grid-cols-3 gap-2">
                   <div>
@@ -910,6 +1259,8 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                         ? 'Max Files in GCS'
                         : storageDestination === 'azure'
                         ? 'Max Blobs'
+                        : storageDestination === 'sftp'
+                        ? 'Max Remote Files'
                         : storageDestination === 'local'
                         ? 'Max Local Files'
                         : 'Max Shared Files'}
@@ -1081,6 +1432,8 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                         ? 'Google Cloud Storage'
                         : storageDestination === 'azure'
                         ? 'Azure Blob Storage'
+                        : storageDestination === 'sftp'
+                        ? 'Remote SFTP / FTP'
                         : storageDestination === 'local'
                         ? 'Local Storage'
                         : 'Shared Drive / NFS'}
@@ -1305,6 +1658,8 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                       ? `gs://${gcsBucket}`
                       : storageDestination === 'azure'
                       ? `Azure: ${azureContainer}`
+                      : storageDestination === 'sftp'
+                      ? `${sftpProtocol}://${sftpHost}:${sftpPort}${sftpRemoteDir}`
                       : storageDestination === 'local'
                       ? localBackupDir
                       : sharedDrivePath}

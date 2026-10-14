@@ -29,7 +29,7 @@ export interface BackupReport {
   serverIp?: string;
   projectName: string;
   environment: string;
-  backupType: 'db' | 'code' | 'full';
+  backupType: string;
   status: 'SUCCESS' | 'FAILED' | 'WARNING' | 'IN_PROGRESS';
   startTime: string;
   endTime: string;

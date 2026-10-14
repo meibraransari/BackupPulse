@@ -5,7 +5,7 @@
 //           Local Server Path, and Network Shared Drive (NFS / CIFS / SMB)
 // ==============================================================================
 
-export type StorageDestination = 's3' | 'gcs' | 'azure' | 'local' | 'shared_drive';
+export type StorageDestination = 's3' | 'gcs' | 'azure' | 'local' | 'shared_drive' | 'sftp';
 
 /**
  * Safely escape a string for literal embedding inside bash single quotes ('...').
@@ -17,8 +17,135 @@ export function escapeBashSingleQuote(value: string): string {
   return value.replace(/'/g, "'\\''");
 }
 
+function generateSftpConfigBashVars(cfg: GeneratorConfig): string {
+  const sftpProto = cfg.sftpProtocol || 'sftp';
+  const sftpHost = cfg.sftpHost || 'sftp.example.com';
+  const sftpPort = cfg.sftpPort || (sftpProto === 'ftp' ? '21' : '22');
+  const sftpUser = cfg.sftpUser || 'backupuser';
+  const sftpPassword = cfg.sftpPassword || '';
+  const sftpAuthMethod = cfg.sftpAuthMethod || 'password';
+  const sftpKeyPath = cfg.sftpKeyPath || '/root/.ssh/id_rsa';
+  const sftpRemoteDir = cfg.sftpRemoteDir || '/backups';
+
+  return `# --- SFTP / FTP Remote Destination Settings ---
+SFTP_PROTOCOL="\${SFTP_PROTOCOL:-${sftpProto}}"
+SFTP_HOST="\${SFTP_HOST:-${sftpHost}}"
+SFTP_PORT="\${SFTP_PORT:-${sftpPort}}"
+SFTP_USER="\${SFTP_USER:-${sftpUser}}"
+SFTP_AUTH_METHOD="\${SFTP_AUTH_METHOD:-${sftpAuthMethod}}"
+SFTP_KEY_PATH="\${SFTP_KEY_PATH:-${sftpKeyPath}}"
+if [ -n "\${SFTP_PASSWORD:-}" ]; then
+  SFTP_PASSWORD="\$SFTP_PASSWORD"
+else
+  SFTP_PASSWORD='${escapeBashSingleQuote(sftpPassword)}'
+fi
+SFTP_REMOTE_DIR="\${SFTP_REMOTE_DIR:-${sftpRemoteDir}}"`;
+}
+
+const sftpCliArgsBash = `    --sftp-protocol) SFTP_PROTOCOL="$2"; shift 2 ;;
+    --sftp-host) SFTP_HOST="$2"; shift 2 ;;
+    --sftp-port) SFTP_PORT="$2"; shift 2 ;;
+    --sftp-user) SFTP_USER="$2"; shift 2 ;;
+    --sftp-password) SFTP_PASSWORD="$2"; shift 2 ;;
+    --sftp-auth-method) SFTP_AUTH_METHOD="$2"; shift 2 ;;
+    --sftp-key) SFTP_KEY_PATH="$2"; shift 2 ;;
+    --sftp-remote-dir) SFTP_REMOTE_DIR="$2"; shift 2 ;;`;
+
+function generateSftpUploadBlock(archiveNameVar: string = 'DB_NAME'): string {
+  return `elif [ "$DESTINATION" = "sftp" ]; then
+  FINAL_BUCKET="\${SFTP_PROTOCOL}://\${SFTP_HOST}:\${SFTP_PORT}"
+  FINAL_KEY="\${SFTP_REMOTE_DIR}/\${ZIP_FILENAME}"
+  FINAL_URL="\${SFTP_PROTOCOL}://\${SFTP_USER}@\${SFTP_HOST}:\${SFTP_PORT}/\${SFTP_REMOTE_DIR#\/}/\${ZIP_FILENAME}"
+
+  log_info "🌐 [4/5] Uploading archive to remote SFTP/FTP server: \${FINAL_URL}..."
+  UPLOAD_OK=false
+  SFTP_ERR_TMP="\${TEMP_LOG_DIR}/sftp_err.tmp"
+
+  if [ "$SFTP_PROTOCOL" = "ftp" ]; then
+    FTP_URL="ftp://\${SFTP_HOST}:\${SFTP_PORT}/\${SFTP_REMOTE_DIR#\/}/\${ZIP_FILENAME}"
+    if curl --silent --show-error --ftp-create-dirs -u "\${SFTP_USER}:\${SFTP_PASSWORD}" -T "$ZIP_FILE" "$FTP_URL" >>"$LOG_STDOUT" 2>"$SFTP_ERR_TMP"; then
+      UPLOAD_OK=true
+      cat "$SFTP_ERR_TMP" >> "$LOG_STDOUT" 2>/dev/null || true
+    else
+      cat "$SFTP_ERR_TMP" >> "$LOG_STDERR" 2>/dev/null || true
+    fi
+  else
+    # SFTP (SSH File Transfer Protocol)
+    if [ "$SFTP_AUTH_METHOD" = "key" ]; then
+      if [ ! -f "$SFTP_KEY_PATH" ]; then
+        echo "❌ SSH private key not found at \$SFTP_KEY_PATH" >> "$LOG_STDERR"
+      elif command -v sftp >/dev/null 2>&1; then
+        sftp -P "$SFTP_PORT" -i "$SFTP_KEY_PATH" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes "\${SFTP_USER}@\${SFTP_HOST}" >>"$LOG_STDOUT" 2>"$SFTP_ERR_TMP" <<SFTP_CMD
+-mkdir -p "\${SFTP_REMOTE_DIR}"
+cd "\${SFTP_REMOTE_DIR}"
+put "$ZIP_FILE"
+bye
+SFTP_CMD
+        if [ $? -eq 0 ]; then
+          UPLOAD_OK=true
+          cat "$SFTP_ERR_TMP" >> "$LOG_STDOUT" 2>/dev/null || true
+        else
+          cat "$SFTP_ERR_TMP" >> "$LOG_STDERR" 2>/dev/null || true
+        fi
+      elif command -v scp >/dev/null 2>&1; then
+        if scp -P "$SFTP_PORT" -i "$SFTP_KEY_PATH" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$ZIP_FILE" "\${SFTP_USER}@\${SFTP_HOST}:\${SFTP_REMOTE_DIR}/" >>"$LOG_STDOUT" 2>"$SFTP_ERR_TMP"; then
+          UPLOAD_OK=true
+          cat "$SFTP_ERR_TMP" >> "$LOG_STDOUT" 2>/dev/null || true
+        else
+          cat "$SFTP_ERR_TMP" >> "$LOG_STDERR" 2>/dev/null || true
+        fi
+      fi
+    else
+      # Password-based SFTP
+      if command -v sshpass >/dev/null 2>&1 && command -v sftp >/dev/null 2>&1; then
+        sshpass -p "$SFTP_PASSWORD" sftp -P "$SFTP_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "\${SFTP_USER}@\${SFTP_HOST}" >>"$LOG_STDOUT" 2>"$SFTP_ERR_TMP" <<SFTP_CMD
+-mkdir -p "\${SFTP_REMOTE_DIR}"
+cd "\${SFTP_REMOTE_DIR}"
+put "$ZIP_FILE"
+bye
+SFTP_CMD
+        if [ $? -eq 0 ]; then
+          UPLOAD_OK=true
+          cat "$SFTP_ERR_TMP" >> "$LOG_STDOUT" 2>/dev/null || true
+        else
+          cat "$SFTP_ERR_TMP" >> "$LOG_STDERR" 2>/dev/null || true
+        fi
+      elif command -v curl >/dev/null 2>&1; then
+        CURL_SFTP_URL="sftp://\${SFTP_HOST}:\${SFTP_PORT}/\${SFTP_REMOTE_DIR#\/}/\${ZIP_FILENAME}"
+        if curl --silent --show-error --insecure -u "\${SFTP_USER}:\${SFTP_PASSWORD}" -T "$ZIP_FILE" "$CURL_SFTP_URL" >>"$LOG_STDOUT" 2>"$SFTP_ERR_TMP"; then
+          UPLOAD_OK=true
+          cat "$SFTP_ERR_TMP" >> "$LOG_STDOUT" 2>/dev/null || true
+        else
+          cat "$SFTP_ERR_TMP" >> "$LOG_STDERR" 2>/dev/null || true
+        fi
+      else
+        echo "❌ Neither 'sshpass' nor 'curl' with SFTP support found for password authentication!" >> "$LOG_STDERR"
+      fi
+    fi
+  fi
+  rm -f "$SFTP_ERR_TMP" 2>/dev/null || true
+
+  if [ "$UPLOAD_OK" != true ]; then
+    ERR="SFTP/FTP upload failed: $(tail -n 3 "$LOG_STDERR")"
+    echo "❌ $ERR"
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] ❌ $ERR" >> "$LOG_STDOUT"
+    send_telemetry "FAILED" 1 "$ERR" "$LATEST_SIZE" "$CHECKSUM" "$FINAL_BUCKET" "$FINAL_KEY" "$FINAL_URL"
+    exit 1
+  fi
+
+  log_info "🧹 [5/5] Managing remote retention on SFTP server (Keep max \${MAX_FILES} files, \${RETENTION_DAYS} days policy)..."
+  if [ "$SFTP_PROTOCOL" = "sftp" ]; then
+    if [ "$SFTP_AUTH_METHOD" = "key" ] && [ -f "$SFTP_KEY_PATH" ]; then
+      ssh -p "$SFTP_PORT" -i "$SFTP_KEY_PATH" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes "\${SFTP_USER}@\${SFTP_HOST}" "find \"\${SFTP_REMOTE_DIR}\" -maxdepth 1 -name \"\${${archiveNameVar}}-*.zip\" -type f -mtime +\${RETENTION_DAYS} -delete 2>/dev/null || true" 2>/dev/null || true
+    elif command -v sshpass >/dev/null 2>&1 && [ -n "$SFTP_PASSWORD" ]; then
+      sshpass -p "$SFTP_PASSWORD" ssh -p "$SFTP_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "\${SFTP_USER}@\${SFTP_HOST}" "find \"\${SFTP_REMOTE_DIR}\" -maxdepth 1 -name \"\${${archiveNameVar}}-*.zip\" -type f -mtime +\${RETENTION_DAYS} -delete 2>/dev/null || true" 2>/dev/null || true
+    fi
+  fi
+  rm -f "$ZIP_FILE"`;
+}
+
 export interface GeneratorConfig {
-  backupType: 'postgres' | 'mysql' | 'zip' | 'curl';
+  backupType: 'postgres' | 'mysql' | 'zip' | 'curl' | 'sftp';
   customBackupType?: string;
   storageDestination?: StorageDestination;
   apiUrl: string;
@@ -52,6 +179,16 @@ export interface GeneratorConfig {
   azureFolder?: string;
   azureSasToken?: string;
   azureConnectionString?: string;
+
+  // SFTP / FTP specific
+  sftpProtocol?: 'sftp' | 'ftp';
+  sftpHost?: string;
+  sftpPort?: string;
+  sftpUser?: string;
+  sftpPassword?: string;
+  sftpKeyPath?: string;
+  sftpRemoteDir?: string;
+  sftpAuthMethod?: 'password' | 'key';
 
   // Local / Shared Drive specific
   backupPath: string; // Local staging directory
@@ -109,6 +246,8 @@ export function generatePostgresScript(cfg: GeneratorConfig): string {
       ? `Azure Blob Storage (${azureAccount}/${azureContainer}/${azureFolder})`
       : dest === 'local'
       ? `Local Disk (${localBackupDir})`
+      : dest === 'sftp'
+      ? `Remote SFTP/FTP Server (${cfg.sftpProtocol || 'sftp'}://${cfg.sftpHost || 'sftp.example.com'}:${cfg.sftpPort || (cfg.sftpProtocol === 'ftp' ? '21' : '22')}${cfg.sftpRemoteDir || '/backups'})`
       : `Shared Drive (${sharedDrivePath})`;
 
   return `#!/usr/bin/env bash
@@ -146,7 +285,7 @@ DB_PORT="\${PGPORT:-\${DB_PORT:-${dbPort}}}"
 DB_NAME="\${PGDATABASE:-\${DB_NAME:-${dbName}}}"
 
 # --- Destination & Retention Policy ---
-DESTINATION="\${DESTINATION:-${dest}}"  # Options: s3, gcs, azure, local, shared_drive
+DESTINATION="\${DESTINATION:-${dest}}"  # Options: s3, gcs, azure, local, shared_drive, sftp
 S3_BUCKET="\${S3_BUCKET:-${s3Bucket}}"
 S3_FOLDER_NAME="\${S3_FOLDER_NAME:-${s3Folder}}"
 GCS_BUCKET="\${GCS_BUCKET:-${gcsBucket}}"
@@ -156,6 +295,7 @@ AZURE_CONTAINER="\${AZURE_CONTAINER:-${azureContainer}}"
 AZURE_FOLDER="\${AZURE_FOLDER:-${azureFolder}}"
 AZURE_SAS_TOKEN="\${AZURE_SAS_TOKEN:-${azureSas}}"
 AZURE_CONNECTION_STRING="\${AZURE_CONNECTION_STRING:-${azureConn}}"
+${generateSftpConfigBashVars(cfg)}
 LOCAL_BACKUP_DIR="\${LOCAL_BACKUP_DIR:-${localBackupDir}}"
 SHARED_DRIVE_PATH="\${SHARED_DRIVE_PATH:-${sharedDrivePath}}"
 MAX_FILES="\${MAX_FILES:-${maxFiles}}"
@@ -187,6 +327,7 @@ while [[ "$#" -gt 0 ]]; do
     --azure-account) AZURE_STORAGE_ACCOUNT="$2"; shift 2 ;;
     --azure-container) AZURE_CONTAINER="$2"; shift 2 ;;
     --azure-folder) AZURE_FOLDER="$2"; shift 2 ;;
+${sftpCliArgsBash}
     --local-dir) LOCAL_BACKUP_DIR="$2"; shift 2 ;;
     --shared-dir) SHARED_DRIVE_PATH="$2"; shift 2 ;;
     --retention-days) RETENTION_DAYS="$2"; shift 2 ;;
@@ -670,6 +811,7 @@ elif [ "$DESTINATION" = "shared_drive" ]; then
     done
   fi
 
+${generateSftpUploadBlock('DB_NAME')}
 else # destination == local
   FINAL_BUCKET="Local Storage"
   FINAL_KEY="$ZIP_FILE"
@@ -735,6 +877,8 @@ export function generateMysqlScript(cfg: GeneratorConfig): string {
       ? `Azure Blob Storage (${azureAccount}/${azureContainer}/${azureFolder})`
       : dest === 'local'
       ? `Local Disk (${localBackupDir})`
+      : dest === 'sftp'
+      ? `Remote SFTP/FTP Server (${cfg.sftpProtocol || 'sftp'}://${cfg.sftpHost || 'sftp.example.com'}:${cfg.sftpPort || (cfg.sftpProtocol === 'ftp' ? '21' : '22')}${cfg.sftpRemoteDir || '/backups'})`
       : `Shared Drive (${sharedDrivePath})`;
 
   return `#!/usr/bin/env bash
@@ -772,7 +916,7 @@ DB_PORT="\${MYSQL_TCP_PORT:-\${DB_PORT:-${dbPort}}}"
 DB_NAME="\${MYSQL_DATABASE:-\${DB_NAME:-${dbName}}}"
 
 # --- Destination & Retention Policy ---
-DESTINATION="\${DESTINATION:-${dest}}"  # Options: s3, gcs, azure, local, shared_drive
+DESTINATION="\${DESTINATION:-${dest}}"  # Options: s3, gcs, azure, local, shared_drive, sftp
 S3_BUCKET="\${S3_BUCKET:-${s3Bucket}}"
 S3_FOLDER_NAME="\${S3_FOLDER_NAME:-${s3Folder}}"
 GCS_BUCKET="\${GCS_BUCKET:-${gcsBucket}}"
@@ -782,6 +926,7 @@ AZURE_CONTAINER="\${AZURE_CONTAINER:-${azureContainer}}"
 AZURE_FOLDER="\${AZURE_FOLDER:-${azureFolder}}"
 AZURE_SAS_TOKEN="\${AZURE_SAS_TOKEN:-${azureSas}}"
 AZURE_CONNECTION_STRING="\${AZURE_CONNECTION_STRING:-${azureConn}}"
+${generateSftpConfigBashVars(cfg)}
 LOCAL_BACKUP_DIR="\${LOCAL_BACKUP_DIR:-${localBackupDir}}"
 SHARED_DRIVE_PATH="\${SHARED_DRIVE_PATH:-${sharedDrivePath}}"
 MAX_FILES="\${MAX_FILES:-${maxFiles}}"
@@ -813,6 +958,7 @@ while [[ "$#" -gt 0 ]]; do
     --azure-account) AZURE_STORAGE_ACCOUNT="$2"; shift 2 ;;
     --azure-container) AZURE_CONTAINER="$2"; shift 2 ;;
     --azure-folder) AZURE_FOLDER="$2"; shift 2 ;;
+${sftpCliArgsBash}
     --local-dir) LOCAL_BACKUP_DIR="$2"; shift 2 ;;
     --shared-dir) SHARED_DRIVE_PATH="$2"; shift 2 ;;
     --retention-days) RETENTION_DAYS="$2"; shift 2 ;;
@@ -1297,6 +1443,7 @@ elif [ "$DESTINATION" = "shared_drive" ]; then
     done
   fi
 
+${generateSftpUploadBlock('DB_NAME')}
 else # destination == local
   FINAL_BUCKET="Local Storage"
   FINAL_KEY="$ZIP_FILE"
@@ -1359,6 +1506,8 @@ export function generateZipScript(cfg: GeneratorConfig): string {
       ? `Azure Blob Storage (${azureAccount}/${azureContainer}/${azureFolder})`
       : dest === 'local'
       ? `Local Disk (${localBackupDir})`
+      : dest === 'sftp'
+      ? `Remote SFTP/FTP Server (${cfg.sftpProtocol || 'sftp'}://${cfg.sftpHost || 'sftp.example.com'}:${cfg.sftpPort || (cfg.sftpProtocol === 'ftp' ? '21' : '22')}${cfg.sftpRemoteDir || '/backups'})`
       : `Shared Drive (${sharedDrivePath})`;
 
   return `#!/usr/bin/env bash
@@ -1392,7 +1541,7 @@ else
 fi
 
 # --- Destination & Retention Policy ---
-DESTINATION="\${DESTINATION:-${dest}}"  # Options: s3, gcs, azure, local, shared_drive
+DESTINATION="\${DESTINATION:-${dest}}"  # Options: s3, gcs, azure, local, shared_drive, sftp
 S3_BUCKET="\${S3_BUCKET:-${s3Bucket}}"
 S3_FOLDER_NAME="\${S3_FOLDER_NAME:-${s3Folder}}"
 GCS_BUCKET="\${GCS_BUCKET:-${gcsBucket}}"
@@ -1402,6 +1551,7 @@ AZURE_CONTAINER="\${AZURE_CONTAINER:-${azureContainer}}"
 AZURE_FOLDER="\${AZURE_FOLDER:-${azureFolder}}"
 AZURE_SAS_TOKEN="\${AZURE_SAS_TOKEN:-${azureSas}}"
 AZURE_CONNECTION_STRING="\${AZURE_CONNECTION_STRING:-${azureConn}}"
+${generateSftpConfigBashVars(cfg)}
 LOCAL_BACKUP_DIR="\${LOCAL_BACKUP_DIR:-${localBackupDir}}"
 SHARED_DRIVE_PATH="\${SHARED_DRIVE_PATH:-${sharedDrivePath}}"
 MAX_FILES="\${MAX_FILES:-${maxFiles}}"
@@ -1430,6 +1580,7 @@ while [[ "$#" -gt 0 ]]; do
     --azure-account) AZURE_STORAGE_ACCOUNT="$2"; shift 2 ;;
     --azure-container) AZURE_CONTAINER="$2"; shift 2 ;;
     --azure-folder) AZURE_FOLDER="$2"; shift 2 ;;
+${sftpCliArgsBash}
     --local-dir) LOCAL_BACKUP_DIR="$2"; shift 2 ;;
     --shared-dir) SHARED_DRIVE_PATH="$2"; shift 2 ;;
     --retention-days) RETENTION_DAYS="$2"; shift 2 ;;
@@ -1871,6 +2022,7 @@ elif [ "$DESTINATION" = "shared_drive" ]; then
     done
   fi
 
+${generateSftpUploadBlock('PROJECT_NAME')}
 else # destination == local
   FINAL_BUCKET="Local Storage"
   FINAL_KEY="$ZIP_FILE"
@@ -1896,6 +2048,392 @@ send_telemetry "$STATUS" 0 "$ANOMALY_MSG" "$LATEST_SIZE" "$CHECKSUM" "$FINAL_BUC
 `;
 }
 
+export function generateSftpScript(cfg: GeneratorConfig): string {
+  const apiUrl = cfg.apiUrl || 'http://localhost:3000/api/v1/backups/report';
+  const apiKey = cfg.apiKey || 'bkp_live_secret_key_12345';
+  const project = cfg.projectName || 'my_web_app';
+  const sourcePath = cfg.sourcePath || '/var/www/html';
+  const sftpProto = cfg.sftpProtocol || 'sftp';
+  const sftpHost = cfg.sftpHost || 'sftp.example.com';
+  const sftpPort = cfg.sftpPort || (sftpProto === 'ftp' ? '21' : '22');
+  const sftpUser = cfg.sftpUser || 'backupuser';
+  const sftpPassword = cfg.sftpPassword || '';
+  const sftpAuthMethod = cfg.sftpAuthMethod || 'password';
+  const sftpKeyPath = cfg.sftpKeyPath || '/root/.ssh/id_rsa';
+  const sftpRemoteDir = cfg.sftpRemoteDir || '/backups';
+
+  const stagingPath = cfg.backupPath || '/tmp/backup_staging';
+  const retentionDays = cfg.retentionDays || 30;
+  const maxFiles = cfg.maxFiles || 30;
+  const minSizeKb = cfg.minSizeKb || 35;
+  const serverId = cfg.serverId || '$(hostname -s 2>/dev/null || echo "server-unknown")';
+  const excludes = cfg.excludePatterns || 'node_modules/* .git/* *.log cache/* tmp/*';
+
+  const targetLabel = `Remote ${sftpProto.toUpperCase()} Server (${sftpProto}://${sftpHost}:${sftpPort}${sftpRemoteDir})`;
+
+  return `#!/usr/bin/env bash
+# ==============================================================================
+# BackupPulse — SFTP / FTP Directory Backup & Telemetry Client
+# Generated automatically by BackupPulse Deploy Wizard
+# ==============================================================================
+# Project:       ${project}
+# Source Path:   ${sourcePath}
+# Destination:   ${targetLabel}
+# Retention:     ${retentionDays} days (${maxFiles} max archives)
+# ==============================================================================
+
+set -uo pipefail
+umask 133
+
+# --- Central Ingestion Hub ---
+HUB_API_URL="\${BACKUP_HUB_URL:-${apiUrl}}"
+HUB_API_KEY="\${BACKUP_API_KEY:-${apiKey}}"
+ENVIRONMENT="\${ENVIRONMENT:-${cfg.environment || 'production'}}"
+BACKUP_TYPE="\${BACKUP_TYPE:-${escapeBashSingleQuote(cfg.customBackupType || 'sftp')}}"
+
+# --- Target Configuration ---
+PROJECT_NAME="\${PROJECT_NAME:-${project}}"
+SOURCE_PATH="\${SOURCE_PATH:-${sourcePath}}"
+EXCLUDE_PATTERNS=(${excludes})
+if [ -n "\${ZIP_PASSWORD:-}" ]; then
+  ARCHIVE_PASSWORD="\$ZIP_PASSWORD"
+else
+  ARCHIVE_PASSWORD='${escapeBashSingleQuote(cfg.dbPassword || '')}'
+fi
+
+# --- SFTP / FTP Remote Destination Settings ---
+${generateSftpConfigBashVars(cfg)}
+
+# --- Retention Policy & Thresholds ---
+MAX_FILES="\${MAX_FILES:-${maxFiles}}"
+RETENTION_DAYS="\${RETENTION_DAYS:-${retentionDays}}"
+MIN_FILE_SIZE="\${MIN_FILE_SIZE:-$(( ${minSizeKb} * 1024 ))}"
+
+# --- Local Staging Path & Server Identity ---
+BACKUP_PATH="\${BACKUP_PATH:-${stagingPath}}"
+DRY_RUN=false
+SERVER_ID="\${SERVER_ID:-${serverId}}"
+HOSTNAME_FQDN="$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo 'localhost')"
+SERVER_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || echo '127.0.0.1')"
+
+# CLI argument overrides
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --project) PROJECT_NAME="$2"; shift 2 ;;
+    --type|--backup-type) BACKUP_TYPE="$2"; shift 2 ;;
+    --source-path) SOURCE_PATH="$2"; shift 2 ;;
+    --password) ARCHIVE_PASSWORD="$2"; shift 2 ;;
+${sftpCliArgsBash}
+    --retention-days) RETENTION_DAYS="$2"; shift 2 ;;
+    --max-files) MAX_FILES="$2"; shift 2 ;;
+    --api-key) HUB_API_KEY="$2"; shift 2 ;;
+    --api-url) HUB_API_URL="$2"; shift 2 ;;
+    --server-id) SERVER_ID="$2"; shift 2 ;;
+    --dry-run) DRY_RUN=true; shift ;;
+    *) echo "Unknown parameter: $1"; exit 1 ;;
+  esac
+done
+
+DATE_STR="$(date +"%d-%b-%Y_%H-%M")"
+START_TIME_ISO="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+START_SECONDS="$(date +%s)"
+ZIP_FILENAME="\${PROJECT_NAME}-\${DATE_STR}.zip"
+
+mkdir -p "$BACKUP_PATH" 2>/dev/null || true
+ZIP_FILE="\${BACKUP_PATH}/\${ZIP_FILENAME}"
+
+TEMP_LOG_DIR="/tmp/backuppulse_logs"
+mkdir -p "$TEMP_LOG_DIR" 2>/dev/null || true
+LOG_STDOUT="\${TEMP_LOG_DIR}/sftp_backup_\${DATE_STR}.stdout.log"
+LOG_STDERR="\${TEMP_LOG_DIR}/sftp_backup_\${DATE_STR}.stderr.log"
+: > "$LOG_STDOUT"
+: > "$LOG_STDERR"
+
+log_info() {
+  local msg="$1"
+  echo "$msg"
+  echo "[$(date +'%Y-%m-%d %H:%M:%S')] $msg" >> "$LOG_STDOUT"
+}
+
+log_error() {
+  local msg="$1"
+  echo "❌ $msg" >&2
+  echo "[$(date +'%Y-%m-%d %H:%M:%S')] ❌ $msg" >> "$LOG_STDERR"
+  echo "[$(date +'%Y-%m-%d %H:%M:%S')] ❌ $msg" >> "$LOG_STDOUT"
+}
+
+format_bytes() {
+  local bytes="$1"
+  if (( bytes < 1024 )); then echo "\${bytes} B"
+  elif (( bytes < 1048576 )); then echo "$(( (bytes + 1023) / 1024 )) KB"
+  elif (( bytes < 1073741824 )); then echo "$(( (bytes + 1048575) / 1048576 )) MB"
+  else echo "$(( (bytes + 1073741823) / 1073741824 )) GB"; fi
+}
+
+send_telemetry() {
+  local status="$1"
+  local exit_code="$2"
+  local error_msg="$3"
+  local size_bytes="\${4:-0}"
+  local checksum="\${5:-}"
+  local s3_b="\${6:-}"
+  local s3_k="\${7:-}"
+  local s3_u="\${8:-}"
+  local end_seconds="$(date +%s)"
+  local duration_seconds="$(( end_seconds - START_SECONDS ))"
+  local end_time_iso="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  local size_human="$(format_bytes "$size_bytes")"
+
+  local stdout_snip=""
+  local stderr_snip=""
+  if [ -f "$LOG_STDOUT" ] && [ -s "$LOG_STDOUT" ]; then
+    stdout_snip="$(tail -n 200 "$LOG_STDOUT" | head -c 32768)"
+  fi
+  if [ -f "$LOG_STDERR" ] && [ -s "$LOG_STDERR" ]; then
+    stderr_snip="$(tail -n 100 "$LOG_STDERR" | head -c 16384)"
+  fi
+
+  if [ "$DRY_RUN" = true ]; then
+    echo "[DRY-RUN] Telemetry: Status=$status, Size=$size_human, Duration=\${duration_seconds}s"
+    return 0
+  fi
+
+  local payload=""
+  if command -v jq >/dev/null 2>&1; then
+    payload=$(jq -n \\
+      --arg server_id "$SERVER_ID" \\
+      --arg hostname "$HOSTNAME_FQDN" \\
+      --arg server_ip "$SERVER_IP" \\
+      --arg project_name "$PROJECT_NAME" \\
+      --arg environment "$ENVIRONMENT" \\
+      --arg backup_type "$BACKUP_TYPE" \\
+      --arg status "$status" \\
+      --arg start_time "$START_TIME_ISO" \\
+      --arg end_time "$end_time_iso" \\
+      --argjson duration_seconds "$duration_seconds" \\
+      --argjson backup_size_bytes "$size_bytes" \\
+      --arg backup_size_human "$size_human" \\
+      --arg s3_bucket "$s3_b" \\
+      --arg s3_key "$s3_k" \\
+      --arg s3_url "$s3_u" \\
+      --arg checksum "$checksum" \\
+      --arg zip_filename "$ZIP_FILENAME" \\
+      --argjson exit_code "$exit_code" \\
+      --argjson retention_days "$RETENTION_DAYS" \\
+      --arg error_message "$error_msg" \\
+      --arg stdout_log "$stdout_snip" \\
+      --arg stderr_log "$stderr_snip" \\
+      '{
+        server_id: $server_id,
+        hostname: $hostname,
+        server_ip: $server_ip,
+        project_name: $project_name,
+        environment: $environment,
+        backup_type: $backup_type,
+        status: $status,
+        start_time: $start_time,
+        end_time: $end_time,
+        duration_seconds: $duration_seconds,
+        backup_size_bytes: $backup_size_bytes,
+        backup_size_human: $backup_size_human,
+        s3_bucket: (if $s3_bucket == "" then null else $s3_bucket end),
+        s3_key: (if $s3_key == "" then null else $s3_key end),
+        s3_url: (if $s3_url == "" then null else $s3_url end),
+        checksum: $checksum,
+        zip_filename: $zip_filename,
+        exit_code: $exit_code,
+        retention_days: $retention_days,
+        error_message: (if $error_message == "" then null else $error_message end),
+        stdout_log: (if $stdout_log == "" then null else $stdout_log end),
+        stderr_log: (if $stderr_log == "" then null else $stderr_log end)
+      }')
+  else
+    local clean_err="$(echo "$error_msg" | tr -d '\\r' | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g' | tr '\\n' ' ')"
+    local clean_stdout="$(echo "$stdout_snip" | tr -d '\\r' | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g' | awk '{printf "%s\\\\n", $0}' | sed 's/\\\\n$//')"
+    local clean_stderr="$(echo "$stderr_snip" | tr -d '\\r' | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g' | awk '{printf "%s\\\\n", $0}' | sed 's/\\\\n$//')"
+    payload=$(cat <<EOF
+{
+  "server_id": "$SERVER_ID",
+  "hostname": "$HOSTNAME_FQDN",
+  "server_ip": "$SERVER_IP",
+  "project_name": "$PROJECT_NAME",
+  "environment": "$ENVIRONMENT",
+  "backup_type": "$BACKUP_TYPE",
+  "status": "$status",
+  "start_time": "$START_TIME_ISO",
+  "end_time": "$end_time_iso",
+  "duration_seconds": $duration_seconds,
+  "backup_size_bytes": $size_bytes,
+  "backup_size_human": "$size_human",
+  "s3_bucket": $([ -n "$s3_b" ] && echo "\\"\\$s3_b\\"" || echo "null"),
+  "s3_key": $([ -n "$s3_k" ] && echo "\\"\\$s3_k\\"" || echo "null"),
+  "s3_url": $([ -n "$s3_u" ] && echo "\\"\\$s3_u\\"" || echo "null"),
+  "checksum": "$checksum",
+  "zip_filename": "$ZIP_FILENAME",
+  "exit_code": $exit_code,
+  "retention_days": $RETENTION_DAYS,
+  "error_message": $([ -n "$clean_err" ] && echo "\\"\\$clean_err\\"" || echo "null"),
+  "stdout_log": $([ -n "$clean_stdout" ] && echo "\\"\\$clean_stdout\\"" || echo "null"),
+  "stderr_log": $([ -n "$clean_stderr" ] && echo "\\"\\$clean_stderr\\"" || echo "null")
+}
+EOF
+)
+  fi
+
+  echo "📡 Dispatching real-time telemetry to BackupPulse Central API..."
+  curl -s -X POST "$HUB_API_URL" \\
+    -H "Content-Type: application/json" \\
+    -H "x-api-key: $HUB_API_KEY" \\
+    -d "$payload" || true
+}
+
+log_info "🌐 [1/4] Checking source path & staging environment..."
+if [ ! -e "$SOURCE_PATH" ]; then
+  ERR="Source path '\$SOURCE_PATH' does not exist or is not readable!"
+  log_error "$ERR"
+  send_telemetry "FAILED" 1 "$ERR" 0 ""
+  exit 1
+fi
+
+if ! command -v zip >/dev/null 2>&1; then
+  ERR="Compression utility 'zip' is not installed! Install via 'apt install zip' or 'yum install zip'"
+  log_error "$ERR"
+  send_telemetry "FAILED" 1 "$ERR" 0 ""
+  exit 1
+fi
+
+log_info "📦 [2/4] Packaging & compressing '\$SOURCE_PATH' into '\$ZIP_FILE'..."
+ZIP_CMD_ARGS=("-r" "-q")
+if [ -n "$ARCHIVE_PASSWORD" ]; then
+  ZIP_CMD_ARGS+=("-P" "$ARCHIVE_PASSWORD")
+fi
+
+PARENT_DIR="$(dirname "$SOURCE_PATH")"
+BASE_TARGET="$(basename "$SOURCE_PATH")"
+
+EXCLUDE_ARGS=()
+for pat in "\${EXCLUDE_PATTERNS[@]}"; do
+  if [ -n "$pat" ]; then
+    EXCLUDE_ARGS+=("-x" "$pat" "-x" "*/$pat")
+  fi
+done
+
+if ! (cd "$PARENT_DIR" && zip "\${ZIP_CMD_ARGS[@]}" "$ZIP_FILE" "$BASE_TARGET" "\${EXCLUDE_ARGS[@]}") >>"$LOG_STDOUT" 2>>"$LOG_STDERR"; then
+  ERR="Zip compression failed: $(tail -n 3 "$LOG_STDERR")"
+  log_error "$ERR"
+  send_telemetry "FAILED" 1 "$ERR" 0 ""
+  exit 1
+fi
+
+LATEST_SIZE=$(stat -c%s "$ZIP_FILE" 2>/dev/null || stat -f%z "$ZIP_FILE" 2>/dev/null || echo 0)
+log_info "📊 Archive Size: \${LATEST_SIZE} bytes ($(format_bytes "$LATEST_SIZE"))"
+
+STATUS="SUCCESS"
+ANOMALY_MSG=""
+if (( LATEST_SIZE < MIN_FILE_SIZE )); then
+  STATUS="WARNING"
+  ANOMALY_MSG="Anomaly detected: archive size (\${LATEST_SIZE} bytes) is below minimum expected threshold (\${MIN_FILE_SIZE} bytes)."
+  echo "⚠️  $ANOMALY_MSG"
+  echo "[$(date +'%Y-%m-%d %H:%M:%S')] ⚠️ $ANOMALY_MSG" >> "$LOG_STDOUT"
+fi
+
+CHECKSUM=$(sha256sum "$ZIP_FILE" 2>/dev/null | awk '{print $1}' || echo "N/A")
+
+FINAL_BUCKET="\${SFTP_PROTOCOL}://\${SFTP_HOST}:\${SFTP_PORT}"
+FINAL_KEY="\${SFTP_REMOTE_DIR}/\${ZIP_FILENAME}"
+FINAL_URL="\${SFTP_PROTOCOL}://\${SFTP_USER}@\${SFTP_HOST}:\${SFTP_PORT}/\${SFTP_REMOTE_DIR#\/}/\${ZIP_FILENAME}"
+
+log_info "🚀 [3/4] Uploading archive to remote \${SFTP_PROTOCOL} server: \${FINAL_URL}..."
+UPLOAD_OK=false
+SFTP_ERR_TMP="\${TEMP_LOG_DIR}/sftp_err.tmp"
+
+if [ "$SFTP_PROTOCOL" = "ftp" ]; then
+  FTP_URL="ftp://\${SFTP_HOST}:\${SFTP_PORT}/\${SFTP_REMOTE_DIR#\/}/\${ZIP_FILENAME}"
+  if curl --silent --show-error --ftp-create-dirs -u "\${SFTP_USER}:\${SFTP_PASSWORD}" -T "$ZIP_FILE" "$FTP_URL" >>"$LOG_STDOUT" 2>"$SFTP_ERR_TMP"; then
+    UPLOAD_OK=true
+    cat "$SFTP_ERR_TMP" >> "$LOG_STDOUT" 2>/dev/null || true
+  else
+    cat "$SFTP_ERR_TMP" >> "$LOG_STDERR" 2>/dev/null || true
+  fi
+else
+  # SFTP (SSH File Transfer Protocol)
+  if [ "$SFTP_AUTH_METHOD" = "key" ]; then
+    if [ ! -f "$SFTP_KEY_PATH" ]; then
+      echo "❌ SSH private key not found at \$SFTP_KEY_PATH" >> "$LOG_STDERR"
+    elif command -v sftp >/dev/null 2>&1; then
+      sftp -P "$SFTP_PORT" -i "$SFTP_KEY_PATH" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes "\${SFTP_USER}@\${SFTP_HOST}" >>"$LOG_STDOUT" 2>"$SFTP_ERR_TMP" <<SFTP_CMD
+-mkdir -p "\${SFTP_REMOTE_DIR}"
+cd "\${SFTP_REMOTE_DIR}"
+put "$ZIP_FILE"
+bye
+SFTP_CMD
+      if [ $? -eq 0 ]; then
+        UPLOAD_OK=true
+        cat "$SFTP_ERR_TMP" >> "$LOG_STDOUT" 2>/dev/null || true
+      else
+        cat "$SFTP_ERR_TMP" >> "$LOG_STDERR" 2>/dev/null || true
+      fi
+    elif command -v scp >/dev/null 2>&1; then
+      if scp -P "$SFTP_PORT" -i "$SFTP_KEY_PATH" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$ZIP_FILE" "\${SFTP_USER}@\${SFTP_HOST}:\${SFTP_REMOTE_DIR}/" >>"$LOG_STDOUT" 2>"$SFTP_ERR_TMP"; then
+        UPLOAD_OK=true
+        cat "$SFTP_ERR_TMP" >> "$LOG_STDOUT" 2>/dev/null || true
+      else
+        cat "$SFTP_ERR_TMP" >> "$LOG_STDERR" 2>/dev/null || true
+      fi
+    fi
+  else
+    # Password-based SFTP
+    if command -v sshpass >/dev/null 2>&1 && command -v sftp >/dev/null 2>&1; then
+      sshpass -p "$SFTP_PASSWORD" sftp -P "$SFTP_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "\${SFTP_USER}@\${SFTP_HOST}" >>"$LOG_STDOUT" 2>"$SFTP_ERR_TMP" <<SFTP_CMD
+-mkdir -p "\${SFTP_REMOTE_DIR}"
+cd "\${SFTP_REMOTE_DIR}"
+put "$ZIP_FILE"
+bye
+SFTP_CMD
+      if [ $? -eq 0 ]; then
+        UPLOAD_OK=true
+        cat "$SFTP_ERR_TMP" >> "$LOG_STDOUT" 2>/dev/null || true
+      else
+        cat "$SFTP_ERR_TMP" >> "$LOG_STDERR" 2>/dev/null || true
+      fi
+    elif command -v curl >/dev/null 2>&1; then
+      CURL_SFTP_URL="sftp://\${SFTP_HOST}:\${SFTP_PORT}/\${SFTP_REMOTE_DIR#\/}/\${ZIP_FILENAME}"
+      if curl --silent --show-error --insecure -u "\${SFTP_USER}:\${SFTP_PASSWORD}" -T "$ZIP_FILE" "$CURL_SFTP_URL" >>"$LOG_STDOUT" 2>"$SFTP_ERR_TMP"; then
+        UPLOAD_OK=true
+        cat "$SFTP_ERR_TMP" >> "$LOG_STDOUT" 2>/dev/null || true
+      else
+        cat "$SFTP_ERR_TMP" >> "$LOG_STDERR" 2>/dev/null || true
+      fi
+    else
+      echo "❌ Neither 'sshpass' nor 'curl' with SFTP support found for password authentication!" >> "$LOG_STDERR"
+    fi
+  fi
+fi
+rm -f "$SFTP_ERR_TMP" 2>/dev/null || true
+
+if [ "$UPLOAD_OK" != true ]; then
+  ERR="SFTP/FTP upload failed: $(tail -n 3 "$LOG_STDERR")"
+  echo "❌ $ERR"
+  echo "[$(date +'%Y-%m-%d %H:%M:%S')] ❌ $ERR" >> "$LOG_STDOUT"
+  send_telemetry "FAILED" 1 "$ERR" "$LATEST_SIZE" "$CHECKSUM" "$FINAL_BUCKET" "$FINAL_KEY" "$FINAL_URL"
+  exit 1
+fi
+
+log_info "🧹 [4/4] Managing remote retention on SFTP server (Keep max \${MAX_FILES} files, \${RETENTION_DAYS} days policy)..."
+if [ "$SFTP_PROTOCOL" = "sftp" ]; then
+  if [ "$SFTP_AUTH_METHOD" = "key" ] && [ -f "$SFTP_KEY_PATH" ]; then
+    ssh -p "$SFTP_PORT" -i "$SFTP_KEY_PATH" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes "\${SFTP_USER}@\${SFTP_HOST}" "find \"\${SFTP_REMOTE_DIR}\" -maxdepth 1 -name \"\${PROJECT_NAME}-*.zip\" -type f -mtime +\${RETENTION_DAYS} -delete 2>/dev/null || true" 2>/dev/null || true
+  elif command -v sshpass >/dev/null 2>&1 && [ -n "$SFTP_PASSWORD" ]; then
+    sshpass -p "$SFTP_PASSWORD" ssh -p "$SFTP_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "\${SFTP_USER}@\${SFTP_HOST}" "find \"\${SFTP_REMOTE_DIR}\" -maxdepth 1 -name \"\${PROJECT_NAME}-*.zip\" -type f -mtime +\${RETENTION_DAYS} -delete 2>/dev/null || true" 2>/dev/null || true
+  fi
+fi
+rm -f "$ZIP_FILE"
+
+log_info "🎉 Remote SFTP / FTP Backup Completed Successfully!"
+send_telemetry "$STATUS" 0 "$ANOMALY_MSG" "$LATEST_SIZE" "$CHECKSUM" "$FINAL_BUCKET" "$FINAL_KEY" "$FINAL_URL"
+`;
+}
+
 export function generateCurlSnippet(cfg: GeneratorConfig): string {
   const dest: StorageDestination = cfg.storageDestination || 's3';
   const apiUrl = cfg.apiUrl || 'http://localhost:3000/api/v1/backups/report';
@@ -1907,6 +2445,7 @@ export function generateCurlSnippet(cfg: GeneratorConfig): string {
   let targetBucket = cfg.s3Bucket || 'my-backup-vault';
   if (dest === 'gcs') targetBucket = `gs://${cfg.gcsBucket || 'my-gcp-vault'}`;
   else if (dest === 'azure') targetBucket = `Azure: ${cfg.azureContainer || 'backups'}`;
+  else if (dest === 'sftp') targetBucket = `${cfg.sftpProtocol || 'sftp'}://${cfg.sftpHost || 'sftp.example.com'}:${cfg.sftpPort || (cfg.sftpProtocol === 'ftp' ? '21' : '22')}${cfg.sftpRemoteDir || '/backups'}`;
   else if (dest === 'local') targetBucket = cfg.localBackupDir ? `Local: ${cfg.localBackupDir}` : 'Local Storage';
   else if (dest === 'shared_drive') targetBucket = cfg.sharedDrivePath ? `Shared: ${cfg.sharedDrivePath}` : 'Shared Drive';
 
@@ -2020,10 +2559,11 @@ ${schedule} bash ${scriptPath} >> /var/log/backuppulse_cron.log 2>&1`;
 }
 
 export function generateInstallCommands(
-  backupType: 'postgres' | 'mysql' | 'zip' | 'curl',
+  backupType: 'postgres' | 'mysql' | 'zip' | 'curl' | 'sftp',
   stagingPath: string = '/var/backups',
   storageDestination: StorageDestination = 's3',
-  targetPath?: string
+  targetPath?: string,
+  cfg?: GeneratorConfig
 ): {
   debian: string;
   rhel: string;
@@ -2044,6 +2584,27 @@ export function generateInstallCommands(
   }
 
   const primaryDir = targetPath || stagingPath;
+
+  if (storageDestination === 'sftp' || backupType === 'sftp') {
+    const sHost = cfg?.sftpHost || 'sftp.example.com';
+    const sPort = cfg?.sftpPort || (cfg?.sftpProtocol === 'ftp' ? '21' : '22');
+    const sUser = cfg?.sftpUser || 'backupuser';
+    const sProto = cfg?.sftpProtocol || 'sftp';
+    return {
+      debian: `sudo apt update && sudo apt install -y ${dbDeb}zip unzip jq curl openssh-client sshpass`,
+      rhel: `sudo yum install -y ${dbRhel}zip unzip jq curl openssh-clients sshpass`,
+      prep: `sudo mkdir -p ${primaryDir} /opt/scripts
+sudo chmod 777 ${primaryDir}
+sudo chmod +x /opt/scripts/*.sh`,
+      storageTitle: `🌐 4. Remote ${sProto.toUpperCase()} Connection Verification`,
+      storageCommand:
+        sProto === 'ftp'
+          ? `curl -v ftp://${sHost}:${sPort}/ --user "${sUser}"`
+          : `ssh -p ${sPort} ${sUser}@${sHost} "echo 'Connection OK'"\n# Or test with curl SFTP:\ncurl --insecure -v sftp://${sHost}:${sPort}/ --user "${sUser}"`,
+      storageHelp:
+        `Verify remote network reachability to '${sHost}' on port ${sPort}. Ensure the remote user has write permissions in the remote directory.`,
+    };
+  }
 
   if (storageDestination === 's3') {
     return {
