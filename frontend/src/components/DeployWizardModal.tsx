@@ -34,6 +34,10 @@ import {
   generateMysqlScript,
   generateZipScript,
   generateSftpScript,
+  generateMongoScript,
+  generateRedisScript,
+  generateDockerVolumeScript,
+  generateSqliteScript,
   generateCurlSnippet,
   generateCrontabLine,
   generateInstallCommands,
@@ -60,8 +64,33 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
   const defaultApiEndpoint = `${detectedOrigin}/api/v1/backups/report`;
 
   // Workload selection
-  const [backupType, setBackupType] = useState<'postgres' | 'mysql' | 'zip' | 'curl' | 'sftp'>('postgres');
+  const [backupType, setBackupType] = useState<
+    'postgres' | 'mysql' | 'zip' | 'curl' | 'sftp' | 'mongodb' | 'redis' | 'docker' | 'sqlite'
+  >('postgres');
   const [customBackupType, setCustomBackupType] = useState<string>('db');
+
+  // MongoDB State
+  const [mongoHost, setMongoHost] = useState<string>('127.0.0.1');
+  const [mongoPort, setMongoPort] = useState<string>('27017');
+  const [mongoUser, setMongoUser] = useState<string>('admin');
+  const [mongoPassword, setMongoPassword] = useState<string>('MongoP@ss123');
+  const [mongoDbName, setMongoDbName] = useState<string>('ecommerce_mongo');
+  const [mongoAuthDb, setMongoAuthDb] = useState<string>('admin');
+  const [mongoUri, setMongoUri] = useState<string>('');
+  const [mongoMode, setMongoMode] = useState<'standard' | 'uri'>('standard');
+
+  // Redis State
+  const [redisHost, setRedisHost] = useState<string>('127.0.0.1');
+  const [redisPort, setRedisPort] = useState<string>('6379');
+  const [redisPassword, setRedisPassword] = useState<string>('');
+  const [redisMethod, setRedisMethod] = useState<'rdb' | 'bgsave'>('rdb');
+
+  // Docker Volume State
+  const [dockerVolume, setDockerVolume] = useState<string>('app_data_volume');
+  const [dockerContainer, setDockerContainer] = useState<string>('');
+
+  // SQLite State
+  const [sqlitePath, setSqlitePath] = useState<string>('/var/www/app/database.sqlite');
 
   // Storage Destination selection: s3 | gcs | azure | local | shared_drive | sftp
   const [storageDestination, setStorageDestination] = useState<StorageDestination>('s3');
@@ -140,6 +169,14 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
           ? `${projectName}_postgres_backup`
           : backupType === 'mysql'
           ? `${projectName}_mysql_backup`
+          : backupType === 'mongodb'
+          ? `${projectName}_mongo_backup`
+          : backupType === 'redis'
+          ? `${projectName}_redis_backup`
+          : backupType === 'docker'
+          ? `${projectName}_docker_backup`
+          : backupType === 'sqlite'
+          ? `${projectName}_sqlite_backup`
           : backupType === 'sftp'
           ? `${projectName}_sftp_backup`
           : `${projectName}_zip_backup`;
@@ -162,6 +199,22 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
       setDbPort('3306');
       setBackupPath('/var/backups/mysql');
       setLocalBackupDir('/var/backups/mysql');
+      setCustomBackupType('db');
+    } else if (backupType === 'mongodb') {
+      setBackupPath('/var/backups/mongodb');
+      setLocalBackupDir('/var/backups/mongodb');
+      setCustomBackupType('db');
+    } else if (backupType === 'redis') {
+      setBackupPath('/var/backups/redis');
+      setLocalBackupDir('/var/backups/redis');
+      setCustomBackupType('db');
+    } else if (backupType === 'docker') {
+      setBackupPath('/var/backups/docker');
+      setLocalBackupDir('/var/backups/docker');
+      setCustomBackupType('zip');
+    } else if (backupType === 'sqlite') {
+      setBackupPath('/var/backups/sqlite');
+      setLocalBackupDir('/var/backups/sqlite');
       setCustomBackupType('db');
     } else if (backupType === 'zip') {
       setBackupPath('/var/backups/zip');
@@ -218,7 +271,15 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
 
   const currentConfig: GeneratorConfig = {
     backupType,
-    customBackupType: customBackupType.trim() || (backupType === 'zip' ? 'zip' : backupType === 'sftp' ? 'sftp' : backupType === 'curl' ? 'custom' : 'db'),
+    customBackupType:
+      customBackupType.trim() ||
+      (backupType === 'zip' || backupType === 'docker'
+        ? 'zip'
+        : backupType === 'sftp'
+        ? 'sftp'
+        : backupType === 'curl'
+        ? 'custom'
+        : 'db'),
     storageDestination,
     apiUrl: apiUrl.trim() || defaultApiEndpoint,
     apiKey: apiKey.trim() || 'bkp_live_secret_key_12345',
@@ -257,6 +318,20 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
     excludePatterns,
     cronSchedule,
     enableRestoreDrill,
+    mongoUri,
+    mongoHost,
+    mongoPort,
+    mongoUser,
+    mongoPassword,
+    mongoDbName,
+    mongoAuthDb,
+    redisHost,
+    redisPort,
+    redisPassword,
+    redisMethod,
+    dockerVolume,
+    dockerContainer,
+    sqlitePath,
   };
 
   const preflightCmd = `curl -fsSL "${detectedOrigin}/api/v1/scripts/preflight?type=${backupType === 'zip' ? 'directory' : backupType}&dest=${storageDestination === 'shared_drive' ? 'mapped' : storageDestination}&drill=${enableRestoreDrill}" | bash`;
@@ -283,6 +358,18 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
   } else if (backupType === 'mysql') {
     generatedScript = generateMysqlScript(currentConfig);
     defaultScriptName = `mysql_${destTag}_backup_${projectName || 'db'}.sh`;
+  } else if (backupType === 'mongodb') {
+    generatedScript = generateMongoScript(currentConfig);
+    defaultScriptName = `mongo_${destTag}_backup_${projectName || 'db'}.sh`;
+  } else if (backupType === 'redis') {
+    generatedScript = generateRedisScript(currentConfig);
+    defaultScriptName = `redis_${destTag}_backup_${projectName || 'db'}.sh`;
+  } else if (backupType === 'docker') {
+    generatedScript = generateDockerVolumeScript(currentConfig);
+    defaultScriptName = `docker_volume_${destTag}_backup_${projectName || 'volume'}.sh`;
+  } else if (backupType === 'sqlite') {
+    generatedScript = generateSqliteScript(currentConfig);
+    defaultScriptName = `sqlite_${destTag}_backup_${projectName || 'db'}.sh`;
   } else if (backupType === 'zip') {
     generatedScript = generateZipScript(currentConfig);
     defaultScriptName = `zip_${destTag}_backup_${projectName || 'files'}.sh`;
@@ -314,6 +401,14 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
       ? `bash ${targetScriptPath} --project "${projectName}" --db-name "${dbName}" ${destArg} --retention-days ${retentionDays}`
       : backupType === 'mysql'
       ? `bash ${targetScriptPath} --project "${projectName}" --db-name "${dbName}" ${destArg} --retention-days ${retentionDays}`
+      : backupType === 'mongodb'
+      ? `bash ${targetScriptPath} --project "${projectName}" --db-name "${mongoDbName}" ${destArg} --retention-days ${retentionDays}`
+      : backupType === 'redis'
+      ? `bash ${targetScriptPath} --project "${projectName}" --redis-host "${redisHost}" --redis-port "${redisPort}" ${destArg} --retention-days ${retentionDays}`
+      : backupType === 'docker'
+      ? `bash ${targetScriptPath} --project "${projectName}" --volume "${dockerVolume}" ${destArg} --retention-days ${retentionDays}`
+      : backupType === 'sqlite'
+      ? `bash ${targetScriptPath} --project "${projectName}" --sqlite-path "${sqlitePath}" ${destArg} --retention-days ${retentionDays}`
       : backupType === 'zip'
       ? `bash ${targetScriptPath} --project "${projectName}" --source-path "${sourcePath}" ${destArg} --retention-days ${retentionDays}`
       : backupType === 'sftp'
@@ -424,6 +519,78 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
 
                 <button
                   type="button"
+                  onClick={() => setBackupType('mongodb')}
+                  className={`p-3 rounded-2xl border flex flex-col items-start transition-all text-left ${
+                    backupType === 'mongodb'
+                      ? 'bg-emerald-950/60 border-emerald-500 text-white shadow-md shadow-emerald-950/40'
+                      : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2 mb-1">
+                    <span className="text-base">🍃</span>
+                    <span className="font-bold text-xs text-white">MongoDB</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 leading-tight">
+                    mongodump --archive --gzip + Telemetry
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setBackupType('redis')}
+                  className={`p-3 rounded-2xl border flex flex-col items-start transition-all text-left ${
+                    backupType === 'redis'
+                      ? 'bg-emerald-950/60 border-emerald-500 text-white shadow-md shadow-emerald-950/40'
+                      : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2 mb-1">
+                    <span className="text-base">🔴</span>
+                    <span className="font-bold text-xs text-white">Redis</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 leading-tight">
+                    redis-cli --rdb snapshot + Telemetry
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setBackupType('docker')}
+                  className={`p-3 rounded-2xl border flex flex-col items-start transition-all text-left ${
+                    backupType === 'docker'
+                      ? 'bg-emerald-950/60 border-emerald-500 text-white shadow-md shadow-emerald-950/40'
+                      : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2 mb-1">
+                    <span className="text-base">🐳</span>
+                    <span className="font-bold text-xs text-white">Docker Volumes</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 leading-tight">
+                    Volume export tar -czf + Telemetry
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setBackupType('sqlite')}
+                  className={`p-3 rounded-2xl border flex flex-col items-start transition-all text-left ${
+                    backupType === 'sqlite'
+                      ? 'bg-emerald-950/60 border-emerald-500 text-white shadow-md shadow-emerald-950/40'
+                      : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2 mb-1">
+                    <span className="text-base">🪶</span>
+                    <span className="font-bold text-xs text-white">SQLite</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 leading-tight">
+                    sqlite3 online .backup + Telemetry
+                  </span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => setBackupType('zip')}
                   className={`p-3 rounded-2xl border flex flex-col items-start transition-all text-left ${
                     backupType === 'zip'
@@ -461,7 +628,7 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setBackupType('curl')}
-                  className={`p-3 rounded-2xl border flex flex-col items-start transition-all text-left col-span-2 sm:col-span-1 ${
+                  className={`p-3 rounded-2xl border flex flex-col items-start transition-all text-left ${
                     backupType === 'curl'
                       ? 'bg-emerald-950/60 border-emerald-500 text-white shadow-md shadow-emerald-950/40'
                       : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
@@ -501,7 +668,7 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                 <label className="block text-slate-400 mb-1 flex items-center justify-between">
                   <span>Backup Type Identifier *</span>
                   <span className="text-[10px] text-slate-500 font-mono">
-                    Default: {backupType === 'postgres' || backupType === 'mysql' ? 'db' : backupType === 'zip' ? 'zip' : backupType === 'sftp' ? 'sftp' : 'custom'}
+                    Default: {backupType === 'postgres' || backupType === 'mysql' || backupType === 'mongodb' || backupType === 'redis' || backupType === 'sqlite' ? 'db' : backupType === 'zip' || backupType === 'docker' ? 'zip' : backupType === 'sftp' ? 'sftp' : 'custom'}
                   </span>
                 </label>
                 <div className="relative">
@@ -511,7 +678,7 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                     required
                     value={customBackupType}
                     onChange={(e) => setCustomBackupType(e.target.value)}
-                    placeholder={backupType === 'zip' ? 'zip' : backupType === 'sftp' ? 'sftp' : backupType === 'curl' ? 'custom' : 'db'}
+                    placeholder={backupType === 'zip' || backupType === 'docker' ? 'zip' : backupType === 'sftp' ? 'sftp' : backupType === 'curl' ? 'custom' : 'db'}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
                   />
                 </div>
@@ -594,7 +761,21 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
             {/* Step 3: Workload Specific Connection Details (Configurable for all workload types) */}
             <div className="space-y-3 pt-2 border-t border-slate-800/80">
               <label className="block text-slate-300 font-semibold">
-                3. {backupType === 'zip' ? 'Directory Settings & Security' : backupType === 'sftp' ? 'Remote SFTP / FTP Server & Source' : backupType === 'curl' ? 'Database Credentials & Connection (Optional)' : 'Database Connection'}
+                3. {backupType === 'zip'
+                  ? 'Directory Settings & Security'
+                  : backupType === 'sftp'
+                  ? 'Remote SFTP / FTP Server & Source'
+                  : backupType === 'mongodb'
+                  ? 'MongoDB Connection & Authentication'
+                  : backupType === 'redis'
+                  ? 'Redis Server & Snapshot Settings'
+                  : backupType === 'docker'
+                  ? 'Docker Volume Target & Staging'
+                  : backupType === 'sqlite'
+                  ? 'SQLite Database File Path'
+                  : backupType === 'curl'
+                  ? 'Database Credentials & Connection (Optional)'
+                  : 'Database Connection'}
               </label>
 
               {backupType === 'sftp' ? (
@@ -739,6 +920,263 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                       placeholder="node_modules/* .git/* *.log"
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
                     />
+                  </div>
+                </>
+              ) : backupType === 'mongodb' ? (
+                <>
+                  <div className="flex items-center space-x-2 mb-2">
+                    <button
+                      type="button"
+                      onClick={() => setMongoMode('standard')}
+                      className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all ${
+                        mongoMode === 'standard'
+                          ? 'bg-emerald-950/60 border-emerald-500 text-white'
+                          : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Standard (Host/Port)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMongoMode('uri')}
+                      className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all ${
+                        mongoMode === 'uri'
+                          ? 'bg-emerald-950/60 border-emerald-500 text-white'
+                          : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Connection URI
+                    </button>
+                  </div>
+
+                  {mongoMode === 'standard' ? (
+                    <>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="col-span-2">
+                          <label className="block text-slate-400 mb-1">Host *</label>
+                          <input
+                            type="text"
+                            value={mongoHost}
+                            onChange={(e) => setMongoHost(e.target.value)}
+                            placeholder="127.0.0.1"
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-slate-400 mb-1">Port *</label>
+                          <input
+                            type="text"
+                            value={mongoPort}
+                            onChange={(e) => setMongoPort(e.target.value)}
+                            placeholder="27017"
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-slate-400 mb-1">Database Name</label>
+                          <input
+                            type="text"
+                            value={mongoDbName}
+                            onChange={(e) => setMongoDbName(e.target.value)}
+                            placeholder="Leave empty for all DBs"
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-slate-400 mb-1">Auth Database</label>
+                          <input
+                            type="text"
+                            value={mongoAuthDb}
+                            onChange={(e) => setMongoAuthDb(e.target.value)}
+                            placeholder="admin"
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-400 mb-1">Username (Optional)</label>
+                        <input
+                          type="text"
+                          value={mongoUser}
+                          onChange={(e) => setMongoUser(e.target.value)}
+                          placeholder="admin"
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-slate-400">Password (Optional)</label>
+                          <span className="text-[10px] text-emerald-400 font-mono">Single-quote safe ('...')</span>
+                        </div>
+                        <input
+                          type="text"
+                          value={mongoPassword}
+                          onChange={(e) => setMongoPassword(e.target.value)}
+                          placeholder="Secret password (special characters $, !, #, &, @ preserved)"
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                        />
+                        <p className="text-[10px] text-slate-500 mt-1">
+                          Special characters ($, !, #, &, @, etc.) are safely preserved in single quotes to prevent bash expansion.
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-slate-400">MongoDB Connection URI *</label>
+                        <span className="text-[10px] text-emerald-400 font-mono">Single-quote safe ('...')</span>
+                      </div>
+                      <input
+                        type="text"
+                        value={mongoUri}
+                        onChange={(e) => setMongoUri(e.target.value)}
+                        placeholder="mongodb://username:password@127.0.0.1:27017/dbname?authSource=admin"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                      />
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        Full connection string URI or MongoDB Atlas SRV URI (<code className="text-slate-400">mongodb+srv://...</code>).
+                      </p>
+                    </div>
+                  )}
+                </>
+              ) : backupType === 'redis' ? (
+                <>
+                  <div>
+                    <label className="block text-slate-400 mb-1.5 font-medium">Snapshot Method *</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setRedisMethod('rdb')}
+                        className={`p-2.5 rounded-xl border text-left transition-all ${
+                          redisMethod === 'rdb'
+                            ? 'bg-emerald-950/60 border-emerald-500 text-white'
+                            : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        <div className="font-semibold text-xs text-white">⚡ Direct RDB Stream</div>
+                        <div className="text-[10px] text-slate-400 mt-0.5"><code>redis-cli --rdb</code> (Non-blocking direct network stream)</div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRedisMethod('bgsave')}
+                        className={`p-2.5 rounded-xl border text-left transition-all ${
+                          redisMethod === 'bgsave'
+                            ? 'bg-emerald-950/60 border-emerald-500 text-white'
+                            : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        <div className="font-semibold text-xs text-white">💾 Background Save</div>
+                        <div className="text-[10px] text-slate-400 mt-0.5"><code>BGSAVE</code> (Triggers save & copies dump.rdb)</div>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="col-span-2">
+                      <label className="block text-slate-400 mb-1">Redis Host *</label>
+                      <input
+                        type="text"
+                        value={redisHost}
+                        onChange={(e) => setRedisHost(e.target.value)}
+                        placeholder="127.0.0.1"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-400 mb-1">Port *</label>
+                      <input
+                        type="text"
+                        value={redisPort}
+                        onChange={(e) => setRedisPort(e.target.value)}
+                        placeholder="6379"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-slate-400">Redis Password / AUTH (Optional)</label>
+                      <span className="text-[10px] text-emerald-400 font-mono">Single-quote safe ('...')</span>
+                    </div>
+                    <input
+                      type="text"
+                      value={redisPassword}
+                      onChange={(e) => setRedisPassword(e.target.value)}
+                      placeholder="AUTH password if enabled"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Passwords with special characters are safely enclosed in single quotes.
+                    </p>
+                  </div>
+                </>
+              ) : backupType === 'docker' ? (
+                <>
+                  <div>
+                    <label className="block text-slate-400 mb-1">Docker Volume Name *</label>
+                    <input
+                      type="text"
+                      value={dockerVolume}
+                      onChange={(e) => setDockerVolume(e.target.value)}
+                      placeholder="app_data_volume or production_db_data"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Exported using an ephemeral read-only <code>alpine</code> container to avoid interrupting running services.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-400 mb-1">Associated Container Name (Optional)</label>
+                    <input
+                      type="text"
+                      value={dockerContainer}
+                      onChange={(e) => setDockerContainer(e.target.value)}
+                      placeholder="e.g. web_app_1 or postgres_db"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Optional container reference recorded in backup telemetry metadata.
+                    </p>
+                  </div>
+                </>
+              ) : backupType === 'sqlite' ? (
+                <>
+                  <div>
+                    <label className="block text-slate-400 mb-1">SQLite Database File Path *</label>
+                    <input
+                      type="text"
+                      value={sqlitePath}
+                      onChange={(e) => setSqlitePath(e.target.value)}
+                      placeholder="/var/www/app/database.sqlite or /data/production.db"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Uses SQLite's online non-blocking <code>.backup</code> command to snapshot without locking active read/write operations.
+                    </p>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-slate-400">Archive / Encryption Password (Optional)</label>
+                      <span className="text-[10px] text-emerald-400 font-mono">Single-quote safe ('...')</span>
+                    </div>
+                    <input
+                      type="text"
+                      value={dbPassword}
+                      onChange={(e) => setDbPassword(e.target.value)}
+                      placeholder="Optional encryption password"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Special characters ($, !, #, &, @, etc.) are safely preserved in single quotes.
+                    </p>
                   </div>
                 </>
               ) : backupType === 'postgres' || backupType === 'mysql' || backupType === 'curl' ? (
@@ -1039,6 +1477,14 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                             ? '/var/backups/postgres'
                             : backupType === 'mysql'
                             ? '/var/backups/mysql'
+                            : backupType === 'mongodb'
+                            ? '/var/backups/mongodb'
+                            : backupType === 'redis'
+                            ? '/var/backups/redis'
+                            : backupType === 'docker'
+                            ? '/var/backups/docker'
+                            : backupType === 'sqlite'
+                            ? '/var/backups/sqlite'
                             : '/var/backups/zip'
                         }
                         className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs"
@@ -1568,7 +2014,7 @@ export const DeployWizardModal: React.FC<DeployWizardModalProps> = ({
                       </li>
                       <li className="flex items-center space-x-2">
                         <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-                        <span>Target engine client: <code className="text-slate-200">{backupType === 'postgres' ? 'pg_dump & psql' : backupType === 'mysql' ? 'mysqldump & mysqladmin' : 'zip'}</code></span>
+                        <span>Target engine client: <code className="text-slate-200">{backupType === 'postgres' ? 'pg_dump & psql' : backupType === 'mysql' ? 'mysqldump & mysqladmin' : backupType === 'mongodb' ? 'mongodump & mongosh' : backupType === 'redis' ? 'redis-cli' : backupType === 'docker' ? 'docker CLI & daemon' : backupType === 'sqlite' ? 'sqlite3' : backupType === 'sftp' ? 'lftp / scp / sftp' : 'zip'}</code></span>
                       </li>
                       <li className="flex items-center space-x-2">
                         <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />

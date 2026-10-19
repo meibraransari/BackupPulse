@@ -323,6 +323,11 @@ export const BackupTable: React.FC<BackupTableProps> = ({
       full: 'bg-emerald-950/70 text-emerald-300 border-emerald-800/50',
       sftp: 'bg-teal-950/70 text-teal-300 border-teal-800/50',
       ftp: 'bg-sky-950/70 text-sky-300 border-sky-800/50',
+      mongodb: 'bg-emerald-950/70 text-emerald-300 border-emerald-800/50',
+      mongo: 'bg-emerald-950/70 text-emerald-300 border-emerald-800/50',
+      redis: 'bg-rose-950/70 text-rose-300 border-rose-800/50',
+      docker: 'bg-blue-950/70 text-blue-300 border-blue-800/50',
+      sqlite: 'bg-amber-950/70 text-amber-300 border-amber-800/50',
       custom: 'bg-purple-950/70 text-purple-300 border-purple-800/50',
     };
     return (

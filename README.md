@@ -423,6 +423,10 @@ BackupPulse features a built-in **Deploy New Server Wizard** accessible directly
 - **Supported Workload Engines**:
   - 🐘 **PostgreSQL**: Native `pg_dump` with custom compressed format, single-quote password isolation, stdout/stderr logging, and table row counts.
   - 🐬 **MySQL / MariaDB**: Online, non-blocking `mysqldump` with `--single-transaction --quick --routines --triggers`, single-quote password safety, and telemetry logging.
+  - 🍃 **MongoDB**: Fast `mongodump --archive --gzip` with authentication (or URI string), single-quote password isolation, archive size validation, and execution telemetry.
+  - 🔴 **Redis**: `redis-cli --rdb` snapshot (direct non-blocking network stream) or `BGSAVE` trigger, password protection, and automated upload & retention.
+  - 🐳 **Docker Volumes**: Ephemeral containerized export via `docker run --rm -v ... alpine tar -czf` for safe, read-only volume snapshots of containerized workloads.
+  - 🪶 **SQLite**: Online non-blocking snapshot using SQLite native online backup API (`sqlite3 db ".backup 'backup.sqlite'"`), safe against active writes and concurrent locks.
   - 🗜️ **Directory & File Zip**: Full directory packaging with configurable exclusions (`node_modules/*`, `.git/*`, `cache/*`), size anomaly checks, and stdout/stderr capturing.
   - 🌐 **SFTP / FTP**: Dedicated remote server synchronization via OpenSSH `sftp` batch, `scp`, `sshpass`, or `curl` (supports SFTP port 22 & FTP port 21, Password or SSH Private Key authentication, remote folder targeting, automatic compression, remote retention pruning, and complete execution telemetry).
   - ⚡ **Single curl Snippet**: Minimal JSON snippet to paste into existing proprietary or legacy shell scripts. Supports custom backup type labels and **full storage target selection** (AWS S3, Google Cloud Storage, Azure Blob Storage, Remote SFTP/FTP, Local Storage, Shared Mapped Drive) to populate accurate storage keys, URLs, filenames, and retention metadata automatically.

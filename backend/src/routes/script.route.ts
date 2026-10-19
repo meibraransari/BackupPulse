@@ -175,6 +175,48 @@ case "${backupType}" in
       print_fail "'zip' is required to package files! Install via: sudo apt-get install zip"
     fi
     ;;
+  mongodb|mongo)
+    if command -v mongodump >/dev/null 2>&1; then
+      MONGO_VER=$(mongodump --version 2>&1 | head -n 1)
+      print_pass "MongoDB dump tool 'mongodump' found: \$MONGO_VER"
+    else
+      print_fail "'mongodump' is missing! Install via: sudo apt-get install mongodb-database-tools"
+    fi
+    if command -v mongosh >/dev/null 2>&1 || command -v mongo >/dev/null 2>&1; then
+      print_pass "MongoDB client shell is installed."
+    else
+      print_warn "MongoDB client shell not found (optional)."
+    fi
+    ;;
+  redis)
+    if command -v redis-cli >/dev/null 2>&1; then
+      REDIS_VER=$(redis-cli --version 2>&1 | head -n 1)
+      print_pass "Redis CLI 'redis-cli' found: \$REDIS_VER"
+    else
+      print_fail "'redis-cli' is missing! Install via: sudo apt-get install redis-tools"
+    fi
+    ;;
+  docker|docker_volume)
+    if command -v docker >/dev/null 2>&1; then
+      DOCKER_VER=$(docker --version 2>&1 | head -n 1)
+      print_pass "Docker CLI found: \$DOCKER_VER"
+      if docker info >/dev/null 2>&1; then
+        print_pass "Docker daemon connection active and accessible."
+      else
+        print_fail "Docker daemon is not running or current user lacks docker group permissions!"
+      fi
+    else
+      print_fail "Docker CLI is missing! Install via: sudo apt-get install docker.io"
+    fi
+    ;;
+  sqlite|sqlite3)
+    if command -v sqlite3 >/dev/null 2>&1; then
+      SQLITE_VER=$(sqlite3 --version 2>&1 | head -n 1)
+      print_pass "SQLite utility 'sqlite3' found: \$SQLITE_VER"
+    else
+      print_fail "'sqlite3' is missing! Install via: sudo apt-get install sqlite3"
+    fi
+    ;;
   curl|custom|generic|*)
     if command -v curl >/dev/null 2>&1; then
       CURL_VER=$(curl --version 2>&1 | head -n 1)
