@@ -117,5 +117,12 @@ export const config = {
     process.env.ENABLE_SWAGGER !== undefined
       ? process.env.ENABLE_SWAGGER === 'true'
       : (process.env.NODE_ENV === 'production' ? false : true),
+
+  // Backup Size Anomaly Detection Configuration
+  ANOMALY_DETECTION_ENABLED: process.env.ANOMALY_DETECTION_ENABLED !== 'false',
+  ANOMALY_DROP_THRESHOLD_PERCENT: parseInt(process.env.ANOMALY_DROP_THRESHOLD_PERCENT || '40', 10),
+  ANOMALY_MIN_HISTORICAL_RUNS: parseInt(process.env.ANOMALY_MIN_HISTORICAL_RUNS || '2', 10),
+  ANOMALY_EXCLUDED_HOSTS: process.env.ANOMALY_EXCLUDED_HOSTS || '',
+  ANOMALY_EXCLUDED_PROJECTS: process.env.ANOMALY_EXCLUDED_PROJECTS || '',
 };
 

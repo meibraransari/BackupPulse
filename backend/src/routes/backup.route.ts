@@ -7,6 +7,57 @@ import { recordBackupMetrics } from '../services/metrics.service';
 import { dispatchInstantFailureAlert } from '../services/alert-dispatcher.service';
 import { buildProjectWhereClause, getProjectScope } from '../utils/rbac';
 
+function matchesWildcardPattern(value: string, pattern: string): boolean {
+  const v = value.trim().toLowerCase();
+  const p = pattern.trim().toLowerCase();
+  if (!v || !p) return false;
+  if (p === v || p === '*') return true;
+  if (!p.includes('*') && !p.includes('?')) return p === v;
+  const escaped = p.replace(/[-[\]{}()+.,\\^$|#\s]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
+  const regex = new RegExp(`^${escaped}$`, 'i');
+  return regex.test(v);
+}
+
+function isFleetOrHostExcludedFromAnomaly(
+  identifiers: { serverId?: string; hostname?: string; serverIp?: string; projectName?: string },
+  excludedHostsSetting: string,
+  excludedProjectsSetting: string
+): { excluded: boolean; matchedPattern?: string } {
+  if (excludedHostsSetting && excludedHostsSetting.trim()) {
+    const hostPatterns = excludedHostsSetting
+      .split(/[,\n]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    const candidates = [identifiers.serverId, identifiers.hostname, identifiers.serverIp].filter(Boolean) as string[];
+
+    for (const pattern of hostPatterns) {
+      for (const candidate of candidates) {
+        if (matchesWildcardPattern(candidate, pattern)) {
+          return { excluded: true, matchedPattern: pattern };
+        }
+      }
+    }
+  }
+
+  if (excludedProjectsSetting && excludedProjectsSetting.trim()) {
+    const projectPatterns = excludedProjectsSetting
+      .split(/[,\n]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (identifiers.projectName) {
+      for (const pattern of projectPatterns) {
+        if (matchesWildcardPattern(identifiers.projectName, pattern)) {
+          return { excluded: true, matchedPattern: pattern };
+        }
+      }
+    }
+  }
+
+  return { excluded: false };
+}
+
 export async function backupRoutes(fastify: FastifyInstance) {
   // Ingestion API from Shell Script (Rate limited to 120 per minute to prevent accidental spam)
   fastify.post(
@@ -161,43 +212,106 @@ export async function backupRoutes(fastify: FastifyInstance) {
 
       let isAnomaly = false;
       let anomalyReason: string | null = null;
+      let anomalyDetails: any = null;
+      let anomalySkipped = false;
+      let anomalySkipReason: string | null = null;
       let reportStatus = body.status.toUpperCase();
 
-      // Anomaly Check 1: Zero-byte or near-empty archive on supposedly successful backup
-      if (reportStatus === 'SUCCESS' && backupSizeBytes <= BigInt(512)) {
-        isAnomaly = true;
-        anomalyReason = `Zero-byte or near-empty archive detected (${formatBytes(backupSizeBytes)}). Potential truncation or missing database dump.`;
-        reportStatus = 'WARNING';
-      } else if (reportStatus === 'SUCCESS' && backupSizeBytes > BigInt(0)) {
-        // Anomaly Check 2: Significant size plummet compared to recent successful runs
-        try {
-          const recentReports = await prisma.backupReport.findMany({
-            where: {
-              projectName: body.project_name,
-              backupType: body.backup_type,
-              status: 'SUCCESS',
-              backupSizeBytes: { gt: BigInt(1024 * 1024) }, // At least 1MB to avoid skewing
-            },
-            orderBy: { createdAt: 'desc' },
-            take: 5,
-            select: { backupSizeBytes: true },
-          });
+      // Check if Size Anomaly Detection is enabled and if host/fleet is excluded
+      if (!config.ANOMALY_DETECTION_ENABLED) {
+        anomalySkipped = true;
+        anomalySkipReason = 'Size anomaly detection is globally disabled';
+      } else {
+        const exclusion = isFleetOrHostExcludedFromAnomaly(
+          {
+            serverId: body.server_id,
+            hostname: body.hostname,
+            serverIp: body.server_ip,
+            projectName: body.project_name,
+          },
+          config.ANOMALY_EXCLUDED_HOSTS,
+          config.ANOMALY_EXCLUDED_PROJECTS
+        );
 
-          if (recentReports.length >= 2) {
-            const sumBytes = recentReports.reduce((acc, r) => acc + Number(r.backupSizeBytes), 0);
-            const avgBytes = sumBytes / recentReports.length;
-            const currentSize = Number(backupSizeBytes);
+        if (exclusion.excluded) {
+          anomalySkipped = true;
+          anomalySkipReason = `Server fleet or host excluded via rule '${exclusion.matchedPattern}'`;
+          console.log(`[ANOMALY] Bypassed size anomaly check for ${body.server_id} (${body.hostname}) - matched exclusion rule: '${exclusion.matchedPattern}'`);
+        } else {
+          // Check if server is unmonitored in ServerConfig
+          try {
+            const srvCfg = await prisma.serverConfig.findUnique({
+              where: { serverId: body.server_id },
+              select: { isMonitored: true, muteReason: true },
+            });
+            if (srvCfg && srvCfg.isMonitored === false) {
+              anomalySkipped = true;
+              anomalySkipReason = `Server is marked unmonitored (${srvCfg.muteReason || 'Muted in ServerConfig'})`;
+            }
+          } catch (_) {}
+        }
 
-            // If current backup is less than 30% of average (>70% drop)
-            if (avgBytes > 5 * 1024 * 1024 && currentSize < avgBytes * 0.3) {
-              const dropPercent = Math.round(((avgBytes - currentSize) / avgBytes) * 100);
-              isAnomaly = true;
-              anomalyReason = `Significant backup size drop detected: ${formatBytes(backupSizeBytes)} is ${dropPercent}% smaller than historical average (${formatBytes(avgBytes)}). Possible data loss or partial dump.`;
-              reportStatus = 'WARNING';
+        if (!anomalySkipped) {
+          // Anomaly Check 1: Zero-byte or near-empty archive on supposedly successful backup
+          if (reportStatus === 'SUCCESS' && backupSizeBytes <= BigInt(512)) {
+            isAnomaly = true;
+            anomalyReason = `Zero-byte or near-empty archive detected (${formatBytes(backupSizeBytes)}). Potential truncation or missing database dump.`;
+            reportStatus = 'WARNING';
+            anomalyDetails = {
+              detected: true,
+              type: 'ZERO_OR_NEAR_EMPTY',
+              current_size_bytes: Number(backupSizeBytes),
+              threshold_bytes: 512,
+            };
+          } else if (reportStatus === 'SUCCESS' && backupSizeBytes > BigInt(0)) {
+            // Anomaly Check 2: 7-day rolling average comparison
+            try {
+              const thresholdPercent = config.ANOMALY_DROP_THRESHOLD_PERCENT || 40;
+              const minRuns = config.ANOMALY_MIN_HISTORICAL_RUNS || 2;
+              const sevenDaysAgo = new Date(startTime.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+              const recentReports = await prisma.backupReport.findMany({
+                where: {
+                  projectName: body.project_name,
+                  backupType: body.backup_type,
+                  status: 'SUCCESS',
+                  createdAt: { gte: sevenDaysAgo, lte: startTime },
+                  backupSizeBytes: { gt: BigInt(1024 * 1024) }, // At least 1MB to avoid skewing
+                },
+                orderBy: { createdAt: 'desc' },
+                take: 14,
+                select: { backupSizeBytes: true, createdAt: true },
+              });
+
+              if (recentReports.length >= minRuns) {
+                const sumBytes = recentReports.reduce((acc, r) => acc + Number(r.backupSizeBytes), 0);
+                const avgBytes = Math.round(sumBytes / recentReports.length);
+                const currentSize = Number(backupSizeBytes);
+
+                // If current backup dropped by more than thresholdPercent compared to 7-day average
+                const maxAllowedSize = avgBytes * (1 - thresholdPercent / 100);
+
+                if (avgBytes > 5 * 1024 * 1024 && currentSize < maxAllowedSize) {
+                  const dropPercent = Math.round(((avgBytes - currentSize) / avgBytes) * 100);
+                  isAnomaly = true;
+                  anomalyReason = `Size Anomaly: -${dropPercent}% compared to 7-day average (${formatBytes(avgBytes)} → ${formatBytes(backupSizeBytes)}). Possible data loss or partial dump.`;
+                  reportStatus = 'WARNING';
+                  anomalyDetails = {
+                    detected: true,
+                    type: 'DROP_BELOW_AVERAGE',
+                    drop_percent: dropPercent,
+                    current_size_bytes: currentSize,
+                    historical_avg_bytes: avgBytes,
+                    historical_runs_count: recentReports.length,
+                    threshold_percent: thresholdPercent,
+                    window_days: 7,
+                  };
+                }
+              }
+            } catch (err: any) {
+              console.warn('[ANOMALY] Error calculating size average:', err.message);
             }
           }
-        } catch (err: any) {
-          console.warn('[ANOMALY] Error calculating size average:', err.message);
         }
       }
 
@@ -213,7 +327,8 @@ export async function backupRoutes(fastify: FastifyInstance) {
         ...(body.metadata || {}),
         ...(retentionDays !== null ? { retention_days: retentionDays } : {}),
         ...(expiresAt ? { expires_at: expiresAt.toISOString() } : {}),
-        ...(isAnomaly ? { anomaly: { detected: true, reason: anomalyReason } } : {}),
+        ...(isAnomaly ? { anomaly: anomalyDetails || { detected: true, reason: anomalyReason } } : {}),
+        ...(anomalySkipped ? { anomaly_monitoring: { excluded: true, reason: anomalySkipReason } } : {}),
       };
 
       const report = await prisma.backupReport.create({

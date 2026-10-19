@@ -24,6 +24,8 @@ import {
   Cloud,
   Key,
   BookOpen,
+  TrendingDown,
+  AlertTriangle,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { SystemSettingItem, SystemSettingsCategory } from '../types';
@@ -88,7 +90,25 @@ const SETTING_CARDS: SettingCardDefinition[] = [
     settingKeys: ['REPORT_CRON', 'INSTANT_ALERT_ON_FAILURE'],
   },
 
-  // 3. Google Chat (Single Cohesive Card)
+  // 3. Backup Size Anomaly Detection & Fleet Exclusion
+  {
+    id: 'anomaly',
+    category: 'anomaly',
+    title: 'Backup Size Anomaly Detection & Fleet Exclusion',
+    subtitle: 'Automatically flag and alert when backup archive size unexpectedly plummets compared to 7-day average (potential table truncation or data loss). Exclude specific servers or test fleets.',
+    icon: TrendingDown,
+    iconColor: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
+    badge: 'Data Protection',
+    settingKeys: [
+      'ANOMALY_DETECTION_ENABLED',
+      'ANOMALY_DROP_THRESHOLD_PERCENT',
+      'ANOMALY_MIN_HISTORICAL_RUNS',
+      'ANOMALY_EXCLUDED_HOSTS',
+      'ANOMALY_EXCLUDED_PROJECTS',
+    ],
+  },
+
+  // 4. Google Chat (Single Cohesive Card)
   {
     id: 'google_chat',
     category: 'google_chat',

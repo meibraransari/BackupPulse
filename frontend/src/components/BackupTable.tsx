@@ -341,6 +341,23 @@ export const BackupTable: React.FC<BackupTableProps> = ({
     );
   };
 
+  const getAnomalyBadgeText = (report: BackupReport) => {
+    if (report.metadata?.anomaly?.drop_percent) {
+      return `-${report.metadata.anomaly.drop_percent}% (7d)`;
+    }
+    const match = report.anomalyReason?.match(/-(\d+)%/);
+    if (match) {
+      return `-${match[1]}% (7d)`;
+    }
+    if (
+      report.anomalyReason?.toLowerCase().includes('zero-byte') ||
+      (report.backupSizeBytes !== undefined && Number(report.backupSizeBytes) <= 512)
+    ) {
+      return '0 B Truncated';
+    }
+    return 'Size Anomaly';
+  };
+
   const formatDuration = (seconds: number) => {
     if (seconds < 60) return `${seconds}s`;
     const m = Math.floor(seconds / 60);
@@ -545,13 +562,16 @@ export const BackupTable: React.FC<BackupTableProps> = ({
                       {/* Size */}
                       <td className="py-3.5 px-3.5 font-mono text-xs overflow-hidden truncate">
                         <div className="flex items-center space-x-1.5 truncate">
-                          <span>{report.backupSizeHuman || '0 B'}</span>
+                          <span className={report.isAnomaly ? 'text-amber-300 font-semibold' : ''}>
+                            {report.backupSizeHuman || '0 B'}
+                          </span>
                           {report.isAnomaly && (
                             <span
-                              className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-950 text-amber-300 border border-amber-600/50 cursor-help shrink-0"
-                              title={report.anomalyReason || 'Anomaly: Backup size dropped sharply or is zero-byte'}
+                              className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-950/80 text-amber-300 border border-amber-600/60 cursor-help shrink-0 flex items-center space-x-1"
+                              title={report.anomalyReason || 'Anomaly: Backup size dropped sharply compared to 7-day average'}
                             >
-                              ⚠️ Drop
+                              <span>⚠️</span>
+                              <span>{getAnomalyBadgeText(report)}</span>
                             </span>
                           )}
                         </div>

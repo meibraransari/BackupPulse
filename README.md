@@ -606,13 +606,17 @@ Managing backups across hundreds of servers is effortless with the built-in **Fl
 
 ---
 
-## 📉 Backup Size Anomaly Detection (Zero-Byte & Truncation Guard)
+## 📉 Backup Size Anomaly Detection & Fleet Exclusion (Data Loss Warning)
 
-Silent backup failures (e.g. database dump tool exiting cleanly with 0 bytes due to a bad argument, or disk exhaustion truncating an archive by 90%) are notoriously difficult to catch:
+Silent backup failures (e.g. database dump tool exiting cleanly with 0 bytes due to a bad argument, table truncation, or disk exhaustion truncating an archive by 50%) are notoriously difficult to catch:
 - **Zero-Byte & Empty Archive Guard**: If a backup reports `SUCCESS` but has an archive size `<= 512 bytes`, BackupPulse automatically flags it as an **Anomaly**, overrides the status to `WARNING`, and attaches an explanatory reason.
-- **Historical Size Drop Analysis**: Compares incoming backup size against recent successful runs (>5MB threshold). If the size drops by **>70%** (i.e. `< 30%` of historical average), it is immediately flagged with `isAnomaly = true` and detailed drop metrics.
-- **Visual Badges & Multi-Channel Alerts**: Size anomalies display distinct amber badges (`⚠️ Drop` / `⚠️ Anomaly`) across the Telemetry Table, Drawer Inspector, Daily Google Chat Cards, and SMTP HTML emails.
-- **Dedicated Filter**: Quick-toggle button in the filter bar to isolate all size anomalies in seconds.
+- **7-Day Rolling Baseline Drop Analysis**: Compares incoming backup archive size against the rolling 7-day average of successful runs. If the size drops by more than the configured threshold (default `40%`, customizable in System Settings), BackupPulse immediately flags `isAnomaly = true` with exact comparative metrics (e.g. `⚠️ Size Anomaly: -45% compared to 7-day average (5.2 GB → 2.8 GB)`).
+- **Server Fleet Exclusion Options**:
+  - Exclude specific servers, test environments, or entire server fleets from anomaly monitoring using comma-separated server IDs, hostnames, IPs, or wildcard patterns (e.g. `staging-*`, `test-vm`, `192.168.1.*`, `dev-*`) in **System Settings**.
+  - Exclude specific projects using project name patterns (e.g. `temp-*`, `scratch-*`).
+  - Muted or unmonitored hosts (`ServerConfig.isMonitored === false`) are also automatically bypassed.
+- **Visual Badges & Multi-Channel Alerts**: Size anomalies display distinct amber badges (e.g. `⚠️ -45% (7d)`) across the Telemetry Table, Drawer Inspector, Daily Google Chat Cards, Slack, Discord, Telegram, and SMTP HTML emails.
+- **Dedicated Filter**: Quick-toggle button (`⚠️ Anomalies`) in the filter bar to isolate all size anomalies in 1 click.
 
 ---
 

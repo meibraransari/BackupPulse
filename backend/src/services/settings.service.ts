@@ -5,7 +5,7 @@ import { rescheduleCronJobs } from './cron.service';
 
 export interface SettingDefinition {
   key: string;
-  category: 'general' | 'alerts' | 'google_chat' | 'slack' | 'discord' | 'telegram' | 'email' | 'retention';
+  category: 'general' | 'alerts' | 'anomaly' | 'google_chat' | 'slack' | 'discord' | 'telegram' | 'email' | 'retention';
   label: string;
   description: string;
   isEncrypted: boolean;
@@ -83,7 +83,54 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     getDefaultValue: () => String(config.INSTANT_ALERT_ON_FAILURE),
   },
 
-  // 3. Google Chat
+  // 3. Backup Size Anomaly Detection & Fleet Exclusion
+  {
+    key: 'ANOMALY_DETECTION_ENABLED',
+    category: 'anomaly',
+    label: 'Enable Size Anomaly Detection',
+    description: 'Detect sudden unexpected drops in backup archive size compared to 7-day average (potential table truncation or data loss)',
+    isEncrypted: false,
+    type: 'boolean',
+    getDefaultValue: () => String(config.ANOMALY_DETECTION_ENABLED),
+  },
+  {
+    key: 'ANOMALY_DROP_THRESHOLD_PERCENT',
+    category: 'anomaly',
+    label: 'Drop Alert Threshold (%)',
+    description: 'Percentage drop compared to 7-day average that triggers an anomaly warning (e.g. 40)',
+    isEncrypted: false,
+    type: 'number',
+    getDefaultValue: () => String(config.ANOMALY_DROP_THRESHOLD_PERCENT || 40),
+  },
+  {
+    key: 'ANOMALY_MIN_HISTORICAL_RUNS',
+    category: 'anomaly',
+    label: 'Minimum Historical Runs Required',
+    description: 'Minimum number of successful backups in the last 7 days required before calculating rolling baseline (default 2)',
+    isEncrypted: false,
+    type: 'number',
+    getDefaultValue: () => String(config.ANOMALY_MIN_HISTORICAL_RUNS || 2),
+  },
+  {
+    key: 'ANOMALY_EXCLUDED_HOSTS',
+    category: 'anomaly',
+    label: 'Excluded Server Fleet / Hostnames',
+    description: 'Comma-separated server IDs, hostnames, IPs, or wildcard patterns (e.g. "staging-*, test-vm, 192.168.1.*, dev-server") to exclude from anomaly monitoring',
+    isEncrypted: false,
+    type: 'string',
+    getDefaultValue: () => config.ANOMALY_EXCLUDED_HOSTS || '',
+  },
+  {
+    key: 'ANOMALY_EXCLUDED_PROJECTS',
+    category: 'anomaly',
+    label: 'Excluded Projects',
+    description: 'Comma-separated project names or wildcard patterns (e.g. "temp-*, scratch-db") to exclude from anomaly monitoring',
+    isEncrypted: false,
+    type: 'string',
+    getDefaultValue: () => config.ANOMALY_EXCLUDED_PROJECTS || '',
+  },
+
+  // 4. Google Chat
   {
     key: 'ENABLE_GOOGLE_CHAT',
     category: 'google_chat',
@@ -351,6 +398,22 @@ export function syncConfigFromSettings(settingsMap: Map<string, string>): void {
     config.INSTANT_ALERT_ON_FAILURE = settingsMap.get('INSTANT_ALERT_ON_FAILURE') === 'true';
   }
 
+  if (settingsMap.has('ANOMALY_DETECTION_ENABLED')) {
+    config.ANOMALY_DETECTION_ENABLED = settingsMap.get('ANOMALY_DETECTION_ENABLED') === 'true';
+  }
+  if (settingsMap.has('ANOMALY_DROP_THRESHOLD_PERCENT')) {
+    config.ANOMALY_DROP_THRESHOLD_PERCENT = parseInt(settingsMap.get('ANOMALY_DROP_THRESHOLD_PERCENT') || '40', 10);
+  }
+  if (settingsMap.has('ANOMALY_MIN_HISTORICAL_RUNS')) {
+    config.ANOMALY_MIN_HISTORICAL_RUNS = parseInt(settingsMap.get('ANOMALY_MIN_HISTORICAL_RUNS') || '2', 10);
+  }
+  if (settingsMap.has('ANOMALY_EXCLUDED_HOSTS')) {
+    config.ANOMALY_EXCLUDED_HOSTS = settingsMap.get('ANOMALY_EXCLUDED_HOSTS') || '';
+  }
+  if (settingsMap.has('ANOMALY_EXCLUDED_PROJECTS')) {
+    config.ANOMALY_EXCLUDED_PROJECTS = settingsMap.get('ANOMALY_EXCLUDED_PROJECTS') || '';
+  }
+
   if (settingsMap.has('ENABLE_GOOGLE_CHAT')) {
     config.ENABLE_GOOGLE_CHAT = settingsMap.get('ENABLE_GOOGLE_CHAT') === 'true';
   }
@@ -545,6 +608,7 @@ export async function getAllSettings(): Promise<{
   const categories = [
     { id: 'general', name: 'General & Hub' },
     { id: 'alerts', name: 'Alerts & Cron Schedules' },
+    { id: 'anomaly', name: 'Anomaly & Fleet Exclusion' },
     { id: 'google_chat', name: 'Google Chat' },
     { id: 'slack', name: 'Slack' },
     { id: 'discord', name: 'Discord' },

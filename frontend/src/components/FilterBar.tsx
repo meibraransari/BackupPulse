@@ -159,7 +159,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             title="Filter records flagged with size drops or zero-byte anomalies"
           >
             <AlertTriangle className={`h-3.5 w-3.5 ${filters.isAnomaly ? 'text-amber-400' : 'text-slate-400'}`} />
-            <span>Anomalies</span>
+            <span>⚠️ Anomalies</span>
           </button>
 
           {/* Export CSV */}
