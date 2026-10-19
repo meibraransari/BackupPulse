@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import crypto from 'crypto';
 import { prisma } from '../db/prisma';
+import { recordAuditLog, getRequestMetadata } from '../services/audit.service';
 
 export async function apiKeyRoutes(fastify: FastifyInstance) {
   // 1. List all provisioned API Keys (Admin only)
@@ -104,6 +105,27 @@ export async function apiKeyRoutes(fastify: FastifyInstance) {
         },
       });
 
+      // Record Governance Audit Log
+      const reqMeta = getRequestMetadata(request);
+      await recordAuditLog({
+        userId: user.id,
+        username: user.username,
+        userRole: user.role,
+        ipAddress: reqMeta.ipAddress,
+        userAgent: reqMeta.userAgent,
+        action: 'API_KEY_CREATED',
+        category: 'SECURITY',
+        targetResource: `Key: "${name}" (${keyPrefix})`,
+        details: {
+          keyId: keyRecord.id,
+          name,
+          serverId: serverId?.trim() || null,
+          projectName: projectName?.trim() || null,
+          expiresInDays: expiresInDays || null,
+          keyPrefix,
+        },
+      });
+
       return reply.status(201).send({
         success: true,
         message: 'API Key generated successfully. Please copy the token now, as it will never be displayed again.',
@@ -156,6 +178,26 @@ export async function apiKeyRoutes(fastify: FastifyInstance) {
           keyPrefix: true,
           isActive: true,
           revokedAt: true,
+        },
+      });
+
+      // Record Governance Audit Log
+      const reqMeta = getRequestMetadata(request);
+      await recordAuditLog({
+        userId: user.id,
+        username: user.username,
+        userRole: user.role,
+        ipAddress: reqMeta.ipAddress,
+        userAgent: reqMeta.userAgent,
+        action: 'API_KEY_REVOKED',
+        category: 'SECURITY',
+        targetResource: `Key: "${existing.name}" (${existing.keyPrefix})`,
+        details: {
+          keyId: id,
+          keyName: existing.name,
+          keyPrefix: existing.keyPrefix,
+          projectName: existing.projectName,
+          serverId: existing.serverId,
         },
       });
 

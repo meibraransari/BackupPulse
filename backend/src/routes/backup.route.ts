@@ -6,6 +6,7 @@ import { formatBytes } from '../services/gchat.service';
 import { recordBackupMetrics } from '../services/metrics.service';
 import { dispatchInstantFailureAlert } from '../services/alert-dispatcher.service';
 import { buildProjectWhereClause, getProjectScope } from '../utils/rbac';
+import { recordAuditLog, getRequestMetadata } from '../services/audit.service';
 
 function matchesWildcardPattern(value: string, pattern: string): boolean {
   const v = value.trim().toLowerCase();
@@ -699,6 +700,28 @@ export async function backupRoutes(fastify: FastifyInstance) {
           status: status.toUpperCase(),
           metadata: updatedMeta,
           ...(status.toUpperCase() === 'SUCCESS' ? { exitCode: 0 } : {}),
+        },
+      });
+
+      // Record Governance Audit Log
+      const reqMeta = getRequestMetadata(request);
+      await recordAuditLog({
+        userId: authUser?.id,
+        username: authUser?.username || 'admin',
+        userRole: authUser?.role,
+        ipAddress: reqMeta.ipAddress,
+        userAgent: reqMeta.userAgent,
+        action: 'INCIDENT_RESOLVED',
+        category: 'INCIDENT',
+        targetResource: `Report: [${existing.projectName}] on ${existing.serverId} (${existing.backupType})`,
+        details: {
+          backupReportId: id,
+          projectName: existing.projectName,
+          serverId: existing.serverId,
+          backupType: existing.backupType,
+          previousStatus: existing.status,
+          newStatus: status.toUpperCase(),
+          resolutionNote: resolutionNote || 'Manually marked as SUCCESS by administrator',
         },
       });
 

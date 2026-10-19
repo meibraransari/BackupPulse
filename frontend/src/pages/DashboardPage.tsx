@@ -16,6 +16,7 @@ import { DeployWizardModal } from '../components/DeployWizardModal';
 import { SlaHeatmap } from '../components/SlaHeatmap';
 import { DrillPulseView } from '../components/DrillPulseView';
 import { SettingsView } from '../components/SettingsView';
+import { AuditLogsView } from '../components/AuditLogsView';
 import { api } from '../services/api';
 import { BackupFilters, BackupReport, DashboardStats, ProjectBreakdown, TrendItem, User } from '../types';
 import { Home, RefreshCw, CheckCircle2, Server, Table, Users, Sparkles, Sliders, ShieldCheck } from 'lucide-react';
@@ -66,7 +67,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
   const [actionToast, setActionToast] = useState<string | null>(null);
 
   // View toggle & Modal states
-  const [activeTab, setActiveTab] = useState<'telemetry' | 'drills' | 'fleet' | 'users' | 'settings'>('telemetry');
+  const [activeTab, setActiveTab] = useState<'telemetry' | 'drills' | 'fleet' | 'users' | 'settings' | 'audit'>('telemetry');
   const [showNotificationLogs, setShowNotificationLogs] = useState<boolean>(false);
   const [showHousekeeping, setShowHousekeeping] = useState<boolean>(false);
   const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
@@ -445,7 +446,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
         ) : activeTab === 'users' ? (
           /* Multi-User Directory & Login Tracker View */
           <UserManagementView currentUser={currentUser} />
-        ) : (
+        ) : activeTab === 'settings' ? (
           /* Dynamic System Settings & Zero-Restart Configuration View */
           <SettingsView
             onSettingsSaved={() => {
@@ -453,6 +454,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
               loadBackups();
             }}
           />
+        ) : (
+          /* Administrative Governance & Change Audit Log View */
+          <AuditLogsView />
         )}
       </main>
 

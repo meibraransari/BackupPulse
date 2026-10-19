@@ -49,6 +49,7 @@ A high-performance Node.js & React telemetry platform designed to monitor automa
        ├──► 🖥️ Server Fleet Inventory Matrix (100+ Servers Health, Storage, Staleness)
        ├──► ⏱️ Dead Man’s Snitch Engine (Silent Server Detection >26h & Host Mute Controls)
        ├──► 📉 Backup Size Anomaly Detection (Zero-Byte & Truncation Guard Badges)
+       ├──► 📜 Administrative Governance & Change Audit Log (SOC 2 / ISO 27001 tamper-evident trail, CSV export)
        ├──► 👥 Multi-User Directory (Admin, Operator, Viewer roles & Profile Management)
        ├──► 🔒 Live User Login Tracker (IP, User-Agent, Success/Failure Audits)
        ├──► 📊 Notification Delivery Audit UI (Multi-Channel History + Payload Inspector)
@@ -857,6 +858,27 @@ chmod +x scripts/load_dummy_data.sh
 - **`[3] Single Report Test`**: An interactive wizard to fire a custom test backup report (SUCCESS or FAILED) for any project/server in 1 second.
 - **`[4] 100-Server Fleet Simulation`**: Rapid batch ingestion of 100 server backup events in parallel to test high-throughput performance.
 - **`[5] Change API Target`**: Point the script to any local or remote BackupPulse endpoint.
+
+---
+
+## 📜 Administrative Governance & Change Audit Log (SOC 2 / ISO 27001 Ready)
+
+Enterprise engineering management and security compliance auditors (SOC 2 Type II, ISO 27001, HIPAA) require a tamper-evident audit trail of all administrative and privileged actions across the infrastructure.
+
+BackupPulse includes a dedicated **Audit & Governance Workspace** backed by the `admin_audit_logs` PostgreSQL table:
+
+### What Is Automatically Audited:
+1. **🔑 API Key Lifecycles**: Records who created or revoked master or scoped ingestion tokens, along with assigned project/server scopes and expiration windows.
+2. **⚙️ Dynamic System Configuration**: Records who altered live settings (notification webhook URLs, email SMTP credentials, alert channels, retention periods, or SLA thresholds) with the exact modified keys.
+3. **🛡️ Incident Resolutions**: When a failed backup incident is manually acknowledged and marked as "Resolved", the system records the operator username, target incident ID, and the required justification note entered by the engineer.
+4. **👥 User Lifecycle & Access Control**: Tracks user creation, role modifications (`admin`, `operator`, `viewer`), project permission scoping, and account deletions.
+
+### Key Governance Features:
+- **🔒 Automatic Secret Sanitization**: High-entropy credentials, passwords, tokens, and authorization headers are automatically replaced with `••••••••` before persisting to ensure zero leakage.
+- **📊 4 KPI Executive Metrics**: Total governance events recorded, events in last 24h/30d, key lifecycle count, and incident resolution count.
+- **🔍 Granular Category & Action Filtering**: Filter by category (`SECURITY`, `SETTINGS`, `INCIDENT`, `USER_MANAGEMENT`, `SYSTEM`), action code, operator username, date range presets (All Time, Last 24h, Last 7d, Last 30d), and full-text search.
+- **📥 1-Click CSV Export**: Stream audit records directly into RFC-compliant CSV files formatted for compliance auditors and external reviews.
+- **🛡️ Strict RBAC Enforcement**: Only users with the `admin` role can access audit logs and export endpoints.
 
 ---
 

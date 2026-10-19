@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { prisma } from '../db/prisma';
 import { hashPassword } from '../services/auth.service';
+import { recordAuditLog, getRequestMetadata } from '../services/audit.service';
 
 export async function userRoutes(fastify: FastifyInstance) {
   // 1. List all users (Admin only)
@@ -133,6 +134,27 @@ export async function userRoutes(fastify: FastifyInstance) {
       });
 
       console.log(`[USERS] Admin "${authUser.username}" created user "${newUser.username}" (${newUser.role})`);
+
+      // Record Governance Audit Log
+      const reqMeta = getRequestMetadata(request);
+      await recordAuditLog({
+        userId: authUser.id,
+        username: authUser.username,
+        userRole: authUser.role,
+        ipAddress: reqMeta.ipAddress,
+        userAgent: reqMeta.userAgent,
+        action: 'USER_CREATED',
+        category: 'USER_MANAGEMENT',
+        targetResource: `User: "${newUser.username}" (${newUser.role})`,
+        details: {
+          createdUserId: newUser.id,
+          username: newUser.username,
+          email: newUser.email,
+          role: newUser.role,
+          assignedProjects: newUser.assignedProjects,
+        },
+      });
+
       return reply.status(201).send({ success: true, user: newUser });
     }
   );
@@ -220,6 +242,28 @@ export async function userRoutes(fastify: FastifyInstance) {
       });
 
       console.log(`[USERS] Admin "${authUser.username}" updated user "${updated.username}"`);
+
+      // Record Governance Audit Log
+      const reqMeta = getRequestMetadata(request);
+      await recordAuditLog({
+        userId: authUser.id,
+        username: authUser.username,
+        userRole: authUser.role,
+        ipAddress: reqMeta.ipAddress,
+        userAgent: reqMeta.userAgent,
+        action: 'USER_UPDATED',
+        category: 'USER_MANAGEMENT',
+        targetResource: `User: "${updated.username}"`,
+        details: {
+          targetUserId: updated.id,
+          username: updated.username,
+          updatedFields: Object.keys(updateData).filter((k) => k !== 'passwordHash'),
+          passwordReset: Boolean(body.newPassword),
+          role: updated.role,
+          isActive: updated.isActive,
+        },
+      });
+
       return reply.send({ success: true, user: updated });
     }
   );
@@ -261,6 +305,25 @@ export async function userRoutes(fastify: FastifyInstance) {
 
       await prisma.user.delete({ where: { id } });
       console.log(`[USERS] Admin "${authUser.username}" deleted user "${user.username}"`);
+
+      // Record Governance Audit Log
+      const reqMeta = getRequestMetadata(request);
+      await recordAuditLog({
+        userId: authUser.id,
+        username: authUser.username,
+        userRole: authUser.role,
+        ipAddress: reqMeta.ipAddress,
+        userAgent: reqMeta.userAgent,
+        action: 'USER_DELETED',
+        category: 'USER_MANAGEMENT',
+        targetResource: `User: "${user.username}"`,
+        details: {
+          deletedUserId: id,
+          username: user.username,
+          role: user.role,
+          email: user.email,
+        },
+      });
 
       return reply.send({ success: true, message: `User "${user.username}" deleted successfully.` });
     }

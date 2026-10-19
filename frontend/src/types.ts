@@ -232,3 +232,55 @@ export interface SystemSettingsResponse {
   categories: SystemSettingsCategory[];
 }
 
+export interface AdminAuditLogItem {
+  id: string;
+  userId?: string | null;
+  username: string;
+  userRole?: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  action: string;
+  category: 'SECURITY' | 'SETTINGS' | 'INCIDENT' | 'USER_MANAGEMENT' | 'SYSTEM' | string;
+  targetResource?: string | null;
+  details?: Record<string, any> | null;
+  status: 'SUCCESS' | 'FAILED' | string;
+  createdAt: string;
+}
+
+export interface AuditStats {
+  totalAllTime: number;
+  count24h: number;
+  count30d: number;
+  categoryCounts: {
+    SECURITY: number;
+    SETTINGS: number;
+    INCIDENT: number;
+    USER_MANAGEMENT: number;
+    SYSTEM: number;
+    [key: string]: number;
+  };
+}
+
+export interface AuditQueryFilters {
+  page?: number;
+  limit?: number;
+  category?: string;
+  action?: string;
+  username?: string;
+  search?: string;
+  startDate?: string;
+  endDate?: string;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+}
+
+export interface AuditLogsResponse {
+  data: AdminAuditLogItem[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+

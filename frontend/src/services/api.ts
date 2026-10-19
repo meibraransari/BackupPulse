@@ -14,6 +14,10 @@ import {
   ApiKeyItem,
   SlaHeatmapResponse,
   SystemSettingsResponse,
+  AdminAuditLogItem,
+  AuditStats,
+  AuditQueryFilters,
+  AuditLogsResponse,
 } from '../types';
 
 const TOKEN_KEY = 'backup_monitor_auth_token';
@@ -425,6 +429,57 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ channel }),
     });
+  },
+
+  // Administrative Governance & Audit Logs
+  async getAuditLogs(filters: Partial<AuditQueryFilters> = {}): Promise<AuditLogsResponse> {
+    const params = new URLSearchParams();
+    if (filters.page) params.append('page', filters.page.toString());
+    if (filters.limit) params.append('limit', filters.limit.toString());
+    if (filters.category && filters.category !== 'ALL') params.append('category', filters.category);
+    if (filters.action && filters.action !== 'ALL') params.append('action', filters.action);
+    if (filters.username && filters.username !== 'ALL') params.append('username', filters.username);
+    if (filters.search) params.append('search', filters.search);
+    if (filters.startDate) params.append('startDate', filters.startDate);
+    if (filters.endDate) params.append('endDate', filters.endDate);
+    if (filters.sortBy) params.append('sortBy', filters.sortBy);
+    if (filters.sortOrder) params.append('sortOrder', filters.sortOrder);
+    return request<AuditLogsResponse>(`/api/v1/audit-logs?${params.toString()}`);
+  },
+
+  async getAuditStats(): Promise<AuditStats> {
+    return request<AuditStats>('/api/v1/audit-logs/stats');
+  },
+
+  async exportAuditLogs(filters: Partial<AuditQueryFilters> = {}): Promise<void> {
+    const token = authStorage.getToken();
+    const params = new URLSearchParams();
+    if (filters.category && filters.category !== 'ALL') params.append('category', filters.category);
+    if (filters.action && filters.action !== 'ALL') params.append('action', filters.action);
+    if (filters.username && filters.username !== 'ALL') params.append('username', filters.username);
+    if (filters.search) params.append('search', filters.search);
+    if (filters.startDate) params.append('startDate', filters.startDate);
+    if (filters.endDate) params.append('endDate', filters.endDate);
+
+    const response = await fetch(`/api/v1/audit-logs/export?${params.toString()}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to generate audit export file');
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `governance_audit_logs_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
   },
 };
 

@@ -25,6 +25,7 @@ import { apiKeyRoutes } from './routes/apikey.route';
 import { metricsRoutes } from './routes/metrics.route';
 import { scriptRoutes } from './routes/script.route';
 import { settingsRoutes } from './routes/settings.route';
+import { auditRoutes } from './routes/audit.route';
 
 async function bootstrap() {
   // Initialize database-backed dynamic system settings early
@@ -159,6 +160,7 @@ async function bootstrap() {
   await fastify.register(metricsRoutes);
   await fastify.register(scriptRoutes);
   await fastify.register(settingsRoutes);
+  await fastify.register(auditRoutes);
 
   // Serve static frontend build if present (for single container deployment)
   const frontendDistPath = path.resolve(__dirname, '../../frontend/dist');

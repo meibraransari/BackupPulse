@@ -7,6 +7,7 @@ import {
   sendTestDiscordNotification,
   sendTestTelegramNotification,
 } from '../services/webhook.service';
+import { recordAuditLog, getRequestMetadata } from '../services/audit.service';
 
 export async function settingsRoutes(fastify: FastifyInstance) {
   // 1. Get all System Settings (Admin only)
@@ -65,6 +66,26 @@ export async function settingsRoutes(fastify: FastifyInstance) {
 
       try {
         const result = await updateSettings(body.settings, user.username || 'admin');
+
+        // Record Governance Audit Log
+        const reqMeta = getRequestMetadata(request);
+        const keysList = Object.keys(body.settings);
+        await recordAuditLog({
+          userId: user.id,
+          username: user.username || 'admin',
+          userRole: user.role,
+          ipAddress: reqMeta.ipAddress,
+          userAgent: reqMeta.userAgent,
+          action: 'SETTINGS_UPDATED',
+          category: 'SETTINGS',
+          targetResource: `Settings: ${keysList.length} key(s) modified (${keysList.slice(0, 3).join(', ')}${keysList.length > 3 ? '...' : ''})`,
+          details: {
+            updatedCount: result.updatedCount,
+            keysModified: keysList,
+            settings: body.settings,
+          },
+        });
+
         return reply.send(result);
       } catch (err: any) {
         return reply.status(400).send({ error: err.message });

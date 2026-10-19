@@ -152,3 +152,24 @@ model SystemSetting {
   @@map("system_settings")
 }
 
+model AdminAuditLog {
+  id             String   @id @default(uuid())
+  userId         String?  @map("user_id")
+  username       String
+  userRole       String?  @map("user_role")
+  ipAddress      String?  @map("ip_address")
+  userAgent      String?  @map("user_agent")
+  action         String   // API_KEY_CREATED, API_KEY_REVOKED, SETTINGS_UPDATED, INCIDENT_RESOLVED, USER_CREATED, USER_UPDATED, USER_DELETED, RETENTION_TRIGGERED
+  category       String   // SECURITY, SETTINGS, INCIDENT, USER_MANAGEMENT, SYSTEM
+  targetResource String?  @map("target_resource")
+  details        Json?
+  status         String   @default("SUCCESS") // SUCCESS, FAILED
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([action, createdAt(sort: Desc)])
+  @@index([category, createdAt(sort: Desc)])
+  @@index([username, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@map("admin_audit_logs")
+}
+

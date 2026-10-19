@@ -22,6 +22,7 @@ import {
   Key,
   Globe,
   Sparkles,
+  FileText,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { User } from '../types';
@@ -29,8 +30,8 @@ import { useTimezone } from '../context/TimezoneContext';
 
 interface SidebarProps {
   user: User | null;
-  activeTab: 'telemetry' | 'drills' | 'fleet' | 'users' | 'settings';
-  onTabChange: (tab: 'telemetry' | 'drills' | 'fleet' | 'users' | 'settings') => void;
+  activeTab: 'telemetry' | 'drills' | 'fleet' | 'users' | 'settings' | 'audit';
+  onTabChange: (tab: 'telemetry' | 'drills' | 'fleet' | 'users' | 'settings' | 'audit') => void;
   onGoHome: () => void;
   onOpenProfile: () => void;
   onOpenNotificationLogs: () => void;
@@ -99,6 +100,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
             label: 'System Settings',
             icon: Sliders,
             badge: 'Admin',
+          },
+          {
+            id: 'audit' as const,
+            label: 'Audit & Governance',
+            icon: FileText,
+            badge: 'Audit',
           },
         ]
       : []),
