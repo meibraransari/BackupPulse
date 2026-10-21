@@ -283,20 +283,21 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
         {/* Page Title & View Switcher */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-white flex items-center space-x-2.5">
-              <span>
+            <div className="flex items-center space-x-3 flex-wrap gap-y-2">
+              <h1 className="text-2xl font-bold tracking-tight text-white">
                 {activeTab === 'telemetry' && 'Production Backup Overview'}
                 {activeTab === 'drills' && 'Disaster Recovery DrillPulse'}
                 {activeTab === 'fleet' && 'Server Fleet Inventory'}
                 {activeTab === 'users' && 'Access & User Directory'}
                 {activeTab === 'settings' && 'System Configuration & Settings'}
-              </span>
+                {activeTab === 'audit' && 'Governance & Change Audit Log'}
+              </h1>
               {activeTab === 'settings' && (
-                <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono font-medium tracking-wide bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 whitespace-nowrap shrink-0">
                   Zero-Restart
                 </span>
               )}
-            </h1>
+            </div>
             <p className="text-xs sm:text-sm text-slate-400 mt-1">
               {activeTab === 'telemetry' &&
                 'Live status, cron logs, size anomaly guards, and automated cloud sync reports across 100+ servers.'}
@@ -308,6 +309,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
                 'Team member profile administration, access roles, and real-time login audit logs.'}
               {activeTab === 'settings' &&
                 'Database-backed configuration for alert channels, email routing, retention rules, and master keys.'}
+              {activeTab === 'audit' &&
+                'SOC 2 Type II / ISO 27001 tamper-evident management action history and compliance logs.'}
             </p>
           </div>
 

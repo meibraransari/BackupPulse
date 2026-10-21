@@ -355,12 +355,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsSaved }) =
       <div className="relative overflow-hidden bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center space-x-2.5">
-              <span className="p-2 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20">
+            <div className="flex items-center space-x-2.5 flex-wrap gap-y-2">
+              <span className="p-2 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20 shrink-0">
                 <Sliders className="h-5 w-5" />
               </span>
               <h2 className="text-xl font-bold text-white tracking-tight">System Settings Engine</h2>
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 whitespace-nowrap shrink-0">
                 Zero-Restart Hot Reload
               </span>
             </div>
