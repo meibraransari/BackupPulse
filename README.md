@@ -54,6 +54,11 @@ A high-performance Node.js & React telemetry platform designed to monitor automa
        ├──► 🔒 Live User Login Tracker (IP, User-Agent, Success/Failure Audits)
        ├──► 📊 Notification Delivery Audit UI (Multi-Channel History + Payload Inspector)
        ├──► 🧹 Database Storage & Housekeeping Modal (Retention Controls & Force Purge)
+       ├──► ⚡ Global Command Palette (Ctrl+K / Cmd+K instant fuzzy search across projects, servers, actions)
+       ├──► 🎛️ Data Table Column Customizer & Density Switcher (Compact, Normal, Roomy + column popover)
+       ├──► 🖥️ Full-Screen NOC Wallboard Mode (TV display with live ticker, big gauges, and 30s auto-refresh)
+       ├──► 💻 Advanced Terminal Log Viewer (In-log search, collapsible stages, line numbers, syntax highlights)
+       ├──► 🔔 Live In-App Notification Center Drawer (Header bell with audio chime alert & unread counter)
        ├──► Advanced Multi-Filter & Resizable Columns (Project, Host, Status, Date)
        ├──► Detail Drawer & Professional Incident Resolution Modal
        └──► Instant Test Actions (Dedicated test triggers inside each System Settings card: Google Chat, Email, Slack, Discord, Telegram, Export CSV/JSON)
@@ -879,6 +884,43 @@ BackupPulse includes a dedicated **Audit & Governance Workspace** backed by the 
 - **🔍 Granular Category & Action Filtering**: Filter by category (`SECURITY`, `SETTINGS`, `INCIDENT`, `USER_MANAGEMENT`, `SYSTEM`), action code, operator username, date range presets (All Time, Last 24h, Last 7d, Last 30d), and full-text search.
 - **📥 1-Click CSV Export**: Stream audit records directly into RFC-compliant CSV files formatted for compliance auditors and external reviews.
 - **🛡️ Strict RBAC Enforcement**: Only users with the `admin` role can access audit logs and export endpoints.
+
+---
+
+## 🎨 Enterprise UI & Operations Center Superpowers
+
+BackupPulse provides modern, keyboard-first, and mission-critical visual interfaces tailored for high-velocity engineering teams:
+
+### 1. ⚡ Global Command Palette (`Ctrl+K` / `Cmd+K` / `/`)
+- **Instant Global Search**: Jump to any project (`telluridehub-prod`), server hostname, or server IP from anywhere in the app.
+- **Quick Actions**: 1-click or arrow-key triggers to open Deploy Server Wizard, API Tokens, Housekeeping, toggle UTC/Local timezone, or export CSV.
+- **Keyboard-First Navigation**: Use `↑` `↓` to navigate, `Enter` to execute, and `Esc` to dismiss.
+
+### 2. 🎛️ Data Table Column Customizer & Display Density Switcher
+- **Column Customizer Popover**: Show or hide any column (*Status, Availability, Project/Host, Workload Type, Archive Size, Duration, S3 Key, Timestamp*) with real-time browser storage persistence.
+- **3 Density Profiles**:
+  - **Compact**: Tight row heights to monitor 30+ production nodes simultaneously without vertical scrolling.
+  - **Normal**: Standard balanced spacing.
+  - **Roomy / Comfortable**: Expanded row padding with larger status badges.
+- **Saved Filter Presets (Pills)**: 1-click filter shortcuts above the table (`[🔄 All Backups]`, `[🚨 Only Failures]`, `[🐘 PostgreSQL]`, `[🐬 MySQL]`, `[📦 Large Dumps (GB+)]`, `[⚠️ Size Anomalies]`).
+
+### 3. 🖥️ Full-Screen "NOC / TV Wallboard" Mode (Operations Center Display)
+- **Designed for 24/7 Ops Rooms & Office Wall TVs**: 1-click high-contrast kiosk mode with native HTML5 fullscreen support.
+- **Live Animated Status Ticker**: Real-time glowing banner highlighting overall fleet health (`100% HEALTHY` vs `CRITICAL ATTENTION REQUIRED: X FAILURES`).
+- **30-Second Auto-Refresh Cycle**: Countdown timer circle and real-time clock ticker.
+- **High-Visibility Giant Gauges**: Large 24h success rate percentage gauge, total protected storage footprint, healthy/stale/failing server tallies, and active telemetry stream.
+
+### 4. 💻 Advanced Terminal Log Viewer with In-Log Search & Syntax Highlighting
+- **Live In-Log Search (`Ctrl+F`)**: Instant regex search with match counts ("3 hits") and keyword highlights across `stdout` and `stderr`.
+- **Intelligent Syntax Color-Coding**: Errors and exit failures in glowing red, shell commands in cyan, completion milestones in emerald.
+- **Collapsible Execution Stages**: Automatically detects `[1/5]`, `[2/5]`, etc., and formats backup phases into collapsible accordion steps.
+- **Line Numbers & 1-Click Export**: Copy full log, copy error trace, or download raw `.log` file.
+
+### 5. 🔔 Live In-App Notification Center Drawer (Header Bell with Audio Alert)
+- **Header Bell with Unread Badge**: Pulsing red indicator displaying active unacknowledged incidents.
+- **Slide-Over Alert Drawer**: Shows recent backup failures and multi-channel delivery receipts (Google Chat, Slack, Discord, Telegram, Email).
+- **Web Audio API Chime Synthesizer**: Pleasant two-tone bell alert for new incidents with an instant sound on/off mute toggle.
+- **1-Click "Inspect Incident"**: Directly jumps to the failing report's terminal logs.
 
 ---
 

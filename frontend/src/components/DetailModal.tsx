@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Copy, Check, Terminal, AlertCircle, HardDrive, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { BackupReport } from '../types';
 import { useTimezone } from '../context/TimezoneContext';
+import { TerminalLogViewer } from './TerminalLogViewer';
 
 interface DetailModalProps {
   report: BackupReport | null;
@@ -261,30 +262,19 @@ export const DetailModal: React.FC<DetailModalProps> = ({ report, onClose, onMar
             </div>
           </div>
 
-          {/* Execution Logs */}
-          <div className="space-y-3">
+          {/* Execution Logs Terminal */}
+          <div className="space-y-2">
             <div className="flex items-center space-x-2 text-xs font-semibold text-slate-300">
               <Terminal className="h-4 w-4 text-emerald-400" />
-              <span>Shell Script Execution Logs</span>
+              <span>Shell Execution Logs & Diagnostics</span>
             </div>
 
-            {/* Stderr Log */}
-            {report.stderrLog && (
-              <div>
-                <span className="text-[11px] font-semibold text-red-400 uppercase tracking-wide">Error Log (stderr)</span>
-                <pre className="mt-1 p-3.5 bg-black/80 rounded-xl border border-red-900/40 text-red-300 font-mono text-xs overflow-x-auto whitespace-pre-wrap max-h-40">
-                  {report.stderrLog}
-                </pre>
-              </div>
-            )}
-
-            {/* Stdout Log */}
-            <div>
-              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Output Log (stdout)</span>
-              <pre className="mt-1 p-3.5 bg-black/80 rounded-xl border border-slate-800 text-slate-300 font-mono text-xs overflow-x-auto whitespace-pre-wrap max-h-48">
-                {report.stdoutLog || 'No standard output recorded.'}
-              </pre>
-            </div>
+            <TerminalLogViewer
+              stdoutLog={report.stdoutLog}
+              stderrLog={report.stderrLog}
+              zipFilename={report.zipFilename}
+              projectName={report.projectName}
+            />
           </div>
         </div>
 

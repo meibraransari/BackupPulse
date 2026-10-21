@@ -23,6 +23,8 @@ import {
   Globe,
   Sparkles,
   FileText,
+  Search,
+  Tv,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { User } from '../types';
@@ -38,6 +40,8 @@ interface SidebarProps {
   onOpenHousekeeping: () => void;
   onOpenApiKeys?: () => void;
   onOpenDeployWizard?: () => void;
+  onOpenCommandPalette?: () => void;
+  onOpenNocWallboard?: () => void;
   onLogout: () => void;
 }
 
@@ -51,6 +55,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenHousekeeping,
   onOpenApiKeys,
   onOpenDeployWizard,
+  onOpenCommandPalette,
+  onOpenNocWallboard,
   onLogout,
 }) => {
   const { timezone, toggleTimezone } = useTimezone();
@@ -147,8 +153,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </button>
       </div>
 
+      {/* Quick Command Palette Button */}
+      {onOpenCommandPalette && (
+        <div className="px-3 pt-3">
+          <button
+            type="button"
+            onClick={() => {
+              onOpenCommandPalette();
+              setMobileOpen(false);
+            }}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-slate-950/70 border border-slate-800 text-slate-400 hover:text-white hover:border-indigo-500/50 text-xs transition-colors shadow-inner group"
+            title="Search projects, servers, actions (Ctrl+K)"
+          >
+            <div className="flex items-center space-x-2">
+              <Search className="h-3.5 w-3.5 text-indigo-400 group-hover:scale-110 transition-transform" />
+              <span>Quick Search...</span>
+            </div>
+            <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] font-mono text-slate-400 border border-slate-700">
+              Ctrl K
+            </kbd>
+          </button>
+        </div>
+      )}
+
       {/* Navigation Links */}
-      <div className="px-3 py-4 space-y-1">
+      <div className="px-3 py-3 space-y-1">
         <div className="px-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-2">
           Core Workspaces
         </div>
@@ -277,6 +306,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
           >
             <Key className="h-4 w-4 text-amber-400" />
             <span>API Ingestion Tokens</span>
+          </button>
+        )}
+
+        {/* NOC Wallboard Mode (TV Display) */}
+        {onOpenNocWallboard && (
+          <button
+            onClick={() => {
+              onOpenNocWallboard();
+              setMobileOpen(false);
+            }}
+            className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-emerald-300 hover:text-white hover:bg-emerald-950/40 transition-colors"
+          >
+            <Tv className="h-4 w-4 text-emerald-400" />
+            <span>NOC Wallboard (TV)</span>
           </button>
         )}
 

@@ -19,6 +19,8 @@ import {
   Server,
   ChevronsUpDown,
   RotateCcw,
+  Columns,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { BackupReport } from '../types';
 import { useTimezone } from '../context/TimezoneContext';
@@ -33,6 +35,8 @@ interface BackupTableProps {
 }
 
 const STORAGE_KEY_COL_WIDTHS = 'backuppulse_table_col_widths_v1';
+const STORAGE_KEY_COL_VISIBILITY = 'backuppulse_table_col_visibility_v1';
+const STORAGE_KEY_DENSITY = 'backuppulse_table_density_v1';
 
 // Default column widths in pixels (tuned to fit cleanly without horizontal scrolling)
 const DEFAULT_COLUMN_WIDTHS: Record<string, number> = {
@@ -102,6 +106,85 @@ export const BackupTable: React.FC<BackupTableProps> = ({
   const [fullHeightLogs, setFullHeightLogs] = useState<Record<string, boolean>>({});
   // Selected tab in expanded view: 'logs' | 'vault' | 'drill' | 'raw'
   const [activeTab, setActiveTab] = useState<Record<string, 'logs' | 'vault' | 'drill' | 'raw'>>({});
+
+  // Display Density: 'compact' | 'normal' | 'comfortable'
+  const [density, setDensity] = useState<'compact' | 'normal' | 'comfortable'>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_DENSITY);
+      if (saved === 'compact' || saved === 'normal' || saved === 'comfortable') return saved;
+    } catch {}
+    return 'normal';
+  });
+
+  // Column Visibility state
+  const [colVisibility, setColVisibility] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_COL_VISIBILITY);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {
+      status: true,
+      availability: true,
+      project: true,
+      type: true,
+      size: true,
+      duration: true,
+      s3: true,
+      timestamp: true,
+    };
+  });
+  const [showColMenu, setShowColMenu] = useState(false);
+
+  // Sync density and colVisibility to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_DENSITY, density);
+    } catch {}
+  }, [density]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_COL_VISIBILITY, JSON.stringify(colVisibility));
+    } catch {}
+  }, [colVisibility]);
+
+  // Derived active columns
+  const activeColumns = COLUMN_CONFIGS.filter(
+    (col) => col.key === 'expand' || col.key === 'actions' || colVisibility[col.key] !== false
+  );
+
+  const isColVisible = (key: string) => {
+    if (key === 'expand' || key === 'actions') return true;
+    return colVisibility[key] !== false;
+  };
+
+  const toggleColumnVisibility = (key: string) => {
+    setColVisibility((prev) => ({
+      ...prev,
+      [key]: prev[key] === false ? true : false,
+    }));
+  };
+
+  const resetColumnVisibility = () => {
+    setColVisibility({
+      status: true,
+      availability: true,
+      project: true,
+      type: true,
+      size: true,
+      duration: true,
+      s3: true,
+      timestamp: true,
+    });
+  };
+
+  // Cell padding based on density
+  const cellPadding =
+    density === 'compact'
+      ? 'py-2 px-3 text-[11px]'
+      : density === 'comfortable'
+      ? 'py-4 px-4 text-xs'
+      : 'py-3.5 px-3.5 text-xs';
 
   // Save column widths to localStorage whenever changed
   useEffect(() => {
@@ -383,8 +466,107 @@ export const BackupTable: React.FC<BackupTableProps> = ({
           </span>
         </div>
 
-        {/* Manual Adjust Controls: Column Resizer Reset & Expand / Collapse */}
-        <div className="flex items-center space-x-2">
+        {/* Manual Adjust Controls: Column Customizer, Density Switcher, Resizer Reset & Expand / Collapse */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Display Density Switcher */}
+          <div className="flex items-center space-x-0.5 bg-slate-950 p-0.5 rounded-lg border border-slate-800">
+            <button
+              type="button"
+              onClick={() => setDensity('compact')}
+              className={`px-2 py-1 rounded text-[11px] font-medium transition-all ${
+                density === 'compact'
+                  ? 'bg-emerald-600 text-white shadow-sm font-semibold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="Compact density (tight rows for high-density viewing)"
+            >
+              Compact
+            </button>
+            <button
+              type="button"
+              onClick={() => setDensity('normal')}
+              className={`px-2 py-1 rounded text-[11px] font-medium transition-all ${
+                density === 'normal'
+                  ? 'bg-emerald-600 text-white shadow-sm font-semibold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="Standard density"
+            >
+              Normal
+            </button>
+            <button
+              type="button"
+              onClick={() => setDensity('comfortable')}
+              className={`px-2 py-1 rounded text-[11px] font-medium transition-all ${
+                density === 'comfortable'
+                  ? 'bg-emerald-600 text-white shadow-sm font-semibold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="Comfortable density (roomy rows)"
+            >
+              Roomy
+            </button>
+          </div>
+
+          {/* Column Customizer Dropdown */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowColMenu(!showColMenu)}
+              className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/80 transition-colors shadow-sm"
+              title="Choose visible table columns"
+            >
+              <Columns className="h-3 w-3 text-indigo-400" />
+              <span>Columns</span>
+              <span className="text-[10px] px-1 bg-slate-900 rounded text-slate-400 font-mono">
+                {Object.values(colVisibility).filter(Boolean).length}/8
+              </span>
+            </button>
+
+            {showColMenu && (
+              <div
+                className="absolute right-0 mt-2 w-56 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-2.5 z-40 space-y-2 animate-in fade-in zoom-in-95"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between pb-1.5 border-b border-slate-800 text-[11px]">
+                  <span className="font-semibold text-white">Visible Columns</span>
+                  <button
+                    type="button"
+                    onClick={resetColumnVisibility}
+                    className="text-indigo-400 hover:text-indigo-300 text-[10px]"
+                  >
+                    Reset All
+                  </button>
+                </div>
+                <div className="space-y-1 text-xs text-slate-300 max-h-48 overflow-y-auto">
+                  {[
+                    { key: 'status', label: 'Status & Action' },
+                    { key: 'availability', label: 'Active / Expired' },
+                    { key: 'project', label: 'Project & Host' },
+                    { key: 'type', label: 'Workload Type' },
+                    { key: 'size', label: 'Archive Size' },
+                    { key: 'duration', label: 'Duration' },
+                    { key: 's3', label: 'Destination Path' },
+                    { key: 'timestamp', label: 'Timestamp' },
+                  ].map((col) => (
+                    <label
+                      key={col.key}
+                      className="flex items-center space-x-2 px-1.5 py-1 rounded hover:bg-slate-800/60 cursor-pointer select-none"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={colVisibility[col.key] !== false}
+                        onChange={() => toggleColumnVisibility(col.key)}
+                        className="rounded border-slate-700 bg-slate-950 text-emerald-500 focus:ring-0"
+                      />
+                      <span className="text-[11px]">{col.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Reset Column Widths button */}
           <button
             onClick={handleResetAllWidths}
@@ -417,7 +599,7 @@ export const BackupTable: React.FC<BackupTableProps> = ({
         <table className="w-full table-fixed text-left text-xs sm:text-sm border-collapse">
           {/* Defined ColGroup to enforce strict column resizing without spontaneous overflow */}
           <colgroup>
-            {COLUMN_CONFIGS.map((col) => (
+            {activeColumns.map((col) => (
               <col
                 key={col.key}
                 style={{
@@ -429,10 +611,12 @@ export const BackupTable: React.FC<BackupTableProps> = ({
 
           <thead className="bg-slate-950/60 text-slate-400 text-[11px] uppercase tracking-wider border-b border-slate-800 select-none">
             <tr>
-              {COLUMN_CONFIGS.map((col) => (
+              {activeColumns.map((col) => (
                 <th
                   key={col.key}
-                  className={`relative py-3 px-3.5 font-semibold text-slate-400 group/th ${
+                  className={`relative ${
+                    density === 'compact' ? 'py-2 px-3' : 'py-3 px-3.5'
+                  } font-semibold text-slate-400 group/th ${
                     col.align === 'center'
                       ? 'text-center'
                       : col.align === 'right'
@@ -475,12 +659,12 @@ export const BackupTable: React.FC<BackupTableProps> = ({
             {loading ? (
               [...Array(6)].map((_, i) => (
                 <tr key={i} className="animate-pulse">
-                  <td colSpan={10} className="py-4 px-4 bg-slate-900/40 h-12" />
+                  <td colSpan={activeColumns.length} className="py-4 px-4 bg-slate-900/40 h-12" />
                 </tr>
               ))
             ) : data.length === 0 ? (
               <tr>
-                <td colSpan={10} className="py-12 text-center text-slate-500">
+                <td colSpan={activeColumns.length} className="py-12 text-center text-slate-500">
                   <HardDrive className="h-8 w-8 mx-auto mb-2 opacity-30" />
                   <p className="text-sm">No backup records matching your filters.</p>
                 </td>
@@ -501,135 +685,155 @@ export const BackupTable: React.FC<BackupTableProps> = ({
                       onClick={() => toggleRowExpand(report.id)}
                     >
                       {/* Expand / Collapse Chevron Toggle */}
-                      <td className="py-3 px-2 text-center overflow-hidden">
-                        <button
-                          onClick={(e) => toggleRowExpand(report.id, e)}
-                          className={`p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-700/60 transition-transform ${
-                            isExpanded ? 'text-emerald-400 rotate-90' : ''
-                          }`}
-                          title={isExpanded ? 'Collapse row details' : 'Expand row to see full content'}
-                        >
-                          <ChevronRight className="h-4 w-4 transition-transform" />
-                        </button>
-                      </td>
+                      {isColVisible('expand') && (
+                        <td className={`text-center overflow-hidden ${cellPadding}`}>
+                          <button
+                            onClick={(e) => toggleRowExpand(report.id, e)}
+                            className={`p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-700/60 transition-transform ${
+                              isExpanded ? 'text-emerald-400 rotate-90' : ''
+                            }`}
+                            title={isExpanded ? 'Collapse row details' : 'Expand row to see full content'}
+                          >
+                            <ChevronRight className="h-4 w-4 transition-transform" />
+                          </button>
+                        </td>
+                      )}
 
                       {/* Status & Resolve Button */}
-                      <td className="py-3.5 px-3.5 overflow-hidden">{getStatusBadge(report)}</td>
+                      {isColVisible('status') && (
+                        <td className={`overflow-hidden ${cellPadding}`}>{getStatusBadge(report)}</td>
+                      )}
 
                       {/* Active,expired Availability Badge */}
-                      <td className="py-3.5 px-3.5 overflow-hidden">{getAvailabilityBadge(report)}</td>
+                      {isColVisible('availability') && (
+                        <td className={`overflow-hidden ${cellPadding}`}>{getAvailabilityBadge(report)}</td>
+                      )}
 
                       {/* Project & Server */}
-                      <td className="py-3.5 px-3.5 overflow-hidden">
-                        <div className="font-medium text-slate-200 truncate" title={report.projectName}>
-                          {report.projectName}
-                        </div>
-                        <div
-                          className="text-[11px] text-slate-400 font-mono truncate"
-                          title={`${report.serverId} (${report.hostname})`}
-                        >
-                          {report.serverId} ({report.hostname})
-                        </div>
-                      </td>
+                      {isColVisible('project') && (
+                        <td className={`overflow-hidden ${cellPadding}`}>
+                          <div className="font-medium text-slate-200 truncate" title={report.projectName}>
+                            {report.projectName}
+                          </div>
+                          <div
+                            className="text-[11px] text-slate-400 font-mono truncate"
+                            title={`${report.serverId} (${report.hostname})`}
+                          >
+                            {report.serverId} ({report.hostname})
+                          </div>
+                        </td>
+                      )}
 
                       {/* Type */}
-                      <td className="py-3.5 px-3.5 overflow-hidden">
-                        <div className="flex items-center space-x-1.5 flex-wrap gap-y-1">
-                          {getTypeBadge(report.backupType)}
-                          {report.restoreDrillStatus && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveTab((prev) => ({ ...prev, [report.id]: 'drill' }));
-                                setExpandedRowIds((prev) => new Set(prev).add(report.id));
-                              }}
-                              className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border cursor-pointer hover:scale-105 transition-all ${
-                                report.restoreDrillStatus === 'SUCCESS'
-                                  ? 'bg-emerald-950/70 text-emerald-300 border-emerald-700/50 hover:bg-emerald-900/80 shadow-sm'
-                                  : report.restoreDrillStatus === 'FAILED'
-                                  ? 'bg-red-950/70 text-red-300 border-red-700/50 hover:bg-red-900/80 shadow-sm'
-                                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'
-                              }`}
-                              title={`DrillPulse DR Drill: ${report.restoreDrillStatus} (${report.restoreDrillVerifiedTables ?? 0} entities verified in ${report.restoreDrillDurationSeconds ?? 0}s). Click to view sandbox drill logs.`}
-                            >
-                              🧪 {report.restoreDrillStatus === 'SUCCESS' ? 'DR Pass' : report.restoreDrillStatus === 'FAILED' ? 'DR Fail' : 'DR Skip'}
-                            </button>
-                          )}
-                        </div>
-                      </td>
+                      {isColVisible('type') && (
+                        <td className={`overflow-hidden ${cellPadding}`}>
+                          <div className="flex items-center space-x-1.5 flex-wrap gap-y-1">
+                            {getTypeBadge(report.backupType)}
+                            {report.restoreDrillStatus && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveTab((prev) => ({ ...prev, [report.id]: 'drill' }));
+                                  setExpandedRowIds((prev) => new Set(prev).add(report.id));
+                                }}
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border cursor-pointer hover:scale-105 transition-all ${
+                                  report.restoreDrillStatus === 'SUCCESS'
+                                    ? 'bg-emerald-950/70 text-emerald-300 border-emerald-700/50 hover:bg-emerald-900/80 shadow-sm'
+                                    : report.restoreDrillStatus === 'FAILED'
+                                    ? 'bg-red-950/70 text-red-300 border-red-700/50 hover:bg-red-900/80 shadow-sm'
+                                    : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'
+                                }`}
+                                title={`DrillPulse DR Drill: ${report.restoreDrillStatus} (${report.restoreDrillVerifiedTables ?? 0} entities verified in ${report.restoreDrillDurationSeconds ?? 0}s). Click to view sandbox drill logs.`}
+                              >
+                                🧪 {report.restoreDrillStatus === 'SUCCESS' ? 'DR Pass' : report.restoreDrillStatus === 'FAILED' ? 'DR Fail' : 'DR Skip'}
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      )}
 
                       {/* Size */}
-                      <td className="py-3.5 px-3.5 font-mono text-xs overflow-hidden truncate">
-                        <div className="flex items-center space-x-1.5 truncate">
-                          <span className={report.isAnomaly ? 'text-amber-300 font-semibold' : ''}>
-                            {report.backupSizeHuman || '0 B'}
-                          </span>
-                          {report.isAnomaly && (
-                            <span
-                              className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-950/80 text-amber-300 border border-amber-600/60 cursor-help shrink-0 flex items-center space-x-1"
-                              title={report.anomalyReason || 'Anomaly: Backup size dropped sharply compared to 7-day average'}
-                            >
-                              <span>⚠️</span>
-                              <span>{getAnomalyBadgeText(report)}</span>
+                      {isColVisible('size') && (
+                        <td className={`font-mono overflow-hidden truncate ${cellPadding}`}>
+                          <div className="flex items-center space-x-1.5 truncate">
+                            <span className={report.isAnomaly ? 'text-amber-300 font-semibold' : ''}>
+                              {report.backupSizeHuman || '0 B'}
                             </span>
-                          )}
-                        </div>
-                      </td>
+                            {report.isAnomaly && (
+                              <span
+                                className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-950/80 text-amber-300 border border-amber-600/60 cursor-help shrink-0 flex items-center space-x-1"
+                                title={report.anomalyReason || 'Anomaly: Backup size dropped sharply compared to 7-day average'}
+                              >
+                                <span>⚠️</span>
+                                <span>{getAnomalyBadgeText(report)}</span>
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      )}
 
                       {/* Duration */}
-                      <td className="py-3.5 px-3.5 font-mono text-xs text-slate-400 overflow-hidden truncate">
-                        {formatDuration(report.durationSeconds)}
-                      </td>
+                      {isColVisible('duration') && (
+                        <td className={`font-mono text-slate-400 overflow-hidden truncate ${cellPadding}`}>
+                          {formatDuration(report.durationSeconds)}
+                        </td>
+                      )}
 
-                      {/* S3 Destination: Truncates cleanly, completely eliminating unwanted horizontal scroll */}
-                      <td className="py-3.5 px-3.5 overflow-hidden">
-                        <div
-                          className="truncate text-xs font-mono text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
-                          title={report.s3Key || 'No S3 key assigned'}
-                        >
-                          {report.s3Key || '—'}
-                        </div>
-                      </td>
+                      {/* S3 Destination */}
+                      {isColVisible('s3') && (
+                        <td className={`overflow-hidden ${cellPadding}`}>
+                          <div
+                            className="truncate text-xs font-mono text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                            title={report.s3Key || 'No S3 key assigned'}
+                          >
+                            {report.s3Key || '—'}
+                          </div>
+                        </td>
+                      )}
 
                       {/* Timestamp */}
-                      <td className="py-3.5 px-3.5 whitespace-nowrap text-xs text-slate-400 overflow-hidden font-mono text-[11px]">
-                        {formatTimestamp(report.createdAt)}
-                      </td>
+                      {isColVisible('timestamp') && (
+                        <td className={`whitespace-nowrap text-slate-400 overflow-hidden font-mono text-[11px] ${cellPadding}`}>
+                          {formatTimestamp(report.createdAt)}
+                        </td>
+                      )}
 
                       {/* Actions Column */}
-                      <td className="py-3.5 px-3.5 text-right whitespace-nowrap overflow-hidden">
-                        {report.status === 'FAILED' && onMarkSuccess && (
+                      {isColVisible('actions') && (
+                        <td className={`text-right whitespace-nowrap overflow-hidden ${cellPadding}`}>
+                          {report.status === 'FAILED' && onMarkSuccess && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onMarkSuccess(report);
+                              }}
+                              className="mr-1.5 px-2 py-1 rounded-lg text-xs font-semibold text-emerald-300 bg-emerald-950/80 hover:bg-emerald-900 hover:text-white transition-colors border border-emerald-600/50 inline-flex items-center space-x-1 shadow-sm"
+                              title="Mark this failed job as SUCCESS manually"
+                            >
+                              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                              <span className="hidden xl:inline">Resolve</span>
+                            </button>
+                          )}
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              onMarkSuccess(report);
+                              onSelectReport(report);
                             }}
-                            className="mr-1.5 px-2 py-1 rounded-lg text-xs font-semibold text-emerald-300 bg-emerald-950/80 hover:bg-emerald-900 hover:text-white transition-colors border border-emerald-600/50 inline-flex items-center space-x-1 shadow-sm"
-                            title="Mark this failed job as SUCCESS manually"
+                            className="px-2.5 py-1 rounded-lg text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 hover:text-white transition-colors border border-slate-700"
+                            title="Open detailed inspector modal"
                           >
-                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
-                            <span className="hidden xl:inline">Resolve</span>
+                            <Eye className="h-3.5 w-3.5 inline mr-1" />
+                            <span>Modal</span>
                           </button>
-                        )}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onSelectReport(report);
-                          }}
-                          className="px-2.5 py-1 rounded-lg text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 hover:text-white transition-colors border border-slate-700"
-                          title="Open detailed inspector modal"
-                        >
-                          <Eye className="h-3.5 w-3.5 inline mr-1" />
-                          <span>Modal</span>
-                        </button>
-                      </td>
+                        </td>
+                      )}
                     </tr>
 
                     {/* Inline Expanded Content Sub-Row */}
                     {isExpanded && (
                       <tr className="bg-slate-950/70 border-b border-slate-800">
-                        <td colSpan={10} className="p-0">
+                        <td colSpan={activeColumns.length} className="p-0">
                           <div
                             className={`p-4 sm:p-6 border-l-4 space-y-5 bg-gradient-to-r from-slate-950 via-slate-900/60 to-slate-950 ${
                               report.status === 'FAILED'

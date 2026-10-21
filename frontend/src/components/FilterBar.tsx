@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Search, Download, RotateCcw, FileText, AlertTriangle, CalendarRange } from 'lucide-react';
+import { Search, Download, RotateCcw, FileText, AlertTriangle, CalendarRange, Sparkles } from 'lucide-react';
 import { BackupFilters } from '../types';
 import { CustomDatePicker, formatYMD } from './CustomDatePicker';
 
@@ -184,6 +184,92 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             <span>JSON</span>
           </button>
         </div>
+      </div>
+
+      {/* Saved Filter Presets (Pills) */}
+      <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-800/80">
+        <span className="text-[11px] font-semibold text-slate-400 mr-1 flex items-center space-x-1">
+          <Sparkles className="h-3 w-3 text-emerald-400" />
+          <span>Quick Views:</span>
+        </span>
+
+        {/* [All Backups] */}
+        <button
+          type="button"
+          onClick={onReset}
+          className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+            filters.status === 'ALL' && filters.backupType === 'ALL' && !filters.isAnomaly && !filters.search
+              ? 'bg-emerald-600 text-white shadow-sm font-semibold'
+              : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700'
+          }`}
+        >
+          🔄 All Backups
+        </button>
+
+        {/* [🚨 Only Failures] */}
+        <button
+          type="button"
+          onClick={() => onFilterChange({ status: 'FAILED', page: 1 })}
+          className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+            filters.status === 'FAILED'
+              ? 'bg-rose-600 text-white shadow-sm'
+              : 'bg-rose-950/40 text-rose-400 hover:bg-rose-900/60 border border-rose-800/50'
+          }`}
+        >
+          🚨 Only Failures
+        </button>
+
+        {/* [🐘 PostgreSQL] */}
+        <button
+          type="button"
+          onClick={() => onFilterChange({ backupType: 'postgres', page: 1 })}
+          className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+            filters.backupType === 'postgres'
+              ? 'bg-indigo-600 text-white shadow-sm font-semibold'
+              : 'bg-indigo-950/40 text-indigo-300 hover:bg-indigo-900/60 border border-indigo-800/50'
+          }`}
+        >
+          🐘 PostgreSQL
+        </button>
+
+        {/* [🐬 MySQL] */}
+        <button
+          type="button"
+          onClick={() => onFilterChange({ backupType: 'mysql', page: 1 })}
+          className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+            filters.backupType === 'mysql'
+              ? 'bg-cyan-600 text-white shadow-sm font-semibold'
+              : 'bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/60 border border-cyan-800/50'
+          }`}
+        >
+          🐬 MySQL
+        </button>
+
+        {/* [📦 Large Dumps (>5 GB)] */}
+        <button
+          type="button"
+          onClick={() => onFilterChange({ search: 'GB', page: 1 })}
+          className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+            filters.search === 'GB'
+              ? 'bg-purple-600 text-white shadow-sm font-semibold'
+              : 'bg-purple-950/40 text-purple-300 hover:bg-purple-900/60 border border-purple-800/50'
+          }`}
+        >
+          📦 Large Dumps (GB+)
+        </button>
+
+        {/* [⚠️ Size Anomalies] */}
+        <button
+          type="button"
+          onClick={() => onFilterChange({ isAnomaly: true, page: 1 })}
+          className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+            filters.isAnomaly
+              ? 'bg-amber-600 text-white shadow-sm font-semibold'
+              : 'bg-amber-950/40 text-amber-300 hover:bg-amber-900/60 border border-amber-800/50'
+          }`}
+        >
+          ⚠️ Size Anomalies
+        </button>
       </div>
 
       {/* Filter Selectors Grid */}

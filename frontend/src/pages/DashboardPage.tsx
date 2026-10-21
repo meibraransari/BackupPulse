@@ -17,9 +17,26 @@ import { SlaHeatmap } from '../components/SlaHeatmap';
 import { DrillPulseView } from '../components/DrillPulseView';
 import { SettingsView } from '../components/SettingsView';
 import { AuditLogsView } from '../components/AuditLogsView';
+import { CommandPaletteModal } from '../components/CommandPaletteModal';
+import { NocWallboardModal } from '../components/NocWallboardModal';
+import { NotificationCenterDrawer } from '../components/NotificationCenterDrawer';
+import { useTimezone } from '../context/TimezoneContext';
 import { api } from '../services/api';
 import { BackupFilters, BackupReport, DashboardStats, ProjectBreakdown, TrendItem, User } from '../types';
-import { Home, RefreshCw, CheckCircle2, Server, Table, Users, Sparkles, Sliders, ShieldCheck } from 'lucide-react';
+import {
+  Home,
+  RefreshCw,
+  CheckCircle2,
+  Server,
+  Table,
+  Users,
+  Sparkles,
+  Sliders,
+  ShieldCheck,
+  Bell,
+  Tv,
+  Search,
+} from 'lucide-react';
 
 interface DashboardPageProps {
   user: User | null;
@@ -66,6 +83,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
   const [refreshing, setRefreshing] = useState(false);
   const [actionToast, setActionToast] = useState<string | null>(null);
 
+  const { toggleTimezone } = useTimezone();
+
   // View toggle & Modal states
   const [activeTab, setActiveTab] = useState<'telemetry' | 'drills' | 'fleet' | 'users' | 'settings' | 'audit'>('telemetry');
   const [showNotificationLogs, setShowNotificationLogs] = useState<boolean>(false);
@@ -73,6 +92,27 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
   const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
   const [showApiKeysModal, setShowApiKeysModal] = useState<boolean>(false);
   const [showDeployWizard, setShowDeployWizard] = useState<boolean>(false);
+  const [showCommandPalette, setShowCommandPalette] = useState<boolean>(false);
+  const [showNocWallboard, setShowNocWallboard] = useState<boolean>(false);
+  const [showNotificationCenter, setShowNotificationCenter] = useState<boolean>(false);
+
+  // Global Keyboard Shortcuts (Ctrl+K, Cmd+K, '/')
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setShowCommandPalette((prev) => !prev);
+      } else if (
+        e.key === '/' &&
+        !['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)
+      ) {
+        e.preventDefault();
+        setShowCommandPalette(true);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Helper to smoothly scroll down to the data table
   const scrollToTable = () => {
@@ -234,6 +274,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
         onOpenHousekeeping={() => setShowHousekeeping(true)}
         onOpenApiKeys={() => setShowApiKeysModal(true)}
         onOpenDeployWizard={() => setShowDeployWizard(true)}
+        onOpenCommandPalette={() => setShowCommandPalette(true)}
+        onOpenNocWallboard={() => setShowNocWallboard(true)}
         onLogout={onLogout}
       />
 
@@ -346,6 +388,46 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
                 </button>
               )}
             </div>
+
+            {/* Global Command Palette Trigger Button */}
+            <button
+              type="button"
+              onClick={() => setShowCommandPalette(true)}
+              className="hidden lg:flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 text-xs transition-colors shadow-sm"
+              title="Search projects, servers, actions (Ctrl+K)"
+            >
+              <Search className="h-3.5 w-3.5 text-indigo-400" />
+              <span>Search...</span>
+              <kbd className="px-1.5 py-0.5 rounded bg-slate-950 text-[10px] font-mono text-slate-400 border border-slate-800">
+                Ctrl K
+              </kbd>
+            </button>
+
+            {/* Full-Screen NOC Operations Wallboard Button */}
+            <button
+              type="button"
+              onClick={() => setShowNocWallboard(true)}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-300 bg-slate-900 hover:bg-slate-800 hover:text-white border border-slate-800 transition-colors shadow-sm"
+              title="Open Full-Screen NOC Operations Center Wallboard (TV Display)"
+            >
+              <Tv className="h-3.5 w-3.5 text-emerald-400" />
+              <span className="hidden sm:inline">NOC Wallboard</span>
+            </button>
+
+            {/* Live Notification Center Drawer Bell Button */}
+            <button
+              type="button"
+              onClick={() => setShowNotificationCenter(true)}
+              className="relative p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition-colors shadow-sm"
+              title="Notification Center & Live Alerts"
+            >
+              <Bell className="h-4 w-4 text-slate-300" />
+              {stats && stats.failed24h > 0 && (
+                <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-rose-600 text-[10px] font-bold text-white flex items-center justify-center border-2 border-slate-950 animate-pulse">
+                  {stats.failed24h}
+                </span>
+              )}
+            </button>
 
             {/* Deploy New Server Wizard Action Button */}
             <button
@@ -516,6 +598,52 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
       <DeployWizardModal
         isOpen={showDeployWizard}
         onClose={() => setShowDeployWizard(false)}
+      />
+
+      {/* 12. Global Command Palette Modal (Ctrl+K / Cmd+K) */}
+      <CommandPaletteModal
+        isOpen={showCommandPalette}
+        onClose={() => setShowCommandPalette(false)}
+        onNavigateTab={(tab) => setActiveTab(tab)}
+        onOpenModal={(modal) => {
+          if (modal === 'deploy') setShowDeployWizard(true);
+          else if (modal === 'apikeys') setShowApiKeysModal(true);
+          else if (modal === 'housekeeping') setShowHousekeeping(true);
+          else if (modal === 'notifications') setShowNotificationLogs(true);
+          else if (modal === 'profile') setShowProfileModal(true);
+          else if (modal === 'wallboard') setShowNocWallboard(true);
+        }}
+        onSelectProject={(proj) => {
+          setFilters((prev) => ({ ...prev, projectName: proj, page: 1 }));
+          setActiveTab('telemetry');
+          scrollToTable();
+        }}
+        onSelectServer={(srv) => {
+          setFilters((prev) => ({ ...prev, serverId: srv, page: 1 }));
+          setActiveTab('telemetry');
+          scrollToTable();
+        }}
+        onToggleTimezone={toggleTimezone}
+        onExportCsv={() => handleExport('csv')}
+        onRefreshData={handleManualRefresh}
+        projects={projectsList}
+        servers={serversList}
+      />
+
+      {/* 13. Full-Screen NOC Operations Wallboard Modal (TV Display) */}
+      <NocWallboardModal
+        isOpen={showNocWallboard}
+        onClose={() => setShowNocWallboard(false)}
+        stats={stats}
+        onSelectReport={(report) => setSelectedReport(report)}
+      />
+
+      {/* 14. Live Notification Center Drawer with Audio Alerts */}
+      <NotificationCenterDrawer
+        isOpen={showNotificationCenter}
+        onClose={() => setShowNotificationCenter(false)}
+        onSelectReport={(report) => setSelectedReport(report)}
+        onOpenResolveModal={handleOpenResolveModal}
       />
 
       {/* Floating Action Toast */}
