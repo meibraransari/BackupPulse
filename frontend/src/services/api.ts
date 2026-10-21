@@ -340,6 +340,12 @@ export const api = {
     });
   },
 
+  async deleteApiKey(id: string): Promise<{ success: boolean; message: string; id: string }> {
+    return request(`/api/v1/api-keys/${id}/permanent`, {
+      method: 'DELETE',
+    });
+  },
+
   async getNotificationLogs(params: { page?: number; limit?: number; channel?: string; status?: string; eventType?: string } = {}): Promise<{
     data: NotificationLogItem[];
     pagination: { page: number; limit: number; total: number; totalPages: number };

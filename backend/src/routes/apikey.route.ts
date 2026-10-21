@@ -208,4 +208,69 @@ export async function apiKeyRoutes(fastify: FastifyInstance) {
       });
     }
   );
+
+  // 4. Permanently Delete an API Key (Strictly Admin only)
+  fastify.delete(
+    '/api/v1/api-keys/:id/permanent',
+    {
+      preValidation: [(fastify as any).authenticate],
+      schema: {
+        description: 'Permanently delete an API key token (Strictly Admin only)',
+        tags: ['API Key Management'],
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (request: any, reply: any) => {
+      const user = request.user;
+      if (user.role !== 'admin') {
+        return reply.status(403).send({ error: 'Forbidden: Admin privilege required to delete API tokens' });
+      }
+
+      const { id } = request.params;
+
+      const existing = await prisma.apiKey.findUnique({ where: { id } });
+      if (!existing) {
+        return reply.status(404).send({ error: 'API Key not found' });
+      }
+
+      await prisma.apiKey.delete({
+        where: { id },
+      });
+
+      // Record Governance Audit Log
+      const reqMeta = getRequestMetadata(request);
+      await recordAuditLog({
+        userId: user.id,
+        username: user.username,
+        userRole: user.role,
+        ipAddress: reqMeta.ipAddress,
+        userAgent: reqMeta.userAgent,
+        action: 'API_KEY_DELETED',
+        category: 'SECURITY',
+        targetResource: `Key: "${existing.name}" (${existing.keyPrefix})`,
+        details: {
+          keyId: id,
+          keyName: existing.name,
+          keyPrefix: existing.keyPrefix,
+          projectName: existing.projectName,
+          serverId: existing.serverId,
+          createdBy: existing.createdBy,
+          createdAt: existing.createdAt.toISOString(),
+        },
+      });
+
+      return reply.send({
+        success: true,
+        message: `API Key '${existing.name}' has been permanently deleted.`,
+        id,
+      });
+    }
+  );
 }

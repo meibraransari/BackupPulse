@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   X,
   Key,
@@ -16,10 +16,44 @@ import {
   CheckCircle2,
   Calendar,
   Ban,
+  RotateCcw,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { ApiKeyItem, User } from '../types';
 import { useTimezone } from '../context/TimezoneContext';
+
+interface ApiKeyColumnConfig {
+  key: string;
+  label: string;
+  defaultWidth: number;
+  minWidth: number;
+  resizable: boolean;
+  align?: 'left' | 'center' | 'right';
+}
+
+const API_KEY_COLUMNS: ApiKeyColumnConfig[] = [
+  { key: 'name', label: 'Token Name', defaultWidth: 230, minWidth: 150, resizable: true },
+  { key: 'prefix', label: 'Key Prefix', defaultWidth: 130, minWidth: 100, resizable: true },
+  { key: 'server', label: 'Server Scope', defaultWidth: 125, minWidth: 90, resizable: true },
+  { key: 'project', label: 'Project Scope', defaultWidth: 160, minWidth: 110, resizable: true },
+  { key: 'status', label: 'Status', defaultWidth: 95, minWidth: 80, resizable: true },
+  { key: 'lastUsed', label: 'Last Used', defaultWidth: 135, minWidth: 100, resizable: true },
+  { key: 'expires', label: 'Expires', defaultWidth: 135, minWidth: 100, resizable: true },
+  { key: 'actions', label: 'Actions', defaultWidth: 155, minWidth: 125, resizable: true, align: 'right' },
+];
+
+const DEFAULT_APIKEY_COL_WIDTHS: Record<string, number> = {
+  name: 230,
+  prefix: 130,
+  server: 125,
+  project: 160,
+  status: 95,
+  lastUsed: 135,
+  expires: 135,
+  actions: 155,
+};
+
+const STORAGE_KEY_APIKEY_COL_WIDTHS = 'backuppulse_apikey_col_widths_v1';
 
 interface ApiKeysModalProps {
   isOpen: boolean;
@@ -29,6 +63,7 @@ interface ApiKeysModalProps {
 
 export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose, user }) => {
   const { formatTimestamp } = useTimezone();
+  const isAdmin = user?.role === 'admin';
   const [keys, setKeys] = useState<ApiKeyItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [search, setSearch] = useState<string>('');
@@ -51,6 +86,98 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose, use
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [revokeError, setRevokeError] = useState<string | null>(null);
 
+  // Delete state (Strictly Admin only)
+  const [keyToDelete, setKeyToDelete] = useState<ApiKeyItem | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Column Widths with LocalStorage persistence
+  const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_APIKEY_COL_WIDTHS);
+      if (saved) {
+        return { ...DEFAULT_APIKEY_COL_WIDTHS, ...JSON.parse(saved) };
+      }
+    } catch {}
+    return DEFAULT_APIKEY_COL_WIDTHS;
+  });
+
+  const [resizingColKey, setResizingColKey] = useState<string | null>(null);
+  const resizeRef = useRef<{ startX: number; startWidth: number; colKey: string } | null>(null);
+
+  // Save to localStorage whenever widths change
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_APIKEY_COL_WIDTHS, JSON.stringify(colWidths));
+    } catch {}
+  }, [colWidths]);
+
+  // Mouse drag listeners for column resizing
+  useEffect(() => {
+    if (!resizingColKey) return;
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (!resizeRef.current) return;
+      const { startX, startWidth, colKey } = resizeRef.current;
+      const col = API_KEY_COLUMNS.find((c) => c.key === colKey);
+      const minW = col ? col.minWidth : 60;
+      const deltaX = e.clientX - startX;
+      const newWidth = Math.max(minW, startWidth + deltaX);
+
+      setColWidths((prev) => ({
+        ...prev,
+        [colKey]: newWidth,
+      }));
+    };
+
+    const onMouseUp = () => {
+      setResizingColKey(null);
+      resizeRef.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [resizingColKey]);
+
+  const handleStartResize = (colKey: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setResizingColKey(colKey);
+    resizeRef.current = {
+      startX: e.clientX,
+      startWidth: colWidths[colKey] || DEFAULT_APIKEY_COL_WIDTHS[colKey] || 120,
+      colKey,
+    };
+  };
+
+  const handleDoubleClickResetCol = (colKey: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setColWidths((prev) => ({
+      ...prev,
+      [colKey]: DEFAULT_APIKEY_COL_WIDTHS[colKey] || 120,
+    }));
+  };
+
+  const handleResetAllWidths = () => {
+    setColWidths(DEFAULT_APIKEY_COL_WIDTHS);
+    try {
+      localStorage.removeItem(STORAGE_KEY_APIKEY_COL_WIDTHS);
+    } catch {}
+  };
+
   const fetchKeys = useCallback(async () => {
     if (!isOpen) return;
     setLoading(true);
@@ -70,7 +197,9 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose, use
       setShowCreateForm(false);
       setNewlyCreatedKey(null);
       setKeyToRevoke(null);
+      setKeyToDelete(null);
       setRevokeError(null);
+      setDeleteError(null);
       setFormError(null);
     }
   }, [isOpen, fetchKeys]);
@@ -124,6 +253,26 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose, use
       setRevokeError(err.message || 'Failed to revoke token');
     } finally {
       setRevokingId(null);
+    }
+  };
+
+  const handleOpenDelete = (keyItem: ApiKeyItem) => {
+    setKeyToDelete(keyItem);
+    setDeleteError(null);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!keyToDelete) return;
+    setDeletingId(keyToDelete.id);
+    setDeleteError(null);
+    try {
+      await api.deleteApiKey(keyToDelete.id);
+      setKeyToDelete(null);
+      await fetchKeys();
+    } catch (err: any) {
+      setDeleteError(err.message || 'Failed to permanently delete token');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -329,7 +478,7 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose, use
         )}
 
         {/* Filter and Search Bar */}
-        <div className="px-6 py-3 border-b border-slate-800 bg-slate-900/60 flex items-center justify-between gap-3 text-xs">
+        <div className="px-6 py-3 border-b border-slate-800 bg-slate-900/60 flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="relative w-full max-w-sm">
             <Search className="h-3.5 w-3.5 absolute left-3 top-2.5 text-slate-500" />
             <input
@@ -341,9 +490,21 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose, use
             />
           </div>
 
-          <div className="text-slate-400 text-xs">
-            Showing <strong className="text-slate-200">{filteredKeys.length}</strong> of{' '}
-            <strong className="text-slate-200">{keys.length}</strong> provisioned keys
+          <div className="flex items-center space-x-3">
+            <button
+              type="button"
+              onClick={handleResetAllWidths}
+              className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700/80 transition-colors shadow-sm"
+              title="Reset all column widths to default fitted size"
+            >
+              <RotateCcw className="h-3 w-3 text-slate-400" />
+              <span>Reset Widths</span>
+            </button>
+
+            <div className="text-slate-400 text-xs">
+              Showing <strong className="text-slate-200">{filteredKeys.length}</strong> of{' '}
+              <strong className="text-slate-200">{keys.length}</strong> provisioned keys
+            </div>
           </div>
         </div>
 
@@ -363,18 +524,55 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose, use
               </p>
             </div>
           ) : (
-            <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/40">
-              <table className="w-full text-left text-xs text-slate-300 border-collapse">
+            <div className="border border-slate-800 rounded-xl overflow-x-auto bg-slate-950/40 shadow-inner">
+              <table className="min-w-full table-fixed text-left text-xs text-slate-300 border-collapse">
+                <colgroup>
+                  {API_KEY_COLUMNS.map((col) => (
+                    <col
+                      key={col.key}
+                      style={{
+                        width: `${colWidths[col.key] || col.defaultWidth}px`,
+                      }}
+                    />
+                  ))}
+                </colgroup>
                 <thead className="bg-slate-950/80 text-[11px] text-slate-400 uppercase tracking-wider border-b border-slate-800 select-none">
                   <tr>
-                    <th className="py-3 px-4">Token Name</th>
-                    <th className="py-3 px-4">Key Prefix</th>
-                    <th className="py-3 px-4">Server Scope</th>
-                    <th className="py-3 px-4">Project Scope</th>
-                    <th className="py-3 px-4">Status</th>
-                    <th className="py-3 px-4">Last Used</th>
-                    <th className="py-3 px-4">Expires</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
+                    {API_KEY_COLUMNS.map((col) => (
+                      <th
+                        key={col.key}
+                        className={`relative py-3 px-4 font-semibold text-slate-400 group/th ${
+                          col.align === 'right' ? 'text-right' : 'text-left'
+                        }`}
+                        style={{
+                          width: `${colWidths[col.key] || col.defaultWidth}px`,
+                        }}
+                      >
+                        <div className="truncate pr-2">{col.label}</div>
+
+                        {/* Column Mouse Resizer Handle */}
+                        {col.resizable && (
+                          <div
+                            onMouseDown={(e) => handleStartResize(col.key, e)}
+                            onDoubleClick={(e) => handleDoubleClickResetCol(col.key, e)}
+                            className={`absolute right-0 top-0 bottom-0 w-3 cursor-col-resize flex items-center justify-center transition-colors z-10 select-none ${
+                              resizingColKey === col.key
+                                ? 'bg-amber-500/30'
+                                : 'hover:bg-slate-700/60 active:bg-amber-500/40'
+                            }`}
+                            title="Drag to resize column width • Double-click to reset"
+                          >
+                            <div
+                              className={`w-0.5 h-4 rounded-full transition-colors ${
+                                resizingColKey === col.key
+                                  ? 'bg-amber-400 h-full'
+                                  : 'bg-slate-700 group-hover/th:bg-amber-400/80'
+                              }`}
+                            />
+                          </div>
+                        )}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
@@ -384,42 +582,42 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose, use
 
                     return (
                       <tr key={item.id} className="hover:bg-slate-800/40 transition-colors">
-                        <td className="py-3 px-4 font-semibold text-slate-200">
-                          <div>{item.name}</div>
-                          <div className="text-[10px] text-slate-500 font-normal">
+                        <td className="py-3 px-4 font-semibold text-slate-200 overflow-hidden">
+                          <div className="truncate" title={item.name}>{item.name}</div>
+                          <div className="text-[10px] text-slate-500 font-normal truncate">
                             Created by {item.createdBy || 'Admin'} • {formatTimestamp(item.createdAt)}
                           </div>
                         </td>
 
-                        <td className="py-3 px-4 font-mono text-[11px] text-slate-400">
-                          <span className="bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                        <td className="py-3 px-4 font-mono text-[11px] text-slate-400 overflow-hidden">
+                          <span className="bg-slate-900 px-2 py-0.5 rounded border border-slate-800 inline-block truncate max-w-full">
                             {item.keyPrefix}
                           </span>
                         </td>
 
-                        <td className="py-3 px-4">
+                        <td className="py-3 px-4 overflow-hidden">
                           {item.serverId ? (
-                            <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-sky-950/80 text-sky-300 border border-sky-800/40">
-                              <Server className="h-3 w-3" />
-                              <span>{item.serverId}</span>
+                            <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-sky-950/80 text-sky-300 border border-sky-800/40 truncate max-w-full" title={item.serverId}>
+                              <Server className="h-3 w-3 shrink-0" />
+                              <span className="truncate">{item.serverId}</span>
                             </span>
                           ) : (
-                            <span className="text-slate-500 text-[11px]">All Servers</span>
+                            <span className="text-slate-500 text-[11px] whitespace-nowrap">All Servers</span>
                           )}
                         </td>
 
-                        <td className="py-3 px-4">
+                        <td className="py-3 px-4 overflow-hidden">
                           {item.projectName ? (
-                            <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-950/80 text-purple-300 border border-purple-800/40">
-                              <FolderGit2 className="h-3 w-3" />
-                              <span>{item.projectName}</span>
+                            <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-950/80 text-purple-300 border border-purple-800/40 truncate max-w-full" title={item.projectName}>
+                              <FolderGit2 className="h-3 w-3 shrink-0" />
+                              <span className="truncate">{item.projectName}</span>
                             </span>
                           ) : (
-                            <span className="text-slate-500 text-[11px]">All Projects</span>
+                            <span className="text-slate-500 text-[11px] whitespace-nowrap">All Projects</span>
                           )}
                         </td>
 
-                        <td className="py-3 px-4">
+                        <td className="py-3 px-4 overflow-hidden whitespace-nowrap">
                           {isRevoked ? (
                             <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-950/80 text-rose-300 border border-rose-800/50">
                               Revoked
@@ -435,23 +633,39 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose, use
                           )}
                         </td>
 
-                        <td className="py-3 px-4 text-slate-400 text-[11px]">
-                          {item.lastUsedAt ? formatTimestamp(item.lastUsedAt) : <span className="text-slate-600">Never</span>}
+                        <td className="py-3 px-4 text-slate-400 text-[11px] overflow-hidden whitespace-nowrap font-mono">
+                          {item.lastUsedAt ? formatTimestamp(item.lastUsedAt) : <span className="text-slate-600 font-sans">Never</span>}
                         </td>
 
-                        <td className="py-3 px-4 text-slate-400 text-[11px]">
-                          {item.expiresAt ? formatTimestamp(item.expiresAt) : <span className="text-slate-600">Never</span>}
+                        <td className="py-3 px-4 text-slate-400 text-[11px] overflow-hidden whitespace-nowrap font-mono">
+                          {item.expiresAt ? formatTimestamp(item.expiresAt) : <span className="text-slate-600 font-sans">Never</span>}
                         </td>
 
-                        <td className="py-3 px-4 text-right">
-                          {!isRevoked && (
-                            <button
-                              onClick={() => handleOpenRevoke(item)}
-                              className="px-2.5 py-1 text-[11px] font-semibold text-rose-400 hover:text-rose-200 hover:bg-rose-950/50 rounded-lg transition-colors border border-rose-900/40 hover:border-rose-700/60 shadow-sm"
-                              title="Immediately revoke this token"
-                            >
-                              Revoke
-                            </button>
+                        <td className="py-3 px-4 text-right overflow-hidden whitespace-nowrap">
+                          {isAdmin ? (
+                            <div className="flex items-center justify-end space-x-1.5">
+                              {!isRevoked && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenRevoke(item)}
+                                  className="px-2.5 py-1 text-[11px] font-semibold text-rose-400 hover:text-rose-200 hover:bg-rose-950/50 rounded-lg transition-colors border border-rose-900/40 hover:border-rose-700/60 shadow-sm"
+                                  title="Immediately revoke this token"
+                                >
+                                  Revoke
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenDelete(item)}
+                                className="px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:text-white bg-rose-950/70 hover:bg-rose-900 rounded-lg transition-all border border-rose-800/60 shadow-sm inline-flex items-center space-x-1 group/del"
+                                title="Permanently delete this token (Admin only - trial & error cleanup)"
+                              >
+                                <Trash2 className="h-3 w-3 text-rose-400 group-hover/del:text-rose-200 transition-colors" />
+                                <span>Delete</span>
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-slate-600 text-[10px] italic">Read-only</span>
                           )}
                         </td>
                       </tr>
@@ -587,6 +801,130 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose, use
                     <>
                       <Trash2 className="h-3.5 w-3.5" />
                       <span>Yes, Revoke Token</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= PERMANENT DELETE API TOKEN CONFIRMATION MODAL ================= */}
+      {keyToDelete && (
+        <div
+          className="fixed inset-0 z-[60] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => {
+            if (!deletingId) setKeyToDelete(null);
+          }}
+        >
+          <div
+            className="bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border border-rose-500/40 rounded-3xl w-full max-w-md shadow-2xl shadow-rose-950/70 overflow-hidden relative animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Top Close Button */}
+            <button
+              onClick={() => {
+                if (!deletingId) setKeyToDelete(null);
+              }}
+              disabled={Boolean(deletingId)}
+              className="absolute top-4 right-4 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors z-10 disabled:opacity-40"
+              title="Cancel and close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            <div className="p-6 text-center space-y-4">
+              {/* Trash Icon Badge */}
+              <div className="relative mx-auto mt-1 mb-2">
+                <div className="absolute -inset-1.5 rounded-2xl bg-rose-600 opacity-30 blur-lg animate-pulse" />
+                <div className="relative h-16 w-16 rounded-2xl bg-gradient-to-tr from-rose-950 via-slate-900 to-rose-900/60 border border-rose-500/50 flex items-center justify-center text-rose-400 shadow-xl shadow-rose-950/50 mx-auto">
+                  <Trash2 className="h-8 w-8 text-rose-400" />
+                </div>
+              </div>
+
+              {/* Title & Badge */}
+              <div>
+                <span className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold tracking-wider uppercase bg-rose-950/80 text-rose-300 border border-rose-800/60 mb-2">
+                  <ShieldAlert className="h-3 w-3" />
+                  <span>Admin Only Action</span>
+                </span>
+                <h3 className="text-lg font-bold text-white tracking-tight">
+                  Permanently Delete Token?
+                </h3>
+                <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                  This will completely remove this API token from the database. It is intended for cleaning up trial-and-error setups or decommissioned server keys.
+                </p>
+              </div>
+
+              {/* Token Details Card */}
+              <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 text-left space-y-2 text-[11px]">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-white truncate max-w-[200px]" title={keyToDelete.name}>
+                    {keyToDelete.name}
+                  </span>
+                  <span className="font-mono text-cyan-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800 shrink-0">
+                    {keyToDelete.keyPrefix}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/80">
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">Server Scope</span>
+                    <span className="text-slate-300 font-mono truncate block" title={keyToDelete.serverId || 'All Servers'}>
+                      {keyToDelete.serverId || '🌐 All Servers'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">Project Scope</span>
+                    <span className="text-slate-300 font-medium truncate block" title={keyToDelete.projectName || 'All Projects'}>
+                      {keyToDelete.projectName || '📁 All Projects'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Audit notice */}
+              <div className="text-[11px] text-slate-400 flex items-center justify-center space-x-1.5">
+                <span className="text-indigo-400">ℹ️</span>
+                <span>An audit record will be logged in Governance & Compliance.</span>
+              </div>
+
+              {/* Error feedback if any */}
+              {deleteError && (
+                <div className="p-3 rounded-xl bg-rose-950/80 border border-rose-500 text-rose-200 text-xs flex items-center justify-between">
+                  <span>{deleteError}</span>
+                  <button onClick={() => setDeleteError(null)} className="text-rose-400 hover:text-white">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="pt-2 flex items-center justify-end space-x-2.5">
+                <button
+                  type="button"
+                  disabled={Boolean(deletingId)}
+                  onClick={() => setKeyToDelete(null)}
+                  className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 transition-colors border border-slate-700 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={Boolean(deletingId)}
+                  onClick={handleConfirmDelete}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 active:bg-rose-700 transition-all flex items-center space-x-2 shadow-lg shadow-rose-950/50 disabled:opacity-50"
+                >
+                  {deletingId ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>Deleting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span>Permanently Delete</span>
                     </>
                   )}
                 </button>
