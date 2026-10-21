@@ -729,6 +729,75 @@ export async function backupRoutes(fastify: FastifyInstance) {
     }
   );
 
+  // Permanently delete a backup report (Strictly Admin only)
+  fastify.delete(
+    '/api/v1/backups/:id',
+    {
+      preValidation: [(fastify as any).authenticate],
+      schema: {
+        description: 'Permanently delete a backup report (Strictly Admin only)',
+        tags: ['Backups'],
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: 'object',
+          properties: { id: { type: 'string' } },
+          required: ['id'],
+        },
+      },
+    },
+    async (request, reply) => {
+      const authUser = (request as any).user;
+      if (authUser?.role !== 'admin') {
+        return reply.status(403).send({
+          error: 'Forbidden: Only administrators have permission to delete backup records.',
+        });
+      }
+
+      const { id } = request.params as any;
+      const existing = await prisma.backupReport.findUnique({
+        where: { id },
+      });
+
+      if (!existing) {
+        return reply.status(404).send({ error: 'Backup report not found.' });
+      }
+
+      await prisma.backupReport.delete({
+        where: { id },
+      });
+
+      // Record Governance Audit Log
+      const reqMeta = getRequestMetadata(request);
+      await recordAuditLog({
+        userId: authUser?.id,
+        username: authUser?.username || 'admin',
+        userRole: authUser?.role,
+        ipAddress: reqMeta.ipAddress,
+        userAgent: reqMeta.userAgent,
+        action: 'BACKUP_RECORD_DELETED',
+        category: 'SYSTEM',
+        targetResource: `Report: [${existing.projectName}] on ${existing.serverId} (${existing.backupType}) - ${existing.zipFilename}`,
+        details: {
+          backupReportId: id,
+          projectName: existing.projectName,
+          serverId: existing.serverId,
+          hostname: existing.hostname,
+          backupType: existing.backupType,
+          zipFilename: existing.zipFilename,
+          status: existing.status,
+          backupSizeBytes: existing.backupSizeBytes ? existing.backupSizeBytes.toString() : null,
+          createdAt: existing.createdAt.toISOString(),
+        },
+      });
+
+      return reply.send({
+        success: true,
+        message: 'Backup report deleted successfully',
+        id,
+      });
+    }
+  );
+
   // Unique Projects list for filter dropdown
   fastify.get(
     '/api/v1/backups/projects',

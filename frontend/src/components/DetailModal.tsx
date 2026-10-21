@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Copy, Check, Terminal, AlertCircle, HardDrive, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { X, Copy, Check, Terminal, AlertCircle, HardDrive, CheckCircle2, AlertTriangle, Trash2 } from 'lucide-react';
 import { BackupReport } from '../types';
 import { useTimezone } from '../context/TimezoneContext';
 import { TerminalLogViewer } from './TerminalLogViewer';
@@ -8,9 +8,17 @@ interface DetailModalProps {
   report: BackupReport | null;
   onClose: () => void;
   onMarkSuccess?: (report: BackupReport) => void;
+  onDeleteBackup?: (report: BackupReport) => void;
+  isAdmin?: boolean;
 }
 
-export const DetailModal: React.FC<DetailModalProps> = ({ report, onClose, onMarkSuccess }) => {
+export const DetailModal: React.FC<DetailModalProps> = ({
+  report,
+  onClose,
+  onMarkSuccess,
+  onDeleteBackup,
+  isAdmin,
+}) => {
   const { formatTimestamp, formatDateOnly } = useTimezone();
   const [copiedKey, setCopiedKey] = useState(false);
 
@@ -280,8 +288,25 @@ export const DetailModal: React.FC<DetailModalProps> = ({ report, onClose, onMar
 
         {/* Footer */}
         <div className="px-6 py-3.5 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between text-xs text-slate-500 font-mono text-[11px]">
-          <span>Started: {formatTimestamp(report.startTime)}</span>
-          <span>Finished: {formatTimestamp(report.endTime)}</span>
+          <div className="flex items-center space-x-3">
+            <span>Started: {formatTimestamp(report.startTime)}</span>
+            <span>•</span>
+            <span>Finished: {formatTimestamp(report.endTime)}</span>
+          </div>
+
+          {isAdmin && onDeleteBackup && (
+            <button
+              type="button"
+              onClick={() => {
+                onDeleteBackup(report);
+              }}
+              className="px-2.5 py-1 rounded-lg text-xs font-semibold text-rose-300 bg-rose-950/70 hover:bg-rose-900 hover:text-white transition-colors border border-rose-800/60 inline-flex items-center space-x-1.5 shadow-sm font-sans"
+              title="Delete this backup record (Admin only)"
+            >
+              <Trash2 className="h-3.5 w-3.5 text-rose-400" />
+              <span>Delete Record</span>
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -21,8 +21,9 @@ import {
   RotateCcw,
   Columns,
   SlidersHorizontal,
+  Trash2,
 } from 'lucide-react';
-import { BackupReport } from '../types';
+import { BackupReport, User } from '../types';
 import { useTimezone } from '../context/TimezoneContext';
 
 interface BackupTableProps {
@@ -32,6 +33,8 @@ interface BackupTableProps {
   onPageChange: (newPage: number) => void;
   onSelectReport: (report: BackupReport) => void;
   onMarkSuccess?: (report: BackupReport) => void;
+  onDeleteBackup?: (report: BackupReport) => void;
+  currentUser?: User | null;
 }
 
 const STORAGE_KEY_COL_WIDTHS = 'backuppulse_table_col_widths_v1';
@@ -40,16 +43,16 @@ const STORAGE_KEY_DENSITY = 'backuppulse_table_density_v1';
 
 // Default column widths in pixels (tuned to fit cleanly without horizontal scrolling)
 const DEFAULT_COLUMN_WIDTHS: Record<string, number> = {
-  expand: 44,
-  status: 125,
-  availability: 115,
-  project: 175,
-  type: 75,
-  size: 90,
-  duration: 80,
-  s3: 175,
-  timestamp: 120,
-  actions: 145,
+  expand: 40,
+  status: 110,
+  availability: 95,
+  project: 155,
+  type: 65,
+  size: 85,
+  duration: 75,
+  s3: 145,
+  timestamp: 115,
+  actions: 140,
 };
 
 interface ColumnConfig {
@@ -61,16 +64,16 @@ interface ColumnConfig {
 }
 
 const COLUMN_CONFIGS: ColumnConfig[] = [
-  { key: 'expand', label: '', minWidth: 44, resizable: false, align: 'center' },
+  { key: 'expand', label: '', minWidth: 40, resizable: false, align: 'center' },
   { key: 'status', label: 'Status & Action', minWidth: 95, resizable: true },
-  { key: 'availability', label: 'Active,expired', minWidth: 105, resizable: true },
+  { key: 'availability', label: 'Active,expired', minWidth: 95, resizable: true },
   { key: 'project', label: 'Project & Host', minWidth: 110, resizable: true },
   { key: 'type', label: 'Type', minWidth: 60, resizable: true },
   { key: 'size', label: 'Archive Size', minWidth: 70, resizable: true },
   { key: 'duration', label: 'Duration', minWidth: 65, resizable: true },
   { key: 's3', label: 'S3 Destination', minWidth: 80, resizable: true },
   { key: 'timestamp', label: 'Timestamp', minWidth: 85, resizable: true },
-  { key: 'actions', label: 'Actions', minWidth: 110, resizable: true, align: 'right' },
+  { key: 'actions', label: 'Actions', minWidth: 90, resizable: true, align: 'right' },
 ];
 
 export const BackupTable: React.FC<BackupTableProps> = ({
@@ -80,8 +83,11 @@ export const BackupTable: React.FC<BackupTableProps> = ({
   onPageChange,
   onSelectReport,
   onMarkSuccess,
+  onDeleteBackup,
+  currentUser,
 }) => {
   const { formatTimestamp, formatDateOnly, formatTimeOnly } = useTimezone();
+  const isAdmin = currentUser?.role === 'admin';
 
   // Column Widths with LocalStorage persistence
   const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
@@ -799,33 +805,37 @@ export const BackupTable: React.FC<BackupTableProps> = ({
                         </td>
                       )}
 
-                      {/* Actions Column */}
+                      {/* Actions Column (View & Admin Delete) */}
                       {isColVisible('actions') && (
                         <td className={`text-right whitespace-nowrap overflow-hidden ${cellPadding}`}>
-                          {report.status === 'FAILED' && onMarkSuccess && (
+                          <div className="flex items-center justify-end space-x-1.5">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                onMarkSuccess(report);
+                                onSelectReport(report);
                               }}
-                              className="mr-1.5 px-2 py-1 rounded-lg text-xs font-semibold text-emerald-300 bg-emerald-950/80 hover:bg-emerald-900 hover:text-white transition-colors border border-emerald-600/50 inline-flex items-center space-x-1 shadow-sm"
-                              title="Mark this failed job as SUCCESS manually"
+                              className="px-2 py-1 rounded-lg text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 hover:text-white transition-colors border border-slate-700 inline-flex items-center space-x-1 shadow-sm"
+                              title="Open detailed inspector modal"
                             >
-                              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
-                              <span className="hidden xl:inline">Resolve</span>
+                              <Eye className="h-3.5 w-3.5" />
+                              <span className="hidden xl:inline">View</span>
                             </button>
-                          )}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onSelectReport(report);
-                            }}
-                            className="px-2.5 py-1 rounded-lg text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 hover:text-white transition-colors border border-slate-700"
-                            title="Open detailed inspector modal"
-                          >
-                            <Eye className="h-3.5 w-3.5 inline mr-1" />
-                            <span>Modal</span>
-                          </button>
+
+                            {/* Delete Button (Strictly for Admin users only) */}
+                            {isAdmin && onDeleteBackup && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onDeleteBackup(report);
+                                }}
+                                className="px-2 py-1 rounded-lg text-xs font-semibold text-rose-300 bg-rose-950/70 hover:bg-rose-900/90 hover:text-white transition-all border border-rose-800/60 inline-flex items-center space-x-1 shadow-sm group/del"
+                                title="Delete backup record (Admin only - trial & error entry cleanup)"
+                              >
+                                <Trash2 className="h-3.5 w-3.5 text-rose-400 group-hover/del:text-rose-200 transition-colors" />
+                                <span>Delete</span>
+                              </button>
+                            )}
+                          </div>
                         </td>
                       )}
                     </tr>
@@ -948,6 +958,22 @@ export const BackupTable: React.FC<BackupTableProps> = ({
                                   <Code className="h-3 w-3" />
                                   <span>Raw JSON</span>
                                 </button>
+
+                                {/* Admin Delete Button */}
+                                {isAdmin && onDeleteBackup && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onDeleteBackup(report);
+                                    }}
+                                    className="px-2.5 py-1 rounded-lg text-xs font-semibold text-rose-300 bg-rose-950/70 hover:bg-rose-900 hover:text-white transition-colors border border-rose-800/60 inline-flex items-center space-x-1 shadow-sm ml-1"
+                                    title="Permanently delete this backup record (Admin only)"
+                                  >
+                                    <Trash2 className="h-3 w-3 text-rose-400" />
+                                    <span>Delete</span>
+                                  </button>
+                                )}
                               </div>
                             </div>
 

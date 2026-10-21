@@ -232,6 +232,12 @@ export const api = {
     });
   },
 
+  async deleteBackup(id: string): Promise<{ success: boolean; message: string; id: string }> {
+    return request<{ success: boolean; message: string; id: string }>(`/api/v1/backups/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
   async getProjects(): Promise<string[]> {
     return request<string[]>('/api/v1/backups/projects');
   },

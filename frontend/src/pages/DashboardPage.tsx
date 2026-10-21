@@ -20,6 +20,7 @@ import { AuditLogsView } from '../components/AuditLogsView';
 import { CommandPaletteModal } from '../components/CommandPaletteModal';
 import { NocWallboardModal } from '../components/NocWallboardModal';
 import { NotificationCenterDrawer } from '../components/NotificationCenterDrawer';
+import { DeleteBackupModal } from '../components/DeleteBackupModal';
 import { useTimezone } from '../context/TimezoneContext';
 import { api } from '../services/api';
 import { BackupFilters, BackupReport, DashboardStats, ProjectBreakdown, TrendItem, User } from '../types';
@@ -76,6 +77,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
   const [filters, setFilters] = useState<BackupFilters>(initialFilters);
   const [selectedReport, setSelectedReport] = useState<BackupReport | null>(null);
   const [resolvingReport, setResolvingReport] = useState<BackupReport | null>(null);
+  const [backupToDelete, setBackupToDelete] = useState<BackupReport | null>(null);
 
   const [loadingStats, setLoadingStats] = useState(true);
   const [loadingBackups, setLoadingBackups] = useState(true);
@@ -223,6 +225,34 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
       await Promise.all([loadDashboardData(), loadBackups()]);
     } catch (err: any) {
       alert(`Failed to update backup status: ${err.message}`);
+      throw err;
+    }
+  };
+
+  // Open the Delete Backup confirmation modal (Admin only)
+  const handleOpenDeleteModal = (report: BackupReport) => {
+    setBackupToDelete(report);
+  };
+
+  // Confirm permanent deletion of backup record
+  const handleConfirmDelete = async (report: BackupReport) => {
+    try {
+      await api.deleteBackup(report.id);
+
+      // If currently open in detail modal, close it
+      if (selectedReport && selectedReport.id === report.id) {
+        setSelectedReport(null);
+      }
+
+      // Show success notification toast
+      setActionToast(`Backup record for "${report.projectName}" (${report.zipFilename}) permanently deleted.`);
+      setTimeout(() => setActionToast(null), 4000);
+
+      // Reload dashboard data & backups list immediately
+      await Promise.all([loadDashboardData(), loadBackups()]);
+    } catch (err: any) {
+      console.error('Failed to delete backup:', err);
+      alert(`Failed to delete backup record: ${err?.message || 'Unknown error'}`);
       throw err;
     }
   };
@@ -509,6 +539,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
                 onPageChange={handlePageChange}
                 onSelectReport={(report) => setSelectedReport(report)}
                 onMarkSuccess={handleOpenResolveModal}
+                onDeleteBackup={handleOpenDeleteModal}
+                currentUser={currentUser}
               />
             </div>
           </>
@@ -550,6 +582,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
         report={selectedReport}
         onClose={() => setSelectedReport(null)}
         onMarkSuccess={handleOpenResolveModal}
+        onDeleteBackup={handleOpenDeleteModal}
+        isAdmin={currentUser?.role === 'admin'}
       />
 
       {/* 6. Professional Incident Resolution Modal */}
@@ -647,6 +681,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
         onClose={() => setShowNotificationCenter(false)}
         onSelectReport={(report) => setSelectedReport(report)}
         onOpenResolveModal={handleOpenResolveModal}
+      />
+
+      {/* 15. Delete Backup Confirmation Modal (Strictly Admin only) */}
+      <DeleteBackupModal
+        report={backupToDelete}
+        isOpen={!!backupToDelete}
+        onClose={() => setBackupToDelete(null)}
+        onConfirm={handleConfirmDelete}
       />
 
       {/* Floating Action Toast */}
