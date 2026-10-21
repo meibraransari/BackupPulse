@@ -199,54 +199,77 @@ export const BackupTable: React.FC<BackupTableProps> = ({
     } catch {}
   }, [colWidths]);
 
-  // Drag and drop column resizing event listener
+  // Total calculated table width for horizontal scroll
+  const totalBackupTableWidth = activeColumns.reduce(
+    (sum, col) => sum + (colWidths[col.key] || DEFAULT_COLUMN_WIDTHS[col.key] || 100),
+    0
+  );
+
+  // Clean up cursor on unmount
   useEffect(() => {
-    if (!resizingColKey) return;
-
-    const onMouseMove = (e: MouseEvent) => {
-      if (!resizeRef.current) return;
-      const { startX, startWidth, colKey } = resizeRef.current;
-      const colConfig = COLUMN_CONFIGS.find((c) => c.key === colKey);
-      const minW = colConfig ? colConfig.minWidth : 50;
-      const deltaX = e.clientX - startX;
-      const newWidth = Math.max(minW, startWidth + deltaX);
-
-      setColWidths((prev) => ({
-        ...prev,
-        [colKey]: newWidth,
-      }));
-    };
-
-    const onMouseUp = () => {
-      setResizingColKey(null);
-      resizeRef.current = null;
+    return () => {
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
+  }, []);
 
+  // Synchronous mouse & touch drag handlers for instant, lag-free column resizing
+  const handleStartResize = (
+    colKey: string,
+    e: React.MouseEvent | React.TouchEvent
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const startX = clientX;
+    const startWidth = colWidths[colKey] || DEFAULT_COLUMN_WIDTHS[colKey] || 100;
+    const colConfig = COLUMN_CONFIGS.find((c) => c.key === colKey);
+    const minW = colConfig ? colConfig.minWidth : 50;
+
+    setResizingColKey(colKey);
+
+    const originalCursor = document.body.style.cursor;
+    const originalUserSelect = document.body.style.userSelect;
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
 
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
+    let latestWidth = startWidth;
 
-    return () => {
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-    };
-  }, [resizingColKey]);
+    const onMove = (moveEvent: MouseEvent | TouchEvent) => {
+      if (moveEvent.cancelable) {
+        moveEvent.preventDefault();
+      }
+      const curX =
+        'touches' in moveEvent
+          ? moveEvent.touches[0].clientX
+          : (moveEvent as MouseEvent).clientX;
+      const deltaX = curX - startX;
+      const newWidth = Math.max(minW, Math.round(startWidth + deltaX));
 
-  const handleStartResize = (colKey: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setResizingColKey(colKey);
-    resizeRef.current = {
-      startX: e.clientX,
-      startWidth: colWidths[colKey] || DEFAULT_COLUMN_WIDTHS[colKey] || 100,
-      colKey,
+      if (newWidth !== latestWidth) {
+        latestWidth = newWidth;
+        setColWidths((prev) => ({
+          ...prev,
+          [colKey]: newWidth,
+        }));
+      }
     };
+
+    const onEnd = () => {
+      setResizingColKey(null);
+      document.body.style.cursor = originalCursor;
+      document.body.style.userSelect = originalUserSelect;
+      window.removeEventListener('mousemove', onMove, true);
+      window.removeEventListener('mouseup', onEnd, true);
+      window.removeEventListener('touchmove', onMove, true);
+      window.removeEventListener('touchend', onEnd, true);
+    };
+
+    window.addEventListener('mousemove', onMove, true);
+    window.addEventListener('mouseup', onEnd, true);
+    window.addEventListener('touchmove', onMove, { capture: true, passive: false });
+    window.addEventListener('touchend', onEnd, true);
   };
 
   const handleDoubleClickResetCol = (colKey: string, e: React.MouseEvent) => {
@@ -602,62 +625,91 @@ export const BackupTable: React.FC<BackupTableProps> = ({
 
       {/* Table Content Container */}
       <div className="overflow-x-auto">
-        <table className="w-full table-fixed text-left text-xs sm:text-sm border-collapse">
+        <table
+          className="table-fixed text-left text-xs sm:text-sm border-collapse"
+          style={{
+            width: `${totalBackupTableWidth}px`,
+            minWidth: '100%',
+          }}
+        >
           {/* Defined ColGroup to enforce strict column resizing without spontaneous overflow */}
           <colgroup>
-            {activeColumns.map((col) => (
-              <col
-                key={col.key}
-                style={{
-                  width: `${colWidths[col.key] || DEFAULT_COLUMN_WIDTHS[col.key] || 100}px`,
-                }}
-              />
-            ))}
+            {activeColumns.map((col) => {
+              const width = colWidths[col.key] || DEFAULT_COLUMN_WIDTHS[col.key] || 100;
+              return (
+                <col
+                  key={col.key}
+                  style={{
+                    width: `${width}px`,
+                    minWidth: `${col.minWidth}px`,
+                  }}
+                />
+              );
+            })}
           </colgroup>
 
           <thead className="bg-slate-950/60 text-slate-400 text-[11px] uppercase tracking-wider border-b border-slate-800 select-none">
             <tr>
-              {activeColumns.map((col) => (
-                <th
-                  key={col.key}
-                  className={`relative ${
-                    density === 'compact' ? 'py-2 px-3' : 'py-3 px-3.5'
-                  } font-semibold text-slate-400 group/th ${
-                    col.align === 'center'
-                      ? 'text-center'
-                      : col.align === 'right'
-                      ? 'text-right'
-                      : 'text-left'
-                  }`}
-                  style={{
-                    width: `${colWidths[col.key] || DEFAULT_COLUMN_WIDTHS[col.key] || 100}px`,
-                  }}
-                >
-                  <div className="truncate pr-2">{col.label}</div>
+              {activeColumns.map((col, idx) => {
+                const isLast = idx === activeColumns.length - 1;
+                const isResizing = resizingColKey === col.key;
+                const width = colWidths[col.key] || DEFAULT_COLUMN_WIDTHS[col.key] || 100;
 
-                  {/* Mouse Drag & Drop Column Resizer Handle */}
-                  {col.resizable && (
-                    <div
-                      onMouseDown={(e) => handleStartResize(col.key, e)}
-                      onDoubleClick={(e) => handleDoubleClickResetCol(col.key, e)}
-                      className={`absolute right-0 top-0 bottom-0 w-3 cursor-col-resize flex items-center justify-center transition-colors z-10 select-none ${
-                        resizingColKey === col.key
-                          ? 'bg-emerald-500/30'
-                          : 'hover:bg-slate-700/60 active:bg-emerald-500/40'
-                      }`}
-                      title="Drag to resize column width • Double-click to reset"
-                    >
+                return (
+                  <th
+                    key={col.key}
+                    className={`relative ${
+                      density === 'compact' ? 'py-2 px-3' : 'py-3 px-3.5'
+                    } font-semibold text-slate-400 group/th select-none border-r border-slate-800/60 last:border-r-0 ${
+                      col.align === 'center'
+                        ? 'text-center'
+                        : col.align === 'right'
+                        ? 'text-right'
+                        : 'text-left'
+                    } ${isResizing ? 'bg-emerald-500/10 text-emerald-200' : ''}`}
+                    style={{
+                      width: `${width}px`,
+                      minWidth: `${col.minWidth}px`,
+                      maxWidth: `${width}px`,
+                    }}
+                  >
+                    <div className="truncate pr-2">{col.label}</div>
+
+                    {/* Mouse Drag & Drop Column Resizer Handle */}
+                    {col.resizable && (
                       <div
-                        className={`w-0.5 h-4 rounded-full transition-colors ${
-                          resizingColKey === col.key
-                            ? 'bg-emerald-400 h-full'
-                            : 'bg-slate-700 group-hover/th:bg-emerald-400/80'
+                        onMouseDown={(e) => handleStartResize(col.key, e)}
+                        onTouchStart={(e) => handleStartResize(col.key, e)}
+                        onDoubleClick={(e) => handleDoubleClickResetCol(col.key, e)}
+                        className={`absolute ${
+                          isLast ? 'right-0' : '-right-2'
+                        } top-0 bottom-0 w-4 cursor-col-resize flex items-center justify-center z-30 select-none touch-none ${
+                          isResizing
+                            ? 'bg-emerald-500/25'
+                            : 'hover:bg-emerald-500/15 active:bg-emerald-500/30'
                         }`}
-                      />
-                    </div>
-                  )}
-                </th>
-              ))}
+                        title="Drag to resize column width • Double-click to reset"
+                      >
+                        {/* Live pixel width pill while dragging */}
+                        {isResizing && (
+                          <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-emerald-400 text-slate-950 font-mono text-[10px] font-bold px-1.5 py-0.5 rounded shadow-lg shadow-emerald-500/50 pointer-events-none whitespace-nowrap z-50 animate-in fade-in zoom-in-90">
+                            {width}px
+                          </div>
+                        )}
+
+                        {/* Glowing Feedback Bar */}
+                        <div
+                          className={`transition-all duration-150 rounded-full ${
+                            isResizing
+                              ? 'w-1 bg-emerald-400 h-full shadow-[0_0_12px_rgba(52,211,153,1)] ring-2 ring-emerald-400/60'
+                              : 'w-0.5 bg-slate-700 h-4 group-hover/th:bg-emerald-400/90 group-hover/th:h-6 group-hover/th:w-1'
+                          }`}
+                        />
+                      </div>
+                    )}
+                  </th>
+                );
+              })}
             </tr>
           </thead>
 

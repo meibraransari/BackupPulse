@@ -96,14 +96,27 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose, use
     try {
       const saved = localStorage.getItem(STORAGE_KEY_APIKEY_COL_WIDTHS);
       if (saved) {
-        return { ...DEFAULT_APIKEY_COL_WIDTHS, ...JSON.parse(saved) };
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') {
+          const validated: Record<string, number> = {};
+          for (const key of Object.keys(DEFAULT_APIKEY_COL_WIDTHS)) {
+            const val = Number(parsed[key]);
+            validated[key] = !isNaN(val) && val >= 50 ? val : DEFAULT_APIKEY_COL_WIDTHS[key];
+          }
+          return validated;
+        }
       }
     } catch {}
     return DEFAULT_APIKEY_COL_WIDTHS;
   });
 
   const [resizingColKey, setResizingColKey] = useState<string | null>(null);
-  const resizeRef = useRef<{ startX: number; startWidth: number; colKey: string } | null>(null);
+
+  // Total calculated table width for horizontal scroll and explicit table width
+  const totalTableWidth = API_KEY_COLUMNS.reduce(
+    (sum, col) => sum + (colWidths[col.key] || col.defaultWidth),
+    0
+  );
 
   // Save to localStorage whenever widths change
   useEffect(() => {
@@ -112,54 +125,71 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose, use
     } catch {}
   }, [colWidths]);
 
-  // Mouse drag listeners for column resizing
+  // Clean up cursor on unmount
   useEffect(() => {
-    if (!resizingColKey) return;
-
-    const onMouseMove = (e: MouseEvent) => {
-      if (!resizeRef.current) return;
-      const { startX, startWidth, colKey } = resizeRef.current;
-      const col = API_KEY_COLUMNS.find((c) => c.key === colKey);
-      const minW = col ? col.minWidth : 60;
-      const deltaX = e.clientX - startX;
-      const newWidth = Math.max(minW, startWidth + deltaX);
-
-      setColWidths((prev) => ({
-        ...prev,
-        [colKey]: newWidth,
-      }));
-    };
-
-    const onMouseUp = () => {
-      setResizingColKey(null);
-      resizeRef.current = null;
+    return () => {
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
+  }, []);
 
+  // Synchronous mouse & touch drag handlers for instant, lag-free column resizing
+  const handleStartResize = (
+    colKey: string,
+    e: React.MouseEvent | React.TouchEvent
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const startX = clientX;
+    const startWidth = colWidths[colKey] || DEFAULT_APIKEY_COL_WIDTHS[colKey] || 120;
+    const colConfig = API_KEY_COLUMNS.find((c) => c.key === colKey);
+    const minW = colConfig ? colConfig.minWidth : 60;
+
+    setResizingColKey(colKey);
+
+    const originalCursor = document.body.style.cursor;
+    const originalUserSelect = document.body.style.userSelect;
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
 
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
+    let latestWidth = startWidth;
 
-    return () => {
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-    };
-  }, [resizingColKey]);
+    const onMove = (moveEvent: MouseEvent | TouchEvent) => {
+      if (moveEvent.cancelable) {
+        moveEvent.preventDefault();
+      }
+      const curX =
+        'touches' in moveEvent
+          ? moveEvent.touches[0].clientX
+          : (moveEvent as MouseEvent).clientX;
+      const deltaX = curX - startX;
+      const newWidth = Math.max(minW, Math.round(startWidth + deltaX));
 
-  const handleStartResize = (colKey: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setResizingColKey(colKey);
-    resizeRef.current = {
-      startX: e.clientX,
-      startWidth: colWidths[colKey] || DEFAULT_APIKEY_COL_WIDTHS[colKey] || 120,
-      colKey,
+      if (newWidth !== latestWidth) {
+        latestWidth = newWidth;
+        setColWidths((prev) => ({
+          ...prev,
+          [colKey]: newWidth,
+        }));
+      }
     };
+
+    const onEnd = () => {
+      setResizingColKey(null);
+      document.body.style.cursor = originalCursor;
+      document.body.style.userSelect = originalUserSelect;
+      window.removeEventListener('mousemove', onMove, true);
+      window.removeEventListener('mouseup', onEnd, true);
+      window.removeEventListener('touchmove', onMove, true);
+      window.removeEventListener('touchend', onEnd, true);
+    };
+
+    window.addEventListener('mousemove', onMove, true);
+    window.addEventListener('mouseup', onEnd, true);
+    window.addEventListener('touchmove', onMove, { capture: true, passive: false });
+    window.addEventListener('touchend', onEnd, true);
   };
 
   const handleDoubleClickResetCol = (colKey: string, e: React.MouseEvent) => {
@@ -525,54 +555,83 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose, use
             </div>
           ) : (
             <div className="border border-slate-800 rounded-xl overflow-x-auto bg-slate-950/40 shadow-inner">
-              <table className="min-w-full table-fixed text-left text-xs text-slate-300 border-collapse">
+              <table
+                className="table-fixed text-left text-xs text-slate-300 border-collapse"
+                style={{
+                  width: `${totalTableWidth}px`,
+                  minWidth: '100%',
+                }}
+              >
                 <colgroup>
-                  {API_KEY_COLUMNS.map((col) => (
-                    <col
-                      key={col.key}
-                      style={{
-                        width: `${colWidths[col.key] || col.defaultWidth}px`,
-                      }}
-                    />
-                  ))}
+                  {API_KEY_COLUMNS.map((col) => {
+                    const width = colWidths[col.key] || col.defaultWidth;
+                    return (
+                      <col
+                        key={col.key}
+                        style={{
+                          width: `${width}px`,
+                          minWidth: `${col.minWidth}px`,
+                        }}
+                      />
+                    );
+                  })}
                 </colgroup>
                 <thead className="bg-slate-950/80 text-[11px] text-slate-400 uppercase tracking-wider border-b border-slate-800 select-none">
                   <tr>
-                    {API_KEY_COLUMNS.map((col) => (
-                      <th
-                        key={col.key}
-                        className={`relative py-3 px-4 font-semibold text-slate-400 group/th ${
-                          col.align === 'right' ? 'text-right' : 'text-left'
-                        }`}
-                        style={{
-                          width: `${colWidths[col.key] || col.defaultWidth}px`,
-                        }}
-                      >
-                        <div className="truncate pr-2">{col.label}</div>
+                    {API_KEY_COLUMNS.map((col, idx) => {
+                      const isLast = idx === API_KEY_COLUMNS.length - 1;
+                      const isResizing = resizingColKey === col.key;
+                      const width = colWidths[col.key] || col.defaultWidth;
 
-                        {/* Column Mouse Resizer Handle */}
-                        {col.resizable && (
-                          <div
-                            onMouseDown={(e) => handleStartResize(col.key, e)}
-                            onDoubleClick={(e) => handleDoubleClickResetCol(col.key, e)}
-                            className={`absolute right-0 top-0 bottom-0 w-3 cursor-col-resize flex items-center justify-center transition-colors z-10 select-none ${
-                              resizingColKey === col.key
-                                ? 'bg-amber-500/30'
-                                : 'hover:bg-slate-700/60 active:bg-amber-500/40'
-                            }`}
-                            title="Drag to resize column width • Double-click to reset"
-                          >
+                      return (
+                        <th
+                          key={col.key}
+                          className={`relative py-3 px-4 font-semibold text-slate-400 group/th select-none border-r border-slate-800/60 last:border-r-0 ${
+                            col.align === 'right' ? 'text-right' : 'text-left'
+                          } ${isResizing ? 'bg-amber-500/10 text-amber-200' : ''}`}
+                          style={{
+                            width: `${width}px`,
+                            minWidth: `${col.minWidth}px`,
+                            maxWidth: `${width}px`,
+                          }}
+                        >
+                          <div className="truncate pr-2">{col.label}</div>
+
+                          {/* Column Mouse Resizer Handle */}
+                          {col.resizable && (
                             <div
-                              className={`w-0.5 h-4 rounded-full transition-colors ${
-                                resizingColKey === col.key
-                                  ? 'bg-amber-400 h-full'
-                                  : 'bg-slate-700 group-hover/th:bg-amber-400/80'
+                              onMouseDown={(e) => handleStartResize(col.key, e)}
+                              onTouchStart={(e) => handleStartResize(col.key, e)}
+                              onDoubleClick={(e) => handleDoubleClickResetCol(col.key, e)}
+                              className={`absolute ${
+                                isLast ? 'right-0' : '-right-2'
+                              } top-0 bottom-0 w-4 cursor-col-resize flex items-center justify-center z-30 select-none touch-none ${
+                                isResizing
+                                  ? 'bg-amber-500/25'
+                                  : 'hover:bg-amber-500/15 active:bg-amber-500/30'
                               }`}
-                            />
-                          </div>
-                        )}
-                      </th>
-                    ))}
+                              title="Drag to resize column width • Double-click to reset"
+                            >
+                              {/* Floating pixel indicator while actively dragging */}
+                              {isResizing && (
+                                <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-amber-400 text-slate-950 font-mono text-[10px] font-bold px-1.5 py-0.5 rounded shadow-lg shadow-amber-500/50 pointer-events-none whitespace-nowrap z-50 animate-in fade-in zoom-in-90">
+                                  {width}px
+                                </div>
+                              )}
+
+                              {/* Glowing Amber Feedback Bar */}
+                              <div
+                                className={`transition-all duration-150 rounded-full ${
+                                  isResizing
+                                    ? 'w-1 bg-amber-400 h-full shadow-[0_0_12px_rgba(251,191,36,1)] ring-2 ring-amber-400/60'
+                                    : 'w-0.5 bg-slate-700 h-4 group-hover/th:bg-amber-400/90 group-hover/th:h-6 group-hover/th:w-1'
+                                }`}
+                              />
+                            </div>
+                          )}
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
@@ -582,20 +641,20 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose, use
 
                     return (
                       <tr key={item.id} className="hover:bg-slate-800/40 transition-colors">
-                        <td className="py-3 px-4 font-semibold text-slate-200 overflow-hidden">
+                        <td className="py-3 px-4 font-semibold text-slate-200 overflow-hidden border-r border-slate-800/40 last:border-r-0">
                           <div className="truncate" title={item.name}>{item.name}</div>
                           <div className="text-[10px] text-slate-500 font-normal truncate">
                             Created by {item.createdBy || 'Admin'} • {formatTimestamp(item.createdAt)}
                           </div>
                         </td>
 
-                        <td className="py-3 px-4 font-mono text-[11px] text-slate-400 overflow-hidden">
+                        <td className="py-3 px-4 font-mono text-[11px] text-slate-400 overflow-hidden border-r border-slate-800/40 last:border-r-0">
                           <span className="bg-slate-900 px-2 py-0.5 rounded border border-slate-800 inline-block truncate max-w-full">
                             {item.keyPrefix}
                           </span>
                         </td>
 
-                        <td className="py-3 px-4 overflow-hidden">
+                        <td className="py-3 px-4 overflow-hidden border-r border-slate-800/40 last:border-r-0">
                           {item.serverId ? (
                             <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-sky-950/80 text-sky-300 border border-sky-800/40 truncate max-w-full" title={item.serverId}>
                               <Server className="h-3 w-3 shrink-0" />
@@ -606,7 +665,7 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose, use
                           )}
                         </td>
 
-                        <td className="py-3 px-4 overflow-hidden">
+                        <td className="py-3 px-4 overflow-hidden border-r border-slate-800/40 last:border-r-0">
                           {item.projectName ? (
                             <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-950/80 text-purple-300 border border-purple-800/40 truncate max-w-full" title={item.projectName}>
                               <FolderGit2 className="h-3 w-3 shrink-0" />
@@ -617,7 +676,7 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose, use
                           )}
                         </td>
 
-                        <td className="py-3 px-4 overflow-hidden whitespace-nowrap">
+                        <td className="py-3 px-4 overflow-hidden whitespace-nowrap border-r border-slate-800/40 last:border-r-0">
                           {isRevoked ? (
                             <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-950/80 text-rose-300 border border-rose-800/50">
                               Revoked
@@ -633,11 +692,11 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose, use
                           )}
                         </td>
 
-                        <td className="py-3 px-4 text-slate-400 text-[11px] overflow-hidden whitespace-nowrap font-mono">
+                        <td className="py-3 px-4 text-slate-400 text-[11px] overflow-hidden whitespace-nowrap font-mono border-r border-slate-800/40 last:border-r-0">
                           {item.lastUsedAt ? formatTimestamp(item.lastUsedAt) : <span className="text-slate-600 font-sans">Never</span>}
                         </td>
 
-                        <td className="py-3 px-4 text-slate-400 text-[11px] overflow-hidden whitespace-nowrap font-mono">
+                        <td className="py-3 px-4 text-slate-400 text-[11px] overflow-hidden whitespace-nowrap font-mono border-r border-slate-800/40 last:border-r-0">
                           {item.expiresAt ? formatTimestamp(item.expiresAt) : <span className="text-slate-600 font-sans">Never</span>}
                         </td>
 
