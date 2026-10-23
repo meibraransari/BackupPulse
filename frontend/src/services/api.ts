@@ -18,6 +18,7 @@ import {
   AuditStats,
   AuditQueryFilters,
   AuditLogsResponse,
+  HourlyDistributionResponse,
 } from '../types';
 
 const TOKEN_KEY = 'backup_monitor_auth_token';
@@ -176,6 +177,20 @@ export const api = {
 
   async getDashboardTrends(days = 7): Promise<TrendItem[]> {
     return request<TrendItem[]>(`/api/v1/dashboard/trends?days=${days}`);
+  },
+
+  async getHourlyDistribution(params: {
+    period?: '24h' | '7d' | '30d';
+    timezoneOffset?: number;
+    projectName?: string;
+    serverId?: string;
+  } = {}): Promise<HourlyDistributionResponse> {
+    const q = new URLSearchParams();
+    if (params.period) q.append('period', params.period);
+    if (typeof params.timezoneOffset === 'number') q.append('timezoneOffset', String(params.timezoneOffset));
+    if (params.projectName && params.projectName !== 'ALL') q.append('projectName', params.projectName);
+    if (params.serverId && params.serverId !== 'ALL') q.append('serverId', params.serverId);
+    return request<HourlyDistributionResponse>(`/api/v1/dashboard/hourly-distribution?${q.toString()}`);
   },
 
   async getSlaHeatmap(days = 365, projectName?: string, serverId?: string): Promise<SlaHeatmapResponse> {

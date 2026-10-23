@@ -284,3 +284,37 @@ export interface AuditLogsResponse {
   };
 }
 
+export type NavigationTab = 'dashboard' | 'telemetry' | 'drills' | 'fleet' | 'users' | 'settings' | 'audit';
+
+export interface HourlyDistributionItem {
+  hour: number;
+  label: string;
+  timeWindow: string;
+  count: number;
+  success: number;
+  failed: number;
+  warning: number;
+  totalBytes: number;
+  totalBytesHuman: string;
+  avgDurationSeconds: number;
+}
+
+export interface HourlyDistributionResponse {
+  period: '24h' | '7d' | '30d';
+  totalBackups: number;
+  peakHour: {
+    hour: number;
+    label: string;
+    timeWindow: string;
+    count: number;
+    percentage: number;
+  };
+  quietWindow: string;
+  quietestHours: number[];
+  hourlyAverage: number;
+  congestionLevel: 'OPTIMAL' | 'MODERATE' | 'HIGH' | 'CRITICAL';
+  loadAdvice: string;
+  distribution: HourlyDistributionItem[];
+}
+
+

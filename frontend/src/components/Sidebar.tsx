@@ -24,15 +24,16 @@ import {
   FileText,
   Search,
   Tv,
+  LayoutDashboard,
 } from 'lucide-react';
 import { api } from '../services/api';
-import { User } from '../types';
+import { User, NavigationTab } from '../types';
 import { useTimezone } from '../context/TimezoneContext';
 
 interface SidebarProps {
   user: User | null;
-  activeTab: 'telemetry' | 'drills' | 'fleet' | 'users' | 'settings' | 'audit';
-  onTabChange: (tab: 'telemetry' | 'drills' | 'fleet' | 'users' | 'settings' | 'audit') => void;
+  activeTab: NavigationTab;
+  onTabChange: (tab: NavigationTab) => void;
   onGoHome: () => void;
   onOpenProfile: () => void;
   onOpenNotificationLogs: () => void;
@@ -75,9 +76,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const navItems = [
     {
+      id: 'dashboard' as const,
+      label: 'Dashboard',
+      icon: LayoutDashboard,
+      badge: 'Overview',
+    },
+    {
       id: 'telemetry' as const,
-      label: 'Home / Telemetry',
-      icon: Home,
+      label: 'Backup Telemetry',
+      icon: Database,
       badge: 'Live',
     },
     {
@@ -118,7 +125,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const sidebarContent = (
     <div className="flex flex-col h-full bg-slate-900 border-r border-slate-800 w-64 select-none">
-      {/* Brand Header (Clickable: returns to Home / Telemetry) */}
+      {/* Brand Header (Clickable: returns to Dashboard Overview) */}
       <div className="p-5 border-b border-slate-800 flex items-center justify-between">
         <button
           type="button"
@@ -127,7 +134,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             setMobileOpen(false);
           }}
           className="flex items-center space-x-3 text-left group cursor-pointer focus:outline-none"
-          title="Return to Home / Telemetry (Reset filters & refresh)"
+          title="Return to Dashboard (Reset filters & refresh)"
         >
           <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20 group-hover:scale-105 transition-transform">
             <Database className="h-5 w-5 text-white" />
@@ -187,11 +194,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               key={item.id}
               onClick={() => {
-                if (item.id === 'telemetry') {
-                  onGoHome();
-                } else {
-                  onTabChange(item.id);
-                }
+                onTabChange(item.id);
                 setMobileOpen(false);
               }}
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${

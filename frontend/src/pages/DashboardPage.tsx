@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Sidebar } from '../components/Sidebar';
+import { DashboardOverview } from '../components/DashboardOverview';
 import { StatCards } from '../components/StatCards';
 import { TrendChart } from '../components/TrendChart';
 import { FilterBar } from '../components/FilterBar';
@@ -23,7 +24,7 @@ import { NotificationCenterDrawer } from '../components/NotificationCenterDrawer
 import { DeleteBackupModal } from '../components/DeleteBackupModal';
 import { useTimezone } from '../context/TimezoneContext';
 import { api } from '../services/api';
-import { BackupFilters, BackupReport, DashboardStats, ProjectBreakdown, TrendItem, User } from '../types';
+import { BackupFilters, BackupReport, DashboardStats, ProjectBreakdown, TrendItem, User, NavigationTab } from '../types';
 import {
   Home,
   RefreshCw,
@@ -37,6 +38,7 @@ import {
   Bell,
   Tv,
   Search,
+  LayoutDashboard,
 } from 'lucide-react';
 
 interface DashboardPageProps {
@@ -88,7 +90,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
   const { toggleTimezone } = useTimezone();
 
   // View toggle & Modal states
-  const [activeTab, setActiveTab] = useState<'telemetry' | 'drills' | 'fleet' | 'users' | 'settings' | 'audit'>('telemetry');
+  const [activeTab, setActiveTab] = useState<NavigationTab>('dashboard');
   const [showNotificationLogs, setShowNotificationLogs] = useState<boolean>(false);
   const [showHousekeeping, setShowHousekeeping] = useState<boolean>(false);
   const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
@@ -180,21 +182,24 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
     setFilters((prev) => ({ ...prev, page: newPage }));
   };
 
-  // Card click: filters by status and jumps smoothly down to table
+  // Card click: filters by status and navigates to Telemetry table
   const handleCardClick = (status: string) => {
     setFilters((prev) => ({ ...prev, status, page: 1 }));
+    setActiveTab('telemetry');
     scrollToTable();
   };
 
-  // Trend Chart bar click: filters by that date and jumps to table
+  // Trend Chart bar click: filters by that date and navigates to Telemetry table
   const handleDateClick = (date: string) => {
     setFilters((prev) => ({ ...prev, startDate: date, endDate: date, page: 1 }));
+    setActiveTab('telemetry');
     scrollToTable();
   };
 
-  // Top Projects list click: filters by that project and jumps to table
+  // Top Projects list click: filters by that project and navigates to Telemetry table
   const handleProjectClick = (projectName: string) => {
     setFilters((prev) => ({ ...prev, projectName, page: 1 }));
+    setActiveTab('telemetry');
     scrollToTable();
   };
 
@@ -274,9 +279,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
     setRefreshing(false);
   };
 
-  // Dedicated Home Button action: resets filters, sets activeTab to 'telemetry', and reloads dashboard telemetry
+  // Dedicated Home Button action: resets filters, sets activeTab to 'dashboard', and reloads dashboard telemetry
   const handleGoHome = useCallback(async () => {
-    setActiveTab('telemetry');
+    setActiveTab('dashboard');
     setFilters(initialFilters);
     setSelectedReport(null);
     setResolvingReport(null);
@@ -315,7 +320,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
           <div>
             <div className="flex items-center space-x-3 flex-wrap gap-y-2">
               <h1 className="text-2xl font-bold tracking-tight text-white">
-                {activeTab === 'telemetry' && 'Production Backup Overview'}
+                {activeTab === 'dashboard' && 'DevOps Fleet & Backup Dashboard'}
+                {activeTab === 'telemetry' && 'Backup Telemetry Records'}
                 {activeTab === 'drills' && 'Disaster Recovery DrillPulse'}
                 {activeTab === 'fleet' && 'Server Fleet Inventory'}
                 {activeTab === 'users' && 'Access & User Directory'}
@@ -329,6 +335,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
               )}
             </div>
             <p className="text-xs sm:text-sm text-slate-400 mt-1">
+              {activeTab === 'dashboard' &&
+                'Real-time health overview, 24-hour backup distribution heat, SLA trends, and fleet storage analytics.'}
               {activeTab === 'telemetry' &&
                 'Live status, cron logs, size anomaly guards, and automated cloud sync reports across 100+ servers.'}
               {activeTab === 'drills' &&
@@ -350,14 +358,27 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
               <button
                 onClick={handleGoHome}
                 className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                  activeTab === 'dashboard'
+                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/30'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Go to Dashboard Overview"
+              >
+                <LayoutDashboard className="h-3.5 w-3.5" />
+                <span>Dashboard</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('telemetry')}
+                className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
                   activeTab === 'telemetry'
                     ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/30'
                     : 'text-slate-400 hover:text-white'
                 }`}
-                title="Go to Home / Telemetry (Reset filters & refresh)"
+                title="Go to Backup Telemetry Records"
               >
-                <Home className="h-3.5 w-3.5" />
-                <span>Home</span>
+                <Table className="h-3.5 w-3.5" />
+                <span>Telemetry</span>
                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-950/60 font-mono">
                   {pagination.total}
                 </span>
@@ -472,7 +493,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
               <span>Deploy New Server</span>
             </button>
 
-            {activeTab === 'telemetry' && (
+            {(activeTab === 'dashboard' || activeTab === 'telemetry') && (
               <button
                 onClick={handleManualRefresh}
                 disabled={refreshing}
@@ -485,65 +506,55 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
           </div>
         </div>
 
-        {activeTab === 'telemetry' ? (
-          <>
-            {/* 1. Metric Cards (Clickable: Jumps and filters table / fleet view) */}
-            <StatCards
-              stats={stats}
-              loading={loadingStats}
-              onSelectFilter={handleCardClick}
-              onViewFleet={() => setActiveTab('fleet')}
+        {activeTab === 'dashboard' ? (
+          <DashboardOverview
+            stats={stats}
+            loadingStats={loadingStats}
+            trends={trends}
+            projectBreakdown={projectBreakdown}
+            onSelectFilter={handleCardClick}
+            onSelectDate={handleDateClick}
+            onSelectProject={handleProjectClick}
+            onViewFleet={() => setActiveTab('fleet')}
+            onNavigateToTelemetry={(filterParams) => {
+              if (filterParams?.search) {
+                setFilters((prev) => ({ ...prev, search: filterParams.search, page: 1 }));
+              }
+              if (filterParams?.status) {
+                setFilters((prev) => ({ ...prev, status: filterParams.status, page: 1 }));
+              }
+              setActiveTab('telemetry');
+              scrollToTable();
+            }}
+            selectedDate={filters.startDate && filters.startDate === filters.endDate ? filters.startDate : undefined}
+            projectName={filters.projectName !== 'ALL' ? filters.projectName : undefined}
+            serverId={filters.serverId !== 'ALL' ? filters.serverId : undefined}
+          />
+        ) : activeTab === 'telemetry' ? (
+          <div id="telemetry-table-section" className="space-y-6">
+            {/* 1. Advanced Filtering Toolbar */}
+            <FilterBar
+              filters={filters}
+              projects={projectsList}
+              servers={serversList}
+              onFilterChange={handleFilterChange}
+              onReset={handleResetFilters}
+              onExport={handleExport}
+              exporting={exporting}
             />
 
-            {/* 2. Visual Charts (Clickable: Jumps and filters by date / project) */}
-            <TrendChart
-              trends={trends}
-              projects={projectBreakdown}
-              loading={loadingStats}
-              onSelectDate={handleDateClick}
-              onSelectProject={handleProjectClick}
+            {/* 2. Telemetry Records Table */}
+            <BackupTable
+              data={backups}
+              loading={loadingBackups}
+              pagination={pagination}
+              onPageChange={handlePageChange}
+              onSelectReport={(report) => setSelectedReport(report)}
+              onMarkSuccess={handleOpenResolveModal}
+              onDeleteBackup={handleOpenDeleteModal}
+              currentUser={currentUser}
             />
-
-            {/* 3. 365-Day Backup SLA Contribution Heatmap & Calendar Matrix */}
-            <SlaHeatmap
-              onSelectDate={(date) => {
-                if (date) {
-                  handleDateClick(date);
-                } else {
-                  setFilters((prev) => ({ ...prev, startDate: '', endDate: '', page: 1 }));
-                }
-              }}
-              selectedDate={filters.startDate && filters.startDate === filters.endDate ? filters.startDate : undefined}
-              projectName={filters.projectName !== 'ALL' ? filters.projectName : undefined}
-              serverId={filters.serverId !== 'ALL' ? filters.serverId : undefined}
-            />
-
-            {/* Anchor section for smooth scroll jump */}
-            <div id="telemetry-table-section" className="space-y-6 pt-2">
-              {/* 3. Advanced Filtering Toolbar */}
-              <FilterBar
-                filters={filters}
-                projects={projectsList}
-                servers={serversList}
-                onFilterChange={handleFilterChange}
-                onReset={handleResetFilters}
-                onExport={handleExport}
-                exporting={exporting}
-              />
-
-              {/* 4. Telemetry Records Table */}
-              <BackupTable
-                data={backups}
-                loading={loadingBackups}
-                pagination={pagination}
-                onPageChange={handlePageChange}
-                onSelectReport={(report) => setSelectedReport(report)}
-                onMarkSuccess={handleOpenResolveModal}
-                onDeleteBackup={handleOpenDeleteModal}
-                currentUser={currentUser}
-              />
-            </div>
-          </>
+          </div>
         ) : activeTab === 'drills' ? (
           /* Disaster Recovery Verification Drills (DrillPulse) View */
           <DrillPulseView

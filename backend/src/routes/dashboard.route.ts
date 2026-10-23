@@ -485,5 +485,177 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       });
     }
   );
+
+  // 6. 24-Hour / Weekly / Monthly Backup Time Distribution (Hourly Load Analysis)
+  fastify.get(
+    '/api/v1/dashboard/hourly-distribution',
+    {
+      preValidation: [(fastify as any).authenticate],
+      schema: {
+        description: 'Get hourly backup time distribution to identify peak load congestion hours',
+        tags: ['Dashboard'],
+        security: [{ bearerAuth: [] }],
+        querystring: {
+          type: 'object',
+          properties: {
+            period: { type: 'string', enum: ['24h', '7d', '30d'], default: '24h' },
+            timezoneOffset: { type: 'integer', default: 0 },
+            projectName: { type: 'string' },
+            serverId: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const user = (request as any).user;
+      const query = request.query as any;
+      const period = query.period === '7d' || query.period === '30d' ? query.period : '24h';
+      const timezoneOffsetMinutes = parseInt(query.timezoneOffset || '0', 10) || 0;
+      const offsetMs = timezoneOffsetMinutes * 60 * 1000;
+
+      const now = new Date();
+      let since: Date;
+      if (period === '7d') {
+        since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      } else if (period === '30d') {
+        since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      } else {
+        since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      }
+
+      const projectScope = buildProjectWhereClause(user, query.projectName);
+      if (projectScope.error) {
+        return reply.status(403).send({ error: projectScope.error });
+      }
+
+      const where: any = {
+        ...(projectScope.where || {}),
+        createdAt: { gte: since },
+      };
+
+      if (query.serverId && query.serverId !== 'ALL') {
+        where.serverId = query.serverId;
+      }
+
+      const reports = await prisma.backupReport.findMany({
+        where,
+        select: {
+          status: true,
+          backupSizeBytes: true,
+          durationSeconds: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      // Initialize 24 hourly buckets (00:00 to 23:00)
+      const hourlyBuckets = Array.from({ length: 24 }, (_, hour) => {
+        const hourStr = String(hour).padStart(2, '0');
+        const nextHourStr = String((hour + 1) % 24).padStart(2, '0');
+        return {
+          hour,
+          label: `${hourStr}:00`,
+          timeWindow: `${hourStr}:00 - ${nextHourStr}:00`,
+          count: 0,
+          success: 0,
+          failed: 0,
+          warning: 0,
+          totalBytes: 0,
+          totalBytesHuman: '0 B',
+          avgDurationSeconds: 0,
+          durations: [] as number[],
+        };
+      });
+
+      // Populate buckets
+      for (const r of reports) {
+        const reportTime = new Date(r.createdAt.getTime() - offsetMs);
+        const hour = reportTime.getUTCHours();
+
+        if (hourlyBuckets[hour]) {
+          const b = hourlyBuckets[hour];
+          b.count += 1;
+          if (r.status === 'SUCCESS') b.success += 1;
+          else if (r.status === 'FAILED') b.failed += 1;
+          else if (r.status === 'WARNING') b.warning += 1;
+
+          b.totalBytes += Number(r.backupSizeBytes || 0);
+          if (typeof r.durationSeconds === 'number' && r.durationSeconds > 0) {
+            b.durations.push(r.durationSeconds);
+          }
+        }
+      }
+
+      // Format humans and averages
+      let maxCount = 0;
+      let peakHour = hourlyBuckets[0];
+      const totalBackups = reports.length;
+
+      hourlyBuckets.forEach((b) => {
+        b.totalBytesHuman = formatBytes(b.totalBytes);
+        b.avgDurationSeconds =
+          b.durations.length > 0
+            ? Math.round(b.durations.reduce((a, c) => a + c, 0) / b.durations.length)
+            : 0;
+        delete (b as any).durations;
+
+        if (b.count > maxCount) {
+          maxCount = b.count;
+          peakHour = b;
+        }
+      });
+
+      // Find quietest hours (hours with lowest counts)
+      const sortedByCount = [...hourlyBuckets].sort((a, b) => a.count - b.count);
+      const minCount = sortedByCount[0]?.count || 0;
+      const quietestHours = sortedByCount.filter((h) => h.count === minCount).map((h) => h.hour);
+
+      // Group consecutive quiet hours into recommended windows
+      let quietWindow = 'None';
+      if (quietestHours.length > 0) {
+        const sortedQuiet = [...quietestHours].sort((a, b) => a - b);
+        const first = String(sortedQuiet[0]).padStart(2, '0');
+        const last = String((sortedQuiet[sortedQuiet.length - 1] + 1) % 24).padStart(2, '0');
+        quietWindow = `${first}:00 - ${last}:00`;
+      }
+
+      const hourlyAvg = totalBackups > 0 ? (totalBackups / 24).toFixed(1) : '0';
+      const peakPercent = totalBackups > 0 ? Math.round((maxCount / totalBackups) * 100) : 0;
+
+      let congestionLevel: 'OPTIMAL' | 'MODERATE' | 'HIGH' | 'CRITICAL' = 'OPTIMAL';
+      let loadAdvice = 'Backup jobs are evenly distributed across the 24-hour cycle. System load is well balanced.';
+
+      if (totalBackups > 5 && maxCount >= 3) {
+        if (peakPercent >= 35 || maxCount >= 15) {
+          congestionLevel = 'CRITICAL';
+          loadAdvice = `High congestion detected: ${peakPercent}% (${maxCount} backups) cluster around ${peakHour.timeWindow}. Consider shifting non-critical backups to quiet hours (${quietWindow}) to prevent I/O bottlenecks and snapshot lock collisions.`;
+        } else if (peakPercent >= 20 || maxCount >= 8) {
+          congestionLevel = 'HIGH';
+          loadAdvice = `Moderate clustering: ${maxCount} backups occur at ${peakHour.timeWindow}. Distributing cron triggers into off-peak windows (${quietWindow}) will improve fleet throughput.`;
+        } else if (maxCount >= 4) {
+          congestionLevel = 'MODERATE';
+          loadAdvice = `Noticeable activity peak at ${peakHour.timeWindow} with ${maxCount} backups. Fleet load remains manageable.`;
+        }
+      }
+
+      return reply.send({
+        period,
+        totalBackups,
+        peakHour: {
+          hour: peakHour.hour,
+          label: peakHour.label,
+          timeWindow: peakHour.timeWindow,
+          count: peakHour.count,
+          percentage: peakPercent,
+        },
+        quietWindow,
+        quietestHours,
+        hourlyAverage: Number(hourlyAvg),
+        congestionLevel,
+        loadAdvice,
+        distribution: hourlyBuckets,
+      });
+    }
+  );
 }
 
