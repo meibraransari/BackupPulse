@@ -26,12 +26,16 @@ import {
   BookOpen,
   TrendingDown,
   AlertTriangle,
+  Trash2,
+  HardDrive,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { SystemSettingItem, SystemSettingsCategory } from '../types';
+import { HousekeepingModal } from './HousekeepingModal';
 
 interface SettingsViewProps {
   onSettingsSaved?: () => void;
+  onOpenHousekeeping?: () => void;
 }
 
 interface SettingCardDefinition {
@@ -215,14 +219,16 @@ const SETTING_CARDS: SettingCardDefinition[] = [
     id: 'retention',
     category: 'retention',
     title: 'Database Storage & Housekeeping Policy',
-    subtitle: 'Automated background cleanup to purge stale backup telemetry and audit logs.',
+    subtitle: 'Automated background cleanup to purge stale backup telemetry and audit logs, with on-demand purge controls.',
     icon: Database,
     iconColor: 'text-purple-400 bg-purple-500/10 border-purple-500/20',
+    badge: 'Storage & Housekeeping',
     settingKeys: ['ENABLE_HOUSEKEEPING', 'DB_RETENTION_DAYS', 'HOUSEKEEPING_CRON'],
   },
 ];
 
-export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsSaved }) => {
+export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsSaved, onOpenHousekeeping }) => {
+  const [showHousekeepingModal, setShowHousekeepingModal] = useState<boolean>(false);
   const [settingsMap, setSettingsMap] = useState<Map<string, SystemSettingItem>>(new Map());
   const [categories, setCategories] = useState<SystemSettingsCategory[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>('all');
@@ -562,6 +568,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsSaved }) =
                         <span>{test?.loading ? 'Testing...' : card.testButtonLabel || 'Test Connection'}</span>
                       </button>
                     )}
+
+                    {/* On-Demand Housekeeping Action Button */}
+                    {card.id === 'retention' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (onOpenHousekeeping) {
+                            onOpenHousekeeping();
+                          } else {
+                            setShowHousekeepingModal(true);
+                          }
+                        }}
+                        className="self-start sm:self-auto flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold text-purple-300 bg-purple-950/60 hover:bg-purple-900/90 border border-purple-700/60 transition-colors shadow-sm shrink-0"
+                        title="Inspect database storage metrics and run on-demand cleanup"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-purple-400" />
+                        <span>Run On-Demand Cleanup</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -709,6 +734,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsSaved }) =
           </div>
         </div>
       )}
+
+      {/* On-Demand Housekeeping & Storage Purge Modal Fallback */}
+      <HousekeepingModal
+        isOpen={showHousekeepingModal}
+        onClose={() => setShowHousekeepingModal(false)}
+        onCleanupComplete={fetchSettings}
+      />
 
       {/* Floating Toast Notification */}
       {toast && (

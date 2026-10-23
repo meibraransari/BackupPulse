@@ -17,7 +17,6 @@ import {
   ShieldCheck,
   Menu,
   X,
-  HardDrive,
   Github,
   Key,
   Globe,
@@ -37,7 +36,7 @@ interface SidebarProps {
   onGoHome: () => void;
   onOpenProfile: () => void;
   onOpenNotificationLogs: () => void;
-  onOpenHousekeeping: () => void;
+  onOpenHousekeeping?: () => void;
   onOpenApiKeys?: () => void;
   onOpenDeployWizard?: () => void;
   onOpenCommandPalette?: () => void;
@@ -267,18 +266,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         >
           <Send className="h-4 w-4 text-indigo-400" />
           <span>Audit Logs</span>
-        </button>
-
-        {/* Storage & Housekeeping */}
-        <button
-          onClick={() => {
-            onOpenHousekeeping();
-            setMobileOpen(false);
-          }}
-          className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-amber-300 hover:text-white hover:bg-amber-950/40 transition-colors"
-        >
-          <HardDrive className="h-4 w-4 text-amber-400" />
-          <span>Storage & Housekeeping</span>
         </button>
 
         {/* Deploy Server Wizard */}

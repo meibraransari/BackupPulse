@@ -570,6 +570,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
               loadDashboardData();
               loadBackups();
             }}
+            onOpenHousekeeping={() => setShowHousekeeping(true)}
           />
         ) : (
           /* Administrative Governance & Change Audit Log View */
