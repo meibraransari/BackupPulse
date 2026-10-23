@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Search, Download, RotateCcw, FileText, AlertTriangle, CalendarRange, Sparkles } from 'lucide-react';
+import { Search, Download, RotateCcw, FileText, AlertTriangle, CalendarRange, Sparkles, Clock, X } from 'lucide-react';
 import { BackupFilters } from '../types';
 import { CustomDatePicker, formatYMD } from './CustomDatePicker';
 
@@ -123,6 +123,36 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-md space-y-4">
+      {/* Active Arrival Hour Filter Notification Banner */}
+      {filters.hour !== undefined && (
+        <div className="bg-gradient-to-r from-amber-950/70 via-slate-900 to-amber-950/40 border border-amber-500/50 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 shadow-md">
+          <div className="flex items-center space-x-2.5 text-xs text-amber-200">
+            <span className="p-1 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30">
+              <Clock className="h-4 w-4" />
+            </span>
+            <span>
+              Filtered by Arrival Time Slot:{' '}
+              <strong className="text-white font-mono bg-slate-950 px-2 py-0.5 rounded border border-amber-500/40 text-sm">
+                {String(filters.hour).padStart(2, '0')}:00 - {String((filters.hour + 1) % 24).padStart(2, '0')}:00
+              </strong>{' '}
+              <span className="text-amber-400 font-medium">
+                ({filters.period === '7d' ? 'Past 7 Days' : filters.period === '30d' ? 'Past 30 Days' : 'Last 24 Hours'})
+              </span>
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => onFilterChange({ hour: undefined, period: undefined, page: 1 })}
+            className="flex items-center space-x-1.5 px-3 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 hover:text-white border border-amber-500/40 text-xs font-semibold transition-all cursor-pointer shadow-sm select-none"
+            title="Clear arrival hour filter and show all backups"
+          >
+            <X className="h-3.5 w-3.5" />
+            <span>Clear Hour Filter</span>
+          </button>
+        </div>
+      )}
+
       {/* Top row: Search input + Actions */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         <div className="relative flex-1">

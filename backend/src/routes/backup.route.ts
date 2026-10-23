@@ -428,6 +428,9 @@ export async function backupRoutes(fastify: FastifyInstance) {
             availability: { type: 'string', description: 'Filter by availability: ALL, ACTIVE, or EXPIRED' },
             startDate: { type: 'string' },
             endDate: { type: 'string' },
+            hour: { type: 'integer', description: 'Hour of day (0-23)' },
+            period: { type: 'string', description: 'Time window: 24h, 7d, 30d' },
+            timezoneOffset: { type: 'integer', description: 'Timezone offset in minutes' },
             sortBy: { type: 'string', default: 'createdAt' },
             sortOrder: { type: 'string', default: 'desc' },
           },
@@ -503,6 +506,35 @@ export async function backupRoutes(fastify: FastifyInstance) {
           { zipFilename: { contains: searchVal, mode: 'insensitive' } },
           { s3Key: { contains: searchVal, mode: 'insensitive' } },
         ];
+      }
+
+      if (query.hour !== undefined && query.hour !== '') {
+        const targetHour = parseInt(query.hour, 10);
+        const offsetMinutes = parseInt(query.timezoneOffset || '0', 10) || 0;
+        const offsetMs = offsetMinutes * 60 * 1000;
+
+        if (!query.startDate && !query.endDate && query.period) {
+          const now = new Date();
+          let since: Date;
+          if (query.period === '7d') since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          else if (query.period === '30d') since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+          else since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+          where.createdAt = { gte: since };
+        }
+
+        const candidates = await prisma.backupReport.findMany({
+          where,
+          select: { id: true, createdAt: true },
+        });
+
+        const matchedIds = candidates
+          .filter((c) => {
+            const t = new Date(c.createdAt.getTime() - offsetMs);
+            return t.getUTCHours() === targetHour;
+          })
+          .map((c) => c.id);
+
+        where.id = { in: matchedIds };
       }
 
       const sortBy = query.sortBy || 'createdAt';
@@ -870,6 +902,9 @@ export async function backupRoutes(fastify: FastifyInstance) {
             availability: { type: 'string' },
             startDate: { type: 'string' },
             endDate: { type: 'string' },
+            hour: { type: 'integer' },
+            period: { type: 'string' },
+            timezoneOffset: { type: 'integer' },
           },
         },
       },
@@ -912,6 +947,35 @@ export async function backupRoutes(fastify: FastifyInstance) {
           end.setHours(23, 59, 59, 999);
           where.createdAt.lte = end;
         }
+      }
+
+      if (query.hour !== undefined && query.hour !== '') {
+        const targetHour = parseInt(query.hour, 10);
+        const offsetMinutes = parseInt(query.timezoneOffset || '0', 10) || 0;
+        const offsetMs = offsetMinutes * 60 * 1000;
+
+        if (!query.startDate && !query.endDate && query.period) {
+          const now = new Date();
+          let since: Date;
+          if (query.period === '7d') since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          else if (query.period === '30d') since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+          else since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+          where.createdAt = { gte: since };
+        }
+
+        const candidates = await prisma.backupReport.findMany({
+          where,
+          select: { id: true, createdAt: true },
+        });
+
+        const matchedIds = candidates
+          .filter((c) => {
+            const t = new Date(c.createdAt.getTime() - offsetMs);
+            return t.getUTCHours() === targetHour;
+          })
+          .map((c) => c.id);
+
+        where.id = { in: matchedIds };
       }
 
       const rawReports = await prisma.backupReport.findMany({

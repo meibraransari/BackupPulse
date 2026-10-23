@@ -15,7 +15,12 @@ interface DashboardOverviewProps {
   onSelectDate: (date: string) => void;
   onSelectProject: (projectName: string) => void;
   onViewFleet: () => void;
-  onNavigateToTelemetry: (filters?: { search?: string; status?: string }) => void;
+  onNavigateToTelemetry: (filters?: {
+    search?: string;
+    status?: string;
+    hour?: number;
+    period?: '24h' | '7d' | '30d';
+  }) => void;
   selectedDate?: string;
   projectName?: string;
   serverId?: string;

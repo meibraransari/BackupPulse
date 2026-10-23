@@ -232,6 +232,9 @@ export const api = {
     if (filters.availability && filters.availability !== 'ALL') params.append('availability', filters.availability);
     if (filters.startDate) params.append('startDate', filters.startDate);
     if (filters.endDate) params.append('endDate', filters.endDate);
+    if (filters.hour !== undefined && filters.hour !== null) params.append('hour', filters.hour.toString());
+    if (filters.period) params.append('period', filters.period);
+    if (typeof filters.timezoneOffset === 'number') params.append('timezoneOffset', filters.timezoneOffset.toString());
 
     return request(`/api/v1/backups?${params.toString()}`);
   },
@@ -406,6 +409,9 @@ export const api = {
     if (filters.availability && filters.availability !== 'ALL') params.append('availability', filters.availability);
     if (filters.startDate) params.append('startDate', filters.startDate);
     if (filters.endDate) params.append('endDate', filters.endDate);
+    if (filters.hour !== undefined && filters.hour !== null) params.append('hour', filters.hour.toString());
+    if (filters.period) params.append('period', filters.period);
+    if (typeof filters.timezoneOffset === 'number') params.append('timezoneOffset', filters.timezoneOffset.toString());
 
     const response = await fetch(`/api/v1/backups/export?${params.toString()}`, {
       headers: {

@@ -517,12 +517,16 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
             onSelectProject={handleProjectClick}
             onViewFleet={() => setActiveTab('fleet')}
             onNavigateToTelemetry={(filterParams) => {
-              if (filterParams?.search) {
-                setFilters((prev) => ({ ...prev, search: filterParams.search, page: 1 }));
-              }
-              if (filterParams?.status) {
-                setFilters((prev) => ({ ...prev, status: filterParams.status, page: 1 }));
-              }
+              const timezoneOffset = timezone === 'UTC' ? 0 : new Date().getTimezoneOffset();
+              setFilters((prev) => ({
+                ...prev,
+                search: filterParams?.search !== undefined ? filterParams.search : '',
+                status: filterParams?.status !== undefined ? filterParams.status : 'ALL',
+                hour: filterParams?.hour !== undefined ? filterParams.hour : undefined,
+                period: filterParams?.period !== undefined ? filterParams.period : undefined,
+                timezoneOffset,
+                page: 1,
+              }));
               setActiveTab('telemetry');
               scrollToTable();
             }}

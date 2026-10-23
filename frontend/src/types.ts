@@ -100,6 +100,9 @@ export interface BackupFilters {
   availability?: string; // 'ALL' | 'ACTIVE' | 'EXPIRED'
   startDate?: string;
   endDate?: string;
+  hour?: number;
+  period?: '24h' | '7d' | '30d';
+  timezoneOffset?: number;
 }
 
 export interface NotificationLogItem {
