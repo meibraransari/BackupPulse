@@ -111,7 +111,7 @@ export const NotificationLogsModal: React.FC<NotificationLogsModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-200">
       <div
-        className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-5xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden"
+        className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-6xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
@@ -321,17 +321,17 @@ export const NotificationLogsModal: React.FC<NotificationLogsModalProps> = ({
               </p>
             </div>
           ) : (
-            <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/40">
-              <table className="w-full text-left text-xs text-slate-300 border-collapse">
+            <div className="border border-slate-800 rounded-xl overflow-x-auto bg-slate-950/40 shadow-inner">
+              <table className="w-full min-w-[980px] text-left text-xs text-slate-300 border-collapse">
                 <thead className="bg-slate-950/80 text-[11px] text-slate-400 uppercase tracking-wider border-b border-slate-800 select-none">
                   <tr>
-                    <th className="py-3 px-4">Timestamp</th>
-                    <th className="py-3 px-4">Channel</th>
-                    <th className="py-3 px-4">Event Type</th>
-                    <th className="py-3 px-4">Recipient / Target</th>
-                    <th className="py-3 px-4">Status</th>
-                    <th className="py-3 px-4">Message Summary</th>
-                    <th className="py-3 px-4 text-right">Details</th>
+                    <th className="py-3 px-4 whitespace-nowrap min-w-[140px]">Timestamp</th>
+                    <th className="py-3 px-4 whitespace-nowrap min-w-[120px]">Channel</th>
+                    <th className="py-3 px-4 whitespace-nowrap min-w-[110px]">Event Type</th>
+                    <th className="py-3 px-4 whitespace-nowrap min-w-[180px]">Recipient / Target</th>
+                    <th className="py-3 px-4 whitespace-nowrap min-w-[100px]">Status</th>
+                    <th className="py-3 px-4 whitespace-nowrap min-w-[220px]">Message Summary</th>
+                    <th className="py-3 px-4 text-right whitespace-nowrap min-w-[100px]">Details</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
@@ -390,7 +390,7 @@ export const NotificationLogsModal: React.FC<NotificationLogsModalProps> = ({
                         </span>
                       </td>
 
-                      <td className="py-3 px-4 max-w-[180px] truncate font-mono text-[11px] text-slate-400" title={item.recipient}>
+                      <td className="py-3 px-4 max-w-[220px] truncate font-mono text-[11px] text-slate-400" title={item.recipient}>
                         {item.recipient}
                       </td>
 
@@ -408,7 +408,7 @@ export const NotificationLogsModal: React.FC<NotificationLogsModalProps> = ({
                         )}
                       </td>
 
-                      <td className="py-3 px-4 max-w-[220px] truncate text-slate-300" title={item.message}>
+                      <td className="py-3 px-4 max-w-[280px] truncate text-slate-300" title={item.message}>
                         {item.message}
                       </td>
 
@@ -418,7 +418,7 @@ export const NotificationLogsModal: React.FC<NotificationLogsModalProps> = ({
                             e.stopPropagation();
                             setSelectedLog(item);
                           }}
-                          className="px-2 py-1 rounded-lg text-[11px] font-medium text-sky-300 bg-sky-950/70 hover:bg-sky-900 border border-sky-700/40 transition-colors inline-flex items-center space-x-1"
+                          className="px-2.5 py-1 rounded-lg text-[11px] font-medium text-sky-300 bg-sky-950/70 hover:bg-sky-900 border border-sky-700/40 transition-colors inline-flex items-center space-x-1 shadow-sm"
                         >
                           <Code className="h-3 w-3" />
                           <span>Payload</span>
