@@ -87,7 +87,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
   const [refreshing, setRefreshing] = useState(false);
   const [actionToast, setActionToast] = useState<string | null>(null);
 
-  const { toggleTimezone } = useTimezone();
+  const { timezone, toggleTimezone } = useTimezone();
 
   // View toggle & Modal states
   const [activeTab, setActiveTab] = useState<NavigationTab>('dashboard');
@@ -518,20 +518,26 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
             onSelectProject={handleProjectClick}
             onViewFleet={() => setActiveTab('fleet')}
             onNavigateToTelemetry={(filterParams) => {
-              const timezoneOffset = timezone === 'UTC' ? 0 : new Date().getTimezoneOffset();
-              setFilters((prev) => ({
-                ...prev,
-                search: filterParams?.search !== undefined ? filterParams.search : '',
-                status: filterParams?.status !== undefined ? filterParams.status : 'ALL',
-                hour: filterParams?.hour !== undefined ? filterParams.hour : undefined,
-                period: filterParams?.period !== undefined ? filterParams.period : undefined,
-                startDate: '',
-                endDate: '',
-                timezoneOffset,
-                page: 1,
-              }));
+              try {
+                const tzOffset = timezone === 'UTC' ? 0 : new Date().getTimezoneOffset();
+                setFilters((prev) => ({
+                  ...prev,
+                  search: filterParams?.search !== undefined ? filterParams.search : '',
+                  status: filterParams?.status !== undefined ? filterParams.status : 'ALL',
+                  hour: filterParams?.hour !== undefined ? filterParams.hour : undefined,
+                  period: filterParams?.period !== undefined ? filterParams.period : undefined,
+                  startDate: '',
+                  endDate: '',
+                  timezoneOffset: tzOffset,
+                  page: 1,
+                }));
+              } catch (err) {
+                console.error('Error applying telemetry filters:', err);
+              }
               setActiveTab('telemetry');
-              window.scrollTo({ top: 0, behavior: 'instant' });
+              try {
+                window.scrollTo(0, 0);
+              } catch (_) {}
             }}
             selectedDate={filters.startDate && filters.startDate === filters.endDate ? filters.startDate : undefined}
             projectName={filters.projectName !== 'ALL' ? filters.projectName : undefined}

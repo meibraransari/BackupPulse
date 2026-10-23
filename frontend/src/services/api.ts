@@ -215,6 +215,11 @@ export const api = {
     return request<{ fleet: ServerFleetItem[]; summary: FleetSummary }>(`/api/v1/dashboard/fleet?${query.toString()}`);
   },
 
+  async getFleetSummary(): Promise<FleetSummary> {
+    const data = await this.getFleetData();
+    return data.summary;
+  },
+
   // Backups
   async getBackups(filters: Partial<BackupFilters>): Promise<{
     data: BackupReport[];

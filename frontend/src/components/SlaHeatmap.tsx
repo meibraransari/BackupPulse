@@ -386,7 +386,7 @@ export const SlaHeatmap: React.FC<SlaHeatmapProps> = ({
               className={`px-1.5 py-0.2 rounded font-bold text-[10px] ${
                 hoveredDay.slaPercent === 100
                   ? 'bg-emerald-950 text-emerald-300'
-                  : hoveredDay.slaPercent > 0
+                  : (hoveredDay.slaPercent ?? 0) > 0
                   ? 'bg-amber-950 text-amber-300'
                   : 'bg-red-950 text-red-300'
               }`}
