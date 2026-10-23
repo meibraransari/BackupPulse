@@ -18,6 +18,8 @@ import {
   Camera,
   Check,
   ShieldAlert,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { User, UserLoginLog } from '../types';
@@ -43,12 +45,15 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ currentU
   const [users, setUsers] = useState<User[]>([]);
   const [loadingUsers, setLoadingUsers] = useState<boolean>(true);
   const [searchUser, setSearchUser] = useState<string>('');
+  const [userPageSize, setUserPageSize] = useState<number>(25);
+  const [userPage, setUserPage] = useState<number>(1);
 
   // Login tracker state
   const [loginLogs, setLoginLogs] = useState<UserLoginLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState<boolean>(false);
   const [logPage, setLogPage] = useState<number>(1);
-  const [logPagination, setLogPagination] = useState({ page: 1, limit: 15, total: 0, totalPages: 1 });
+  const [logLimit, setLogLimit] = useState<number>(25);
+  const [logPagination, setLogPagination] = useState({ page: 1, limit: 25, total: 0, totalPages: 1 });
   const [logStatusFilter, setLogStatusFilter] = useState<string>('ALL');
 
   // Modal states
@@ -96,7 +101,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ currentU
     try {
       const res = await api.getLoginLogs({
         page: logPage,
-        limit: 15,
+        limit: logLimit,
         status: logStatusFilter !== 'ALL' ? logStatusFilter : undefined,
       });
       setLoginLogs(res.data);
@@ -106,7 +111,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ currentU
     } finally {
       setLoadingLogs(false);
     }
-  }, [logPage, logStatusFilter]);
+  }, [logPage, logLimit, logStatusFilter]);
 
   useEffect(() => {
     loadUsers();
@@ -239,6 +244,15 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ currentU
     );
   });
 
+  // Reset user page when search or userPageSize changes
+  useEffect(() => {
+    setUserPage(1);
+  }, [searchUser, userPageSize]);
+
+  const userTotalPages = Math.max(1, Math.ceil(filteredUsers.length / userPageSize));
+  const userStartIndex = (userPage - 1) * userPageSize;
+  const paginatedUsers = filteredUsers.slice(userStartIndex, userStartIndex + userPageSize);
+
   return (
     <div className="space-y-6">
       {/* Top Header & Tab Controls */}
@@ -345,7 +359,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ currentU
                       </td>
                     </tr>
                   ) : (
-                    filteredUsers.map((user) => (
+                    paginatedUsers.map((user) => (
                       <tr key={user.id} className="hover:bg-slate-800/40 transition-colors">
                         <td className="py-3 px-4 whitespace-nowrap">
                           <div className="flex items-center space-x-3">
@@ -454,6 +468,57 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ currentU
                 </tbody>
               </table>
             </div>
+
+            {/* Users Pagination Footer */}
+            {filteredUsers.length > 0 && (
+              <div className="flex flex-wrap items-center justify-between px-6 py-3.5 border-t border-slate-800 bg-slate-950/60 text-xs text-slate-400 gap-3 select-none">
+                <div className="flex items-center space-x-2">
+                  <span>Show</span>
+                  <select
+                    value={userPageSize}
+                    onChange={(e) => {
+                      setUserPageSize(Number(e.target.value));
+                      setUserPage(1);
+                    }}
+                    className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 text-xs focus:outline-none focus:border-emerald-500 font-medium cursor-pointer"
+                  >
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                  <span>per page</span>
+                  <span className="text-slate-600">|</span>
+                  <span>
+                    Showing <strong className="text-slate-200">{filteredUsers.length === 0 ? 0 : userStartIndex + 1}</strong> to{' '}
+                    <strong className="text-slate-200">{Math.min(filteredUsers.length, userStartIndex + userPageSize)}</strong> of{' '}
+                    <strong className="text-slate-200">{filteredUsers.length}</strong> user accounts
+                  </span>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <span className="text-slate-400 text-xs mr-1">
+                    Page <strong className="text-slate-200">{userPage}</strong> of{' '}
+                    <strong className="text-slate-200">{userTotalPages}</strong>
+                  </span>
+                  <button
+                    onClick={() => setUserPage((p) => Math.max(1, p - 1))}
+                    disabled={userPage <= 1}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    title="Previous Page"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => setUserPage((p) => Math.min(userTotalPages, p + 1))}
+                    disabled={userPage >= userTotalPages}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    title="Next Page"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       ) : (
@@ -567,6 +632,55 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ currentU
                   )}
                 </tbody>
               </table>
+            </div>
+
+            {/* Login Tracker Pagination Footer */}
+            <div className="flex flex-wrap items-center justify-between px-6 py-3.5 border-t border-slate-800 bg-slate-950/60 text-xs text-slate-400 gap-3 select-none">
+              <div className="flex items-center space-x-2">
+                <span>Show</span>
+                <select
+                  value={logLimit}
+                  onChange={(e) => {
+                    setLogLimit(Number(e.target.value));
+                    setLogPage(1);
+                  }}
+                  className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 text-xs focus:outline-none focus:border-indigo-500 font-medium cursor-pointer"
+                >
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+                <span>per page</span>
+                <span className="text-slate-600">|</span>
+                <span>
+                  Showing <strong className="text-slate-200">{logPagination.total === 0 ? 0 : (logPagination.page - 1) * logPagination.limit + 1}</strong> to{' '}
+                  <strong className="text-slate-200">{Math.min(logPagination.page * logPagination.limit, logPagination.total)}</strong> of{' '}
+                  <strong className="text-slate-200">{logPagination.total}</strong> login records
+                </span>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <span className="text-slate-400 text-xs mr-1">
+                  Page <strong className="text-slate-200">{logPagination.page}</strong> of{' '}
+                  <strong className="text-slate-200">{logPagination.totalPages || 1}</strong>
+                </span>
+                <button
+                  onClick={() => setLogPage((p) => Math.max(1, p - 1))}
+                  disabled={logPagination.page <= 1 || loadingLogs}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  title="Previous Page"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => setLogPage((p) => Math.min(logPagination.totalPages, p + 1))}
+                  disabled={logPagination.page >= logPagination.totalPages || loadingLogs}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  title="Next Page"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -108,7 +108,8 @@ export const AuditLogsView: React.FC = () => {
   const [stats, setStats] = useState<AuditStats | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [exporting, setExporting] = useState<boolean>(false);
-  const [pagination, setPagination] = useState({ page: 1, limit: 15, total: 0, totalPages: 1 });
+  const [pageLimit, setPageLimit] = useState<number>(25);
+  const [pagination, setPagination] = useState({ page: 1, limit: 25, total: 0, totalPages: 1 });
 
   // Filters
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
@@ -146,7 +147,7 @@ export const AuditLogsView: React.FC = () => {
         const { startDate, endDate } = getDateRange(datePreset);
         const filters: Partial<AuditQueryFilters> = {
           page: pageNumber,
-          limit: 15,
+          limit: pageLimit,
           category: categoryFilter,
           action: actionFilter,
           search: searchQuery.trim() || undefined,
@@ -168,7 +169,7 @@ export const AuditLogsView: React.FC = () => {
         setLoading(false);
       }
     },
-    [categoryFilter, actionFilter, searchQuery, datePreset]
+    [categoryFilter, actionFilter, searchQuery, datePreset, pageLimit]
   );
 
   useEffect(() => {
@@ -604,32 +605,49 @@ export const AuditLogsView: React.FC = () => {
         </div>
 
         {/* Pagination Footer */}
-        {pagination.totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-800 bg-slate-900/60 text-xs text-slate-400">
-            <div>
-              Showing <span className="font-semibold text-slate-200">{(pagination.page - 1) * pagination.limit + 1}</span> to{' '}
-              <span className="font-semibold text-slate-200">
-                {Math.min(pagination.page * pagination.limit, pagination.total)}
-              </span>{' '}
-              of <span className="font-semibold text-slate-200">{pagination.total}</span> audit records
-            </div>
+        {pagination.total > 0 && (
+          <div className="flex flex-wrap items-center justify-between px-6 py-3.5 border-t border-slate-800 bg-slate-900/60 text-xs text-slate-400 gap-3 select-none">
             <div className="flex items-center space-x-2">
+              <span>Show</span>
+              <select
+                value={pageLimit}
+                onChange={(e) => {
+                  const newLimit = Number(e.target.value);
+                  setPageLimit(newLimit);
+                }}
+                className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 text-xs focus:outline-none focus:border-emerald-500 font-medium cursor-pointer"
+              >
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+              <span>per page</span>
+              <span className="text-slate-600">|</span>
+              <span>
+                Showing <strong className="text-slate-200">{(pagination.page - 1) * pagination.limit + 1}</strong> to{' '}
+                <strong className="text-slate-200">{Math.min(pagination.page * pagination.limit, pagination.total)}</strong> of{' '}
+                <strong className="text-slate-200">{pagination.total}</strong> audit records
+              </span>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <span className="text-slate-400 text-xs mr-1">
+                Page <strong className="text-slate-200">{pagination.page}</strong> of{' '}
+                <strong className="text-slate-200">{pagination.totalPages || 1}</strong>
+              </span>
               <button
                 type="button"
                 onClick={() => loadLogs(pagination.page - 1)}
-                disabled={pagination.page <= 1}
+                disabled={pagination.page <= 1 || loading}
                 className="p-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-700 transition-colors"
                 title="Previous page"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
-              <span className="text-slate-300 font-semibold px-2">
-                Page {pagination.page} of {pagination.totalPages}
-              </span>
               <button
                 type="button"
                 onClick={() => loadLogs(pagination.page + 1)}
-                disabled={pagination.page >= pagination.totalPages}
+                disabled={pagination.page >= pagination.totalPages || loading}
                 className="p-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-700 transition-colors"
                 title="Next page"
               >

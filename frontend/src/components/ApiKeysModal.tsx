@@ -17,6 +17,8 @@ import {
   Calendar,
   Ban,
   RotateCcw,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { ApiKeyItem, User } from '../types';
@@ -312,6 +314,15 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose, use
     setTimeout(() => setCopiedToken(false), 2500);
   };
 
+  // Pagination state
+  const [pageSize, setPageSize] = useState<number>(25);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+
+  // Reset page when search or pageSize changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, pageSize]);
+
   if (!isOpen) return null;
 
   const filteredKeys = keys.filter((k) => {
@@ -323,6 +334,10 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose, use
       (k.projectName && k.projectName.toLowerCase().includes(q))
     );
   });
+
+  const totalPages = Math.max(1, Math.ceil(filteredKeys.length / pageSize));
+  const startIndex = (currentPage - 1) * pageSize;
+  const paginatedKeys = filteredKeys.slice(startIndex, startIndex + pageSize);
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-200">
@@ -635,7 +650,7 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose, use
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
-                  {filteredKeys.map((item) => {
+                  {paginatedKeys.map((item) => {
                     const isRevoked = !item.isActive || !!item.revokedAt;
                     const isExpired = item.expiresAt && new Date(item.expiresAt) < new Date();
 
@@ -734,6 +749,55 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose, use
               </table>
             </div>
           )}
+        </div>
+
+        {/* Modal Pagination Footer */}
+        <div className="px-6 py-3 border-t border-slate-800 bg-slate-950/80 flex flex-wrap items-center justify-between gap-3 text-xs select-none">
+          <div className="flex items-center space-x-2 text-slate-400">
+            <span>Show</span>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 text-xs focus:outline-none focus:border-amber-500 font-medium cursor-pointer"
+            >
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+            <span>per page</span>
+            <span className="text-slate-600">|</span>
+            <span>
+              Showing <strong className="text-slate-200">{filteredKeys.length === 0 ? 0 : startIndex + 1}</strong> to{' '}
+              <strong className="text-slate-200">{Math.min(filteredKeys.length, startIndex + pageSize)}</strong> of{' '}
+              <strong className="text-slate-200">{filteredKeys.length}</strong> tokens
+            </span>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <span className="text-slate-400 text-xs mr-1">
+              Page <strong className="text-slate-200">{currentPage}</strong> of{' '}
+              <strong className="text-slate-200">{totalPages}</strong>
+            </span>
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage <= 1}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              title="Previous Page"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage >= totalPages}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              title="Next Page"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </div>
 

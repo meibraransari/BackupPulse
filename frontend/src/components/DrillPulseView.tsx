@@ -13,6 +13,7 @@ import {
   Activity,
   Sparkles,
   ExternalLink,
+  ChevronLeft,
   ChevronRight,
   Database,
 } from 'lucide-react';
@@ -36,9 +37,13 @@ export const DrillPulseView: React.FC<DrillPulseViewProps> = ({
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'SUCCESS' | 'FAILED' | 'SKIPPED'>('ALL');
   const [refreshing, setRefreshing] = useState<boolean>(false);
 
+  // Pagination state
+  const [pageSize, setPageSize] = useState<number>(25);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+
   const fetchDrillData = async () => {
     try {
-      const res = await api.getBackups({ limit: 100 });
+      const res = await api.getBackups({ limit: 1000 });
       setReports(res.data);
     } catch (err) {
       console.error('Failed to load drill telemetry:', err);
@@ -78,6 +83,17 @@ export const DrillPulseView: React.FC<DrillPulseViewProps> = ({
       return true;
     });
   }, [reports, search, statusFilter]);
+
+  // Reset page when search, statusFilter, or pageSize changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, statusFilter, pageSize]);
+
+  const totalPages = Math.max(1, Math.ceil(drillReports.length / pageSize));
+  const startIndex = (currentPage - 1) * pageSize;
+  const paginatedDrills = useMemo(() => {
+    return drillReports.slice(startIndex, startIndex + pageSize);
+  }, [drillReports, startIndex, pageSize]);
 
   // Telemetry metrics
   const stats = useMemo(() => {
@@ -277,7 +293,7 @@ export const DrillPulseView: React.FC<DrillPulseViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 text-xs">
-                {drillReports.map((report) => (
+                {paginatedDrills.map((report) => (
                   <tr
                     key={report.id}
                     className="hover:bg-slate-800/40 transition-colors cursor-pointer group"
@@ -352,6 +368,57 @@ export const DrillPulseView: React.FC<DrillPulseViewProps> = ({
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* DrillPulse Pagination Footer */}
+        {drillReports.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between px-6 py-3.5 border-t border-slate-800 bg-slate-950/60 text-xs text-slate-400 gap-3 select-none">
+            <div className="flex items-center space-x-2">
+              <span>Show</span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 text-xs focus:outline-none focus:border-emerald-500 font-medium cursor-pointer"
+              >
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+              <span>per page</span>
+              <span className="text-slate-600">|</span>
+              <span>
+                Showing <strong className="text-slate-200">{drillReports.length === 0 ? 0 : startIndex + 1}</strong> to{' '}
+                <strong className="text-slate-200">{Math.min(drillReports.length, startIndex + pageSize)}</strong> of{' '}
+                <strong className="text-slate-200">{drillReports.length}</strong> drills
+              </span>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <span className="text-slate-400 text-xs mr-1">
+                Page <strong className="text-slate-200">{currentPage}</strong> of{' '}
+                <strong className="text-slate-200">{totalPages}</strong>
+              </span>
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage <= 1}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                title="Previous Page"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage >= totalPages}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                title="Next Page"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         )}
       </div>

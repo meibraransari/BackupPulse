@@ -18,6 +18,8 @@ import {
   BellOff,
   Bell,
   X,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { FleetSummary, ServerFleetItem } from '../types';
@@ -42,6 +44,10 @@ export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer, onOpenDepl
   const [search, setSearch] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [displayMode, setDisplayMode] = useState<'grid' | 'table'>('grid');
+
+  // Pagination state
+  const [pageSize, setPageSize] = useState<number>(25);
+  const [currentPage, setCurrentPage] = useState<number>(1);
 
   // Mute modal state
   const [mutingServer, setMutingServer] = useState<ServerFleetItem | null>(null);
@@ -68,6 +74,15 @@ export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer, onOpenDepl
   useEffect(() => {
     fetchFleet();
   }, [fetchFleet]);
+
+  // Reset page when search, statusFilter, or pageSize changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, statusFilter, pageSize]);
+
+  const totalPages = Math.max(1, Math.ceil(fleet.length / pageSize));
+  const startIndex = (currentPage - 1) * pageSize;
+  const paginatedFleet = fleet.slice(startIndex, startIndex + pageSize);
 
   const handleToggleMonitoring = async (server: ServerFleetItem) => {
     if (server.isMonitored === false) {
@@ -357,7 +372,7 @@ export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer, onOpenDepl
       ) : displayMode === 'grid' ? (
         /* Card Grid View */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {fleet.map((server) => (
+          {paginatedFleet.map((server) => (
             <div
               key={server.serverId}
               className={`bg-slate-900 border rounded-2xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between ${
@@ -527,7 +542,7 @@ export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer, onOpenDepl
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {fleet.map((server) => (
+                {paginatedFleet.map((server) => (
                   <tr
                     key={server.serverId}
                     className={`hover:bg-slate-800/40 transition-colors cursor-pointer ${
@@ -647,6 +662,57 @@ export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer, onOpenDepl
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Fleet Pagination Footer */}
+      {fleet.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between px-6 py-3.5 rounded-2xl border border-slate-800 bg-slate-900/60 shadow-md text-xs text-slate-400 gap-3 select-none">
+          <div className="flex items-center space-x-2">
+            <span>Show</span>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 text-xs focus:outline-none focus:border-indigo-500 font-medium cursor-pointer"
+            >
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+            <span>per page</span>
+            <span className="text-slate-600">|</span>
+            <span>
+              Showing <strong className="text-slate-200">{fleet.length === 0 ? 0 : startIndex + 1}</strong> to{' '}
+              <strong className="text-slate-200">{Math.min(fleet.length, startIndex + pageSize)}</strong> of{' '}
+              <strong className="text-slate-200">{fleet.length}</strong> servers
+            </span>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <span className="text-slate-400 text-xs mr-1">
+              Page <strong className="text-slate-200">{currentPage}</strong> of{' '}
+              <strong className="text-slate-200">{totalPages}</strong>
+            </span>
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage <= 1}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              title="Previous Page"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage >= totalPages}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              title="Next Page"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
           </div>
         </div>
       )}
