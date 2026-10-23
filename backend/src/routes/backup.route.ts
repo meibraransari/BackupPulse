@@ -508,19 +508,19 @@ export async function backupRoutes(fastify: FastifyInstance) {
         ];
       }
 
+      if (!query.startDate && !query.endDate && query.period) {
+        const now = new Date();
+        let since: Date;
+        if (query.period === '7d') since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        else if (query.period === '30d') since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        else since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        where.createdAt = { gte: since };
+      }
+
       if (query.hour !== undefined && query.hour !== '') {
         const targetHour = parseInt(query.hour, 10);
         const offsetMinutes = parseInt(query.timezoneOffset || '0', 10) || 0;
         const offsetMs = offsetMinutes * 60 * 1000;
-
-        if (!query.startDate && !query.endDate && query.period) {
-          const now = new Date();
-          let since: Date;
-          if (query.period === '7d') since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-          else if (query.period === '30d') since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-          else since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-          where.createdAt = { gte: since };
-        }
 
         const candidates = await prisma.backupReport.findMany({
           where,
@@ -949,19 +949,19 @@ export async function backupRoutes(fastify: FastifyInstance) {
         }
       }
 
+      if (!query.startDate && !query.endDate && query.period) {
+        const now = new Date();
+        let since: Date;
+        if (query.period === '7d') since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        else if (query.period === '30d') since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        else since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        where.createdAt = { gte: since };
+      }
+
       if (query.hour !== undefined && query.hour !== '') {
         const targetHour = parseInt(query.hour, 10);
         const offsetMinutes = parseInt(query.timezoneOffset || '0', 10) || 0;
         const offsetMs = offsetMinutes * 60 * 1000;
-
-        if (!query.startDate && !query.endDate && query.period) {
-          const now = new Date();
-          let since: Date;
-          if (query.period === '7d') since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-          else if (query.period === '30d') since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-          else since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-          where.createdAt = { gte: since };
-        }
 
         const candidates = await prisma.backupReport.findMany({
           where,

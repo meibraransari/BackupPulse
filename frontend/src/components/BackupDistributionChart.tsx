@@ -7,20 +7,16 @@ import {
   Tooltip,
   ResponsiveContainer,
   CartesianGrid,
-  Cell,
 } from 'recharts';
 import {
   Clock,
   Zap,
-  ShieldAlert,
   CheckCircle,
-  HelpCircle,
   AlertTriangle,
   Flame,
   ArrowRight,
   RefreshCw,
   SlidersHorizontal,
-  Calendar,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useTimezone } from '../context/TimezoneContext';
@@ -47,11 +43,19 @@ export const BackupDistributionChart: React.FC<BackupDistributionChartProps> = (
   const [data, setData] = useState<HourlyDistributionResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedHour, setSelectedHour] = useState<HourlyDistributionItem | null>(null);
 
   // Calculate browser offset in minutes:
   // When timezone mode is UTC, offset is 0. When LOCAL, offset is new Date().getTimezoneOffset().
   const timezoneOffset = timezone === 'UTC' ? 0 : new Date().getTimezoneOffset();
+
+  const handleNavigate = useCallback(
+    (params?: { hour?: number; period?: '24h' | '7d' | '30d'; search?: string; status?: string }) => {
+      if (onNavigateToTelemetry) {
+        onNavigateToTelemetry(params);
+      }
+    },
+    [onNavigateToTelemetry]
+  );
 
   const fetchDistribution = useCallback(async () => {
     setLoading(true);
@@ -64,11 +68,6 @@ export const BackupDistributionChart: React.FC<BackupDistributionChartProps> = (
         serverId,
       });
       setData(res);
-      // Default selected hour to peak hour if available
-      if (res.distribution && res.distribution.length > 0) {
-        const peak = res.distribution.find((d) => d.hour === res.peakHour.hour) || res.distribution[0];
-        setSelectedHour(peak);
-      }
     } catch (err: any) {
       console.error('Failed to load backup hourly distribution:', err);
       setError(err?.message || 'Failed to load distribution metrics');
@@ -150,8 +149,9 @@ export const BackupDistributionChart: React.FC<BackupDistributionChartProps> = (
         <div className="flex items-center space-x-3 self-start lg:self-center">
           <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs font-medium">
             <button
+              type="button"
               onClick={() => setPeriod('24h')}
-              className={`px-3 py-1.5 rounded-lg transition-all ${
+              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
                 period === '24h'
                   ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
                   : 'text-slate-400 hover:text-white'
@@ -160,8 +160,9 @@ export const BackupDistributionChart: React.FC<BackupDistributionChartProps> = (
               24 Hours
             </button>
             <button
+              type="button"
               onClick={() => setPeriod('7d')}
-              className={`px-3 py-1.5 rounded-lg transition-all ${
+              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
                 period === '7d'
                   ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
                   : 'text-slate-400 hover:text-white'
@@ -170,8 +171,9 @@ export const BackupDistributionChart: React.FC<BackupDistributionChartProps> = (
               Past Week (7D)
             </button>
             <button
+              type="button"
               onClick={() => setPeriod('30d')}
-              className={`px-3 py-1.5 rounded-lg transition-all ${
+              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
                 period === '30d'
                   ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
                   : 'text-slate-400 hover:text-white'
@@ -182,9 +184,10 @@ export const BackupDistributionChart: React.FC<BackupDistributionChartProps> = (
           </div>
 
           <button
+            type="button"
             onClick={fetchDistribution}
             disabled={loading}
-            className="p-2 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white transition-colors"
+            className="p-2 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
             title="Refresh distribution data"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin text-amber-400' : ''}`} />
@@ -192,18 +195,14 @@ export const BackupDistributionChart: React.FC<BackupDistributionChartProps> = (
         </div>
       </div>
 
-      {/* 2. KPI Summary Banner */}
+      {/* 2. KPI Summary Banner (All clickable to jump into Telemetry) */}
       {data && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Peak Hour */}
+          {/* Peak Hour Card (Clickable) */}
           <div
-            onClick={() => {
-              if (onNavigateToTelemetry && data.peakHour.count > 0) {
-                onNavigateToTelemetry({ hour: data.peakHour.hour, period });
-              }
-            }}
+            onClick={() => handleNavigate({ hour: data.peakHour.hour, period })}
             className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 relative overflow-hidden group hover:border-amber-500/80 hover:bg-slate-950/90 transition-all cursor-pointer shadow-md hover:shadow-amber-500/10 hover:shadow-xl hover:-translate-y-0.5 select-none"
-            title={`Click to view ${data.peakHour.count} peak load hour records in Telemetry`}
+            title={`Click to view all ${data.peakHour.count} peak load hour records in Telemetry`}
           >
             <div className="flex items-center justify-between text-xs text-slate-400 font-medium">
               <span className="group-hover:text-amber-300 transition-colors font-semibold">Peak Arrival Hour</span>
@@ -224,49 +223,71 @@ export const BackupDistributionChart: React.FC<BackupDistributionChartProps> = (
                 Window: {data.peakHour.timeWindow} ({timezone})
               </span>
               <span className="text-amber-400 font-semibold flex items-center space-x-0.5 opacity-80 group-hover:opacity-100 transition-opacity">
-                <span>View in Telemetry</span>
+                <span>View records</span>
                 <ArrowRight className="h-3 w-3 ml-0.5" />
               </span>
             </div>
           </div>
 
-          {/* Recommended Quiet Window */}
-          <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 relative overflow-hidden group hover:border-emerald-500/50 transition-colors">
+          {/* Recommended Quiet Window (Clickable) */}
+          <div
+            onClick={() => {
+              if (data.quietestHours && data.quietestHours.length > 0) {
+                handleNavigate({ hour: data.quietestHours[0], period });
+              } else {
+                handleNavigate({ period });
+              }
+            }}
+            className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 relative overflow-hidden group hover:border-emerald-500/80 hover:bg-slate-950/90 transition-all cursor-pointer shadow-md hover:shadow-emerald-500/10 hover:shadow-xl hover:-translate-y-0.5 select-none"
+            title="Click to inspect Quiet / Off-Peak window in Telemetry"
+          >
             <div className="flex items-center justify-between text-xs text-slate-400 font-medium">
-              <span>Quiet / Off-Peak Window</span>
-              <span className="p-1 rounded bg-emerald-500/10 text-emerald-400">
+              <span className="group-hover:text-emerald-300 transition-colors font-semibold">Quiet / Off-Peak Window</span>
+              <span className="p-1 rounded bg-emerald-500/10 text-emerald-400 group-hover:bg-emerald-500/20">
                 <CheckCircle className="h-3.5 w-3.5" />
               </span>
             </div>
             <div className="mt-2 flex items-baseline space-x-2">
-              <span className="text-2xl font-black text-emerald-400 tracking-tight">
+              <span className="text-2xl font-black text-emerald-400 tracking-tight group-hover:scale-105 transition-transform origin-left">
                 {data.quietWindow}
               </span>
             </div>
-            <p className="text-[11px] text-emerald-400/80 mt-1">
-              Recommended slot for scheduling new cron jobs
-            </p>
+            <div className="mt-1 flex items-center justify-between text-[11px]">
+              <span className="text-emerald-400/80">Recommended for scheduling</span>
+              <span className="text-emerald-400 font-semibold flex items-center space-x-0.5 opacity-80 group-hover:opacity-100 transition-opacity">
+                <span>Inspect</span>
+                <ArrowRight className="h-3 w-3 ml-0.5" />
+              </span>
+            </div>
           </div>
 
-          {/* Total & Hourly Average */}
-          <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 relative overflow-hidden group hover:border-blue-500/50 transition-colors">
+          {/* Total & Hourly Average (Clickable) */}
+          <div
+            onClick={() => handleNavigate({ period })}
+            className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 relative overflow-hidden group hover:border-blue-500/80 hover:bg-slate-950/90 transition-all cursor-pointer shadow-md hover:shadow-blue-500/10 hover:shadow-xl hover:-translate-y-0.5 select-none"
+            title={`Click to view all ${data.totalBackups} records in Telemetry`}
+          >
             <div className="flex items-center justify-between text-xs text-slate-400 font-medium">
-              <span>Total Backups Tracked</span>
-              <span className="p-1 rounded bg-blue-500/10 text-blue-400">
+              <span className="group-hover:text-blue-300 transition-colors font-semibold">Total Backups Tracked</span>
+              <span className="p-1 rounded bg-blue-500/10 text-blue-400 group-hover:bg-blue-500/20">
                 <Zap className="h-3.5 w-3.5" />
               </span>
             </div>
             <div className="mt-2 flex items-baseline space-x-2">
-              <span className="text-2xl font-black text-white tracking-tight">
+              <span className="text-2xl font-black text-white tracking-tight group-hover:text-blue-300 transition-colors">
                 {data.totalBackups}
               </span>
               <span className="text-xs text-slate-400 font-medium">
                 (~{data.hourlyAverage}/hr avg)
               </span>
             </div>
-            <p className="text-[11px] text-slate-500 mt-1">
-              Across all monitored production projects
-            </p>
+            <div className="mt-1 flex items-center justify-between text-[11px]">
+              <span className="text-slate-500">All monitored projects</span>
+              <span className="text-blue-400 font-semibold flex items-center space-x-0.5 opacity-80 group-hover:opacity-100 transition-opacity">
+                <span>View all</span>
+                <ArrowRight className="h-3 w-3 ml-0.5" />
+              </span>
+            </div>
           </div>
 
           {/* Active Timezone Mode */}
@@ -300,44 +321,91 @@ export const BackupDistributionChart: React.FC<BackupDistributionChartProps> = (
           <AlertTriangle className="h-8 w-8 text-rose-400" />
           <p className="text-sm font-semibold">{error}</p>
           <button
+            type="button"
             onClick={fetchDistribution}
-            className="px-3 py-1.5 rounded-lg bg-rose-600/40 hover:bg-rose-600 text-white text-xs font-semibold transition-colors"
+            className="px-3 py-1.5 rounded-lg bg-rose-600/40 hover:bg-rose-600 text-white text-xs font-semibold transition-colors cursor-pointer"
           >
             Retry Loading
           </button>
         </div>
       ) : data && data.distribution ? (
         <div className="space-y-4">
-          <div className="flex items-center justify-between text-xs text-slate-400 px-1">
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-1.5">
-                <span className="h-3 w-3 rounded bg-amber-500 inline-block" />
-                <span>Peak Load Hour</span>
-              </div>
-              <div className="flex items-center space-x-1.5">
-                <span className="h-3 w-3 rounded bg-sky-400 inline-block" />
-                <span>Active Backup Traffic</span>
-              </div>
-              <div className="flex items-center space-x-1.5">
-                <span className="h-3 w-3 rounded bg-slate-800 inline-block" />
-                <span>Quiet / Off-Peak (0-1 Runs)</span>
-              </div>
+          {/* Interactive Legend with 1-click filter actions */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-400 px-1">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* 1. Peak Load Hour Button */}
+              <button
+                type="button"
+                onClick={() => handleNavigate({ hour: data.peakHour.hour, period })}
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 hover:text-white text-xs font-semibold transition-all cursor-pointer shadow-sm group select-none"
+                title={`Click to view all ${data.peakHour.count} Peak Load Hour records in Telemetry`}
+              >
+                <span className="h-2.5 w-2.5 rounded-full bg-amber-500 inline-block animate-pulse shadow-sm shadow-amber-500/50" />
+                <span>Peak Load Hour ({data.peakHour.label})</span>
+                <ArrowRight className="h-3 w-3 ml-0.5 group-hover:translate-x-0.5 transition-transform opacity-70 group-hover:opacity-100" />
+              </button>
+
+              {/* 2. Active Backup Traffic Button */}
+              <button
+                type="button"
+                onClick={() => handleNavigate({ period })}
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/40 text-sky-300 hover:text-white text-xs font-semibold transition-all cursor-pointer shadow-sm group select-none"
+                title={`Click to view all Active Backup Traffic records in Telemetry (${data.totalBackups} runs)`}
+              >
+                <span className="h-2.5 w-2.5 rounded-full bg-sky-400 inline-block shadow-sm shadow-sky-400/50" />
+                <span>Active Backup Traffic ({data.totalBackups} runs)</span>
+                <ArrowRight className="h-3 w-3 ml-0.5 group-hover:translate-x-0.5 transition-transform opacity-70 group-hover:opacity-100" />
+              </button>
+
+              {/* 3. Quiet / Off-Peak Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (data.quietestHours && data.quietestHours.length > 0) {
+                    handleNavigate({ hour: data.quietestHours[0], period });
+                  } else {
+                    handleNavigate({ period });
+                  }
+                }}
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white text-xs font-semibold transition-all cursor-pointer shadow-sm group select-none"
+                title={`Click to inspect Quiet / Off-Peak window in Telemetry (${data.quietWindow})`}
+              >
+                <span className="h-2.5 w-2.5 rounded-full bg-slate-500 inline-block" />
+                <span>Quiet / Off-Peak ({data.quietWindow})</span>
+                <ArrowRight className="h-3 w-3 ml-0.5 group-hover:translate-x-0.5 transition-transform opacity-70 group-hover:opacity-100" />
+              </button>
             </div>
-            <span className="text-[11px] text-slate-500">
-              Hover over or click any hour bar for details
+
+            <span className="text-[11px] text-slate-400 font-medium">
+              Click any bar, legend, or pill to drill down in Telemetry
             </span>
           </div>
 
+          {/* Interactive Bar Chart */}
           <div className="h-64 w-full cursor-pointer">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={data.distribution}
                 margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-                onClick={(e) => {
-                  if (e && e.activePayload && e.activePayload.length > 0) {
+                onClick={(e: any) => {
+                  if (!e) return;
+                  if (e.activePayload && e.activePayload.length > 0) {
                     const item = e.activePayload[0].payload as HourlyDistributionItem;
-                    setSelectedHour(item);
-                    onNavigateToTelemetry?.({ hour: item.hour, period });
+                    if (item && typeof item.hour === 'number') {
+                      handleNavigate({ hour: item.hour, period });
+                      return;
+                    }
+                  }
+                  if (typeof e.activeTooltipIndex === 'number' && data.distribution[e.activeTooltipIndex]) {
+                    const item = data.distribution[e.activeTooltipIndex];
+                    handleNavigate({ hour: item.hour, period });
+                    return;
+                  }
+                  if (e.activeLabel) {
+                    const item = data.distribution.find((d) => d.label === e.activeLabel);
+                    if (item) {
+                      handleNavigate({ hour: item.hour, period });
+                    }
                   }
                 }}
               >
@@ -357,13 +425,16 @@ export const BackupDistributionChart: React.FC<BackupDistributionChartProps> = (
                   allowDecimals={false}
                 />
                 <Tooltip
-                  cursor={{ fill: 'rgba(255, 255, 255, 0.04)' }}
+                  cursor={{ fill: 'rgba(255, 255, 255, 0.05)', pointerEvents: 'none' }}
                   content={({ active, payload }) => {
                     if (active && payload && payload.length) {
                       const item = payload[0].payload as HourlyDistributionItem;
                       const isPeak = item.count > 0 && item.count === data.peakHour.count;
                       return (
-                        <div className="bg-slate-950 border border-slate-700/80 rounded-xl p-3 shadow-2xl text-xs space-y-2 min-w-[210px] z-50">
+                        <div
+                          className="bg-slate-950 border border-slate-700/80 rounded-xl p-3 shadow-2xl text-xs space-y-2 min-w-[220px] z-50 cursor-pointer"
+                          onClick={() => handleNavigate({ hour: item.hour, period })}
+                        >
                           <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
                             <span className="font-bold text-white flex items-center space-x-1.5">
                               <Clock className="h-3.5 w-3.5 text-amber-400" />
@@ -398,20 +469,21 @@ export const BackupDistributionChart: React.FC<BackupDistributionChartProps> = (
                           {isPeak && (
                             <div className="mt-1 pt-1 border-t border-slate-800/80 flex items-center space-x-1 text-[11px] text-amber-400 font-semibold">
                               <Flame className="h-3.5 w-3.5 text-amber-400" />
-                              <span>Highest Server Load of Day</span>
-                            </div>
-                          )}
-                          {item.count === 0 && (
-                            <div className="mt-1 pt-1 border-t border-slate-800/80 flex items-center space-x-1 text-[11px] text-emerald-400">
-                              <CheckCircle className="h-3.5 w-3.5" />
-                              <span>Ideal Staggering Window</span>
+                              <span>Highest Server Load Window</span>
                             </div>
                           )}
 
-                          <div className="mt-1 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-amber-400 font-semibold">
-                            <span>Click to jump to Telemetry</span>
-                            <ArrowRight className="h-3 w-3" />
-                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleNavigate({ hour: item.hour, period });
+                            }}
+                            className="w-full mt-2 pt-2 border-t border-slate-800 flex items-center justify-between text-xs text-amber-400 hover:text-amber-300 font-bold cursor-pointer select-none"
+                          >
+                            <span>Jump to Telemetry ({item.count} runs)</span>
+                            <ArrowRight className="h-3.5 w-3.5" />
+                          </button>
                         </div>
                       );
                     }
@@ -420,32 +492,89 @@ export const BackupDistributionChart: React.FC<BackupDistributionChartProps> = (
                 />
                 <Bar
                   dataKey="count"
-                  radius={[4, 4, 0, 0]}
-                  isAnimationActive={true}
-                  animationDuration={800}
+                  isAnimationActive={false}
                   cursor="pointer"
+                  shape={(barProps: any) => {
+                    const { x, y, width, height, payload } = barProps;
+                    const fill = getBarColor(payload, data.peakHour.count);
+                    const barHeight = Math.max(height || 0, payload.count > 0 ? 6 : 2);
+                    const barY = Math.min(y || 0, 240 - barHeight);
+                    return (
+                      <g
+                        className="cursor-pointer"
+                        style={{ pointerEvents: 'all' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (payload && typeof payload.hour === 'number') {
+                            handleNavigate({ hour: payload.hour, period });
+                          }
+                        }}
+                      >
+                        <rect
+                          x={x}
+                          y={barY}
+                          width={width}
+                          height={barHeight}
+                          fill={fill}
+                          rx={4}
+                          ry={4}
+                          cursor="pointer"
+                          className="transition-all hover:opacity-75"
+                        />
+                      </g>
+                    );
+                  }}
                   onClick={(entryData: any) => {
-                    const h = entryData?.hour !== undefined ? entryData.hour : entryData?.payload?.hour;
-                    if (h !== undefined) {
-                      onNavigateToTelemetry?.({ hour: h, period });
+                    const h = entryData?.hour ?? entryData?.payload?.hour;
+                    if (typeof h === 'number') {
+                      handleNavigate({ hour: h, period });
                     }
                   }}
-                >
-                  {data.distribution.map((entry) => (
-                    <Cell
-                      key={`cell-${entry.hour}`}
-                      fill={getBarColor(entry, data.peakHour.count)}
-                      className="transition-all hover:opacity-75 cursor-pointer"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onNavigateToTelemetry?.({ hour: entry.hour, period });
-                      }}
-                    />
-                  ))}
-                </Bar>
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>
+
+          {/* Quick-Select Pills for every hour with backup runs */}
+          {data.distribution && data.distribution.some((d) => d.count > 0) && (
+            <div className="pt-3 border-t border-slate-800/80 flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wide flex items-center space-x-1 mr-1">
+                <Clock className="h-3.5 w-3.5 text-emerald-400" />
+                <span>Jump to Hour:</span>
+              </span>
+              {data.distribution
+                .filter((d) => d.count > 0)
+                .map((d) => {
+                  const isPeak = d.hour === data.peakHour.hour;
+                  return (
+                    <button
+                      key={d.hour}
+                      type="button"
+                      onClick={() => handleNavigate({ hour: d.hour, period })}
+                      className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer shadow-sm select-none ${
+                        isPeak
+                          ? 'bg-amber-500/25 text-amber-300 hover:bg-amber-500/35 border border-amber-500/60 shadow-amber-500/10'
+                          : 'bg-slate-800/90 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 hover:border-slate-600'
+                      }`}
+                      title={`Click to view ${d.count} backups from ${d.timeWindow} in Telemetry`}
+                    >
+                      {isPeak && <Flame className="h-3.5 w-3.5 text-amber-400 animate-pulse" />}
+                      <span>{d.label}</span>
+                      <span
+                        className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold ${
+                          isPeak
+                            ? 'bg-amber-400 text-slate-950'
+                            : 'bg-slate-900 text-slate-300 border border-slate-800'
+                        }`}
+                      >
+                        {d.count}
+                      </span>
+                      <ArrowRight className="h-3 w-3 opacity-60" />
+                    </button>
+                  );
+                })}
+            </div>
+          )}
         </div>
       ) : null}
 
@@ -466,23 +595,29 @@ export const BackupDistributionChart: React.FC<BackupDistributionChartProps> = (
             </div>
           </div>
 
-          {onNavigateToTelemetry && (
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {data.peakHour.count > 0 && (
+              <button
+                type="button"
+                onClick={() => handleNavigate({ hour: data.peakHour.hour, period })}
+                className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-xs font-bold text-amber-300 hover:text-white border border-amber-500/40 transition-all shadow-md group select-none cursor-pointer"
+                title={`View ${data.peakHour.count} peak load hour backup records in Telemetry`}
+              >
+                <Flame className="h-3.5 w-3.5 text-amber-400 animate-pulse" />
+                <span>Peak Hour ({data.peakHour.label})</span>
+                <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
+              </button>
+            )}
+
             <button
-              onClick={() => {
-                if (data.peakHour.count > 0) {
-                  onNavigateToTelemetry({ hour: data.peakHour.hour, period });
-                } else {
-                  onNavigateToTelemetry();
-                }
-              }}
-              className="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-xs font-bold text-amber-400 hover:text-amber-300 border border-amber-500/30 shrink-0 transition-all shadow-sm group select-none cursor-pointer"
-              title={`View ${data.peakHour.count} peak load hour backup records in Telemetry`}
+              type="button"
+              onClick={() => handleNavigate({ period })}
+              className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-xs font-semibold text-emerald-400 hover:text-emerald-300 border border-slate-800 transition-colors group cursor-pointer"
             >
-              <Flame className="h-3.5 w-3.5 text-amber-400 animate-pulse" />
-              <span>Jump to Peak Hour Telemetry ({data.peakHour.count} records)</span>
-              <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-1 transition-transform" />
+              <span>Explore Telemetry Records</span>
+              <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
             </button>
-          )}
+          </div>
         </div>
       )}
     </div>

@@ -120,6 +120,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
 
   // Helper to smoothly scroll down to the data table
   const scrollToTable = () => {
+    window.scrollTo({ top: 0, behavior: 'instant' });
     setTimeout(() => {
       document.getElementById('telemetry-table-section')?.scrollIntoView({ behavior: 'smooth' });
     }, 50);
@@ -524,11 +525,13 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
                 status: filterParams?.status !== undefined ? filterParams.status : 'ALL',
                 hour: filterParams?.hour !== undefined ? filterParams.hour : undefined,
                 period: filterParams?.period !== undefined ? filterParams.period : undefined,
+                startDate: '',
+                endDate: '',
                 timezoneOffset,
                 page: 1,
               }));
               setActiveTab('telemetry');
-              scrollToTable();
+              window.scrollTo({ top: 0, behavior: 'instant' });
             }}
             selectedDate={filters.startDate && filters.startDate === filters.endDate ? filters.startDate : undefined}
             projectName={filters.projectName !== 'ALL' ? filters.projectName : undefined}

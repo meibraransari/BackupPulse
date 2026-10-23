@@ -94,11 +94,16 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           </div>
         </div>
         <button
-          onClick={() => onNavigateToTelemetry()}
-          className="flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 shadow-md shadow-emerald-950/50 transition-all shrink-0 select-none group"
+          type="button"
+          onClick={() => {
+            if (onNavigateToTelemetry) {
+              onNavigateToTelemetry();
+            }
+          }}
+          className="flex items-center space-x-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 shadow-md shadow-emerald-950/50 transition-all shrink-0 select-none group cursor-pointer"
         >
           <span>Open Backup Telemetry Records</span>
-          <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-1 transition-transform" />
+          <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
         </button>
       </div>
     </div>
