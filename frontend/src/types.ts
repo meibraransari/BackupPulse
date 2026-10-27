@@ -324,6 +324,14 @@ export interface HourlyDistributionResponse {
 // Disk Sync & Rsync Mirroring Frontend Types
 // ============================================================================
 
+export interface SshTestResult {
+  status: 'ONLINE' | 'OFFLINE';
+  latencyMs: number;
+  message: string;
+  logs: string;
+  logLevel: 'info' | 'debug';
+}
+
 export interface RsyncServer {
   id: string;
   name: string;

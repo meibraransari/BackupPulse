@@ -25,6 +25,7 @@ import {
   RsyncRun,
   RsyncActivityLog,
   RsyncDashboardStats,
+  SshTestResult,
 } from '../types';
 
 const TOKEN_KEY = 'backup_monitor_auth_token';
@@ -562,10 +563,13 @@ export const api = {
     });
   },
 
-  async testRsyncServer(id: string): Promise<{ status: 'ONLINE' | 'OFFLINE'; latencyMs: number; message: string }> {
-    return request<{ status: 'ONLINE' | 'OFFLINE'; latencyMs: number; message: string }>(
+  async testRsyncServer(id: string, logLevel: 'info' | 'debug' = 'info'): Promise<SshTestResult> {
+    return request<SshTestResult>(
       `/api/v1/rsync/servers/${id}/test`,
-      { method: 'POST' }
+      {
+        method: 'POST',
+        body: JSON.stringify({ logLevel }),
+      }
     );
   },
 
@@ -576,8 +580,9 @@ export const api = {
     authType?: string;
     password?: string;
     sshPrivateKey?: string;
-  }): Promise<{ status: 'ONLINE' | 'OFFLINE'; latencyMs: number; message: string }> {
-    return request<{ status: 'ONLINE' | 'OFFLINE'; latencyMs: number; message: string }>(
+    logLevel?: 'info' | 'debug';
+  }): Promise<SshTestResult> {
+    return request<SshTestResult>(
       '/api/v1/rsync/servers/test-connection',
       {
         method: 'POST',

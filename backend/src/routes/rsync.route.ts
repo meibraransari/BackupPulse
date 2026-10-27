@@ -306,7 +306,8 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
       }
 
       const { id } = request.params;
-      const result = await rsyncService.testServerConnection(id);
+      const logLevel = request.body?.logLevel || (request.query as any)?.logLevel || 'info';
+      const result = await rsyncService.testServerConnection(id, logLevel);
       return reply.send(result);
     }
   );

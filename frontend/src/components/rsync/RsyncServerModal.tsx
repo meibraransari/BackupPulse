@@ -1,6 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { X, Server, Key, Lock, CheckCircle2, AlertTriangle, ShieldCheck, Wifi } from 'lucide-react';
-import { RsyncServer } from '../../types';
+import {
+  X,
+  Server,
+  Key,
+  Lock,
+  CheckCircle2,
+  AlertTriangle,
+  ShieldCheck,
+  Wifi,
+  Terminal,
+  Copy,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Bug,
+} from 'lucide-react';
+import { RsyncServer, SshTestResult } from '../../types';
 import { api } from '../../services/api';
 
 interface RsyncServerModalProps {
@@ -24,9 +39,13 @@ export const RsyncServerModal: React.FC<RsyncServerModalProps> = ({
   const [password, setPassword] = useState('');
   const [sshPrivateKey, setSshPrivateKey] = useState('');
   const [notes, setNotes] = useState('');
+
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ status: 'ONLINE' | 'OFFLINE'; message: string } | null>(null);
+  const [logLevel, setLogLevel] = useState<'info' | 'debug'>('info');
+  const [testResult, setTestResult] = useState<SshTestResult | null>(null);
+  const [showLogs, setShowLogs] = useState<boolean>(true);
+  const [copiedLogs, setCopiedLogs] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -51,6 +70,7 @@ export const RsyncServerModal: React.FC<RsyncServerModalProps> = ({
     }
     setError(null);
     setTestResult(null);
+    setCopiedLogs(false);
   }, [server, isOpen]);
 
   if (!isOpen) return null;
@@ -99,7 +119,7 @@ export const RsyncServerModal: React.FC<RsyncServerModalProps> = ({
     }
   };
 
-  const handleTestNow = async () => {
+  const handleTestNow = async (selectedLevel: 'info' | 'debug' = logLevel) => {
     if (!host.trim()) {
       setError('Please provide the Host / IP address before testing connection.');
       return;
@@ -107,6 +127,7 @@ export const RsyncServerModal: React.FC<RsyncServerModalProps> = ({
     setTesting(true);
     setTestResult(null);
     setError(null);
+    setCopiedLogs(false);
     try {
       const res = await api.testRsyncConnection({
         host: host.trim(),
@@ -115,18 +136,33 @@ export const RsyncServerModal: React.FC<RsyncServerModalProps> = ({
         authType,
         password: password || undefined,
         sshPrivateKey: sshPrivateKey || undefined,
+        logLevel: selectedLevel,
       });
       setTestResult(res);
+      setShowLogs(true);
     } catch (err: any) {
-      setTestResult({ status: 'OFFLINE', message: err.message || 'Connection failed' });
+      setTestResult({
+        status: 'OFFLINE',
+        latencyMs: 0,
+        message: err.message || 'Connection failed',
+        logs: `[ERROR] ${err.message || 'Connection failed'}`,
+        logLevel: selectedLevel,
+      });
     } finally {
       setTesting(false);
     }
   };
 
+  const handleCopyLogs = () => {
+    if (!testResult?.logs) return;
+    navigator.clipboard.writeText(testResult.logs);
+    setCopiedLogs(true);
+    setTimeout(() => setCopiedLogs(false), 2000);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
-      <div className="relative w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+      <div className="relative w-full max-w-xl max-h-[92vh] bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/40">
           <div className="flex items-center space-x-3">
@@ -151,7 +187,7 @@ export const RsyncServerModal: React.FC<RsyncServerModalProps> = ({
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="flex-1 p-6 overflow-y-auto space-y-4">
           {error && (
             <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-900/60 text-xs text-rose-300 flex items-center space-x-2">
               <AlertTriangle className="h-4 w-4 shrink-0 text-rose-400" />
@@ -159,23 +195,107 @@ export const RsyncServerModal: React.FC<RsyncServerModalProps> = ({
             </div>
           )}
 
+          {/* Test Result & Live Log Transcript Box */}
           {testResult && (
             <div
-              className={`p-3 rounded-xl border text-xs flex items-center space-x-2 ${
+              className={`rounded-xl border overflow-hidden transition-all ${
                 testResult.status === 'ONLINE'
-                  ? 'bg-emerald-950/40 border-emerald-900/60 text-emerald-300'
-                  : 'bg-rose-950/40 border-rose-900/60 text-rose-300'
+                  ? 'bg-slate-950 border-emerald-500/40'
+                  : 'bg-slate-950 border-rose-500/40'
               }`}
             >
-              {testResult.status === 'ONLINE' ? (
-                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
-              ) : (
-                <AlertTriangle className="h-4 w-4 shrink-0 text-rose-400" />
+              {/* Status Header */}
+              <div
+                className={`px-4 py-3 border-b flex flex-wrap items-center justify-between gap-2 text-xs ${
+                  testResult.status === 'ONLINE'
+                    ? 'bg-emerald-950/30 border-emerald-900/60 text-emerald-300'
+                    : 'bg-rose-950/30 border-rose-900/60 text-rose-300'
+                }`}
+              >
+                <div className="flex items-center space-x-2">
+                  {testResult.status === 'ONLINE' ? (
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+                  ) : (
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-rose-400" />
+                  )}
+                  <span className="font-bold">
+                    {testResult.status === 'ONLINE' ? 'Connection Succeeded' : 'Connection Failed'}
+                  </span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-slate-950 border border-slate-800 text-slate-300">
+                    {testResult.latencyMs}ms
+                  </span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-slate-900 border border-slate-800 text-slate-400 uppercase">
+                    {testResult.logLevel} mode
+                  </span>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={handleCopyLogs}
+                    className="flex items-center space-x-1 px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 text-[11px] transition-colors cursor-pointer"
+                    title="Copy full connection transcript"
+                  >
+                    {copiedLogs ? (
+                      <>
+                        <Check className="h-3 w-3 text-emerald-400" />
+                        <span className="text-emerald-400 font-semibold">Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3 w-3" />
+                        <span>Copy Logs</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowLogs((prev) => !prev)}
+                    className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                    title={showLogs ? 'Collapse logs' : 'Expand logs'}
+                  >
+                    {showLogs ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Message Banner */}
+              <div className="px-4 py-2 text-xs text-slate-300 bg-slate-900/60 border-b border-slate-800/80 flex items-center justify-between">
+                <span>{testResult.message}</span>
+                <span className="text-[10px] text-slate-500 font-mono">
+                  {showLogs ? 'Showing transcript below' : 'Click arrow to view transcript'}
+                </span>
+              </div>
+
+              {/* Terminal Logs Output */}
+              {showLogs && (
+                <div className="p-3 max-h-52 overflow-y-auto bg-slate-950 font-mono text-[11px] leading-relaxed select-text space-y-0.5">
+                  {testResult.logs ? (
+                    testResult.logs.split('\n').map((line, idx) => {
+                      let colorClass = 'text-slate-300';
+                      if (line.includes('[SUCCESS]')) colorClass = 'text-emerald-400 font-bold';
+                      else if (line.includes('[ERROR]')) colorClass = 'text-rose-400 font-bold';
+                      else if (line.includes('[WARN]')) colorClass = 'text-amber-400';
+                      else if (line.includes('[DEBUG]')) colorClass = 'text-purple-300';
+                      else if (line.includes('[INFO]')) colorClass = 'text-sky-300';
+                      else if (line.includes('Permission denied')) colorClass = 'text-rose-400 font-bold bg-rose-950/30 px-1 rounded';
+                      else if (line.includes('Connection established') || line.includes('Authentication succeeded')) colorClass = 'text-emerald-300';
+                      return (
+                        <div key={idx} className={colorClass}>
+                          {line}
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <p className="text-slate-500 italic">No output logged.</p>
+                  )}
+                </div>
               )}
-              <span>{testResult.message}</span>
             </div>
           )}
 
+          {/* Form Inputs */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
               <label className="block text-xs font-semibold text-slate-300 mb-1">
@@ -281,19 +401,59 @@ export const RsyncServerModal: React.FC<RsyncServerModalProps> = ({
           </div>
 
           {/* Footer Actions */}
-          <div className="flex items-center justify-between pt-4 border-t border-slate-800">
-            <button
-              type="button"
-              onClick={handleTestNow}
-              disabled={testing || !host.trim()}
-              className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors cursor-pointer disabled:opacity-40"
-              title="Test SSH connection using the entered credentials before saving"
-            >
-              <Wifi className={`h-3.5 w-3.5 ${testing ? 'animate-pulse text-indigo-400' : 'text-slate-400'}`} />
-              <span>{testing ? 'Testing Connection...' : 'Test SSH Connection'}</span>
-            </button>
-
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-4 border-t border-slate-800">
+            {/* Test Connection Controls: Log Level selector + Test button */}
             <div className="flex items-center space-x-2">
+              {/* Log Level Toggle */}
+              <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLogLevel('info');
+                    if (testResult) handleTestNow('info');
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    logLevel === 'info'
+                      ? 'bg-slate-800 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                  title="Standard connection check"
+                >
+                  Info
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLogLevel('debug');
+                    if (testResult) handleTestNow('debug');
+                  }}
+                  className={`flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    logLevel === 'debug'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                  title="Verbose debug trace (-vv): Shows raw SSH handshake, cipher negotiation & auth packets"
+                >
+                  <Bug className="h-3 w-3" />
+                  <span>Debug (-v)</span>
+                </button>
+              </div>
+
+              {/* Test Button */}
+              <button
+                type="button"
+                onClick={() => handleTestNow()}
+                disabled={testing || !host.trim()}
+                className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors cursor-pointer disabled:opacity-40"
+                title="Execute SSH connection test and capture logs"
+              >
+                <Wifi className={`h-3.5 w-3.5 ${testing ? 'animate-pulse text-indigo-400' : 'text-slate-400'}`} />
+                <span>{testing ? 'Testing...' : `Test Connection`}</span>
+              </button>
+            </div>
+
+            {/* Cancel & Save */}
+            <div className="flex items-center justify-end space-x-2">
               <button
                 type="button"
                 onClick={onClose}

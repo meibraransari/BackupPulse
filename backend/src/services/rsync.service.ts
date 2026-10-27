@@ -96,6 +96,14 @@ export function parseRsyncStats(output: string): RsyncStats {
   return stats;
 }
 
+export interface SshTestResult {
+  status: 'ONLINE' | 'OFFLINE';
+  latencyMs: number;
+  message: string;
+  logs: string;
+  logLevel: 'info' | 'debug';
+}
+
 export class RsyncService {
   /**
    * Probes disk capacity (total, used, free) for a repository
@@ -173,7 +181,7 @@ export class RsyncService {
   }
 
   /**
-   * Tests SSH connection using direct credential inputs (useful for pre-flight testing before saving)
+   * Tests SSH connection using direct credential inputs with support for INFO and DEBUG logs
    */
   async testConnectionCredentials(input: {
     host: string;
@@ -182,133 +190,241 @@ export class RsyncService {
     authType?: string;
     password?: string | null;
     sshPrivateKey?: string | null;
-  }): Promise<{
-    status: 'ONLINE' | 'OFFLINE';
-    latencyMs: number;
-    message: string;
-  }> {
+    logLevel?: 'info' | 'debug';
+  }): Promise<SshTestResult> {
     const host = input.host?.trim();
-    if (!host) {
-      return { status: 'OFFLINE', latencyMs: 0, message: 'Host address is required' };
-    }
     const port = input.port || 22;
     const username = input.username?.trim() || 'root';
     const authType = input.authType || 'SSH_KEY';
+    const logLevel: 'info' | 'debug' = input.logLevel === 'debug' ? 'debug' : 'info';
+
+    const logLines: string[] = [];
+    const addLog = (level: 'INFO' | 'DEBUG' | 'SUCCESS' | 'ERROR' | 'WARN', msg: string) => {
+      const ts = new Date().toISOString().substring(11, 23);
+      logLines.push(`[${ts}] [${level}] ${msg}`);
+    };
+
+    if (!host) {
+      addLog('ERROR', 'Target host address is missing or empty.');
+      return {
+        status: 'OFFLINE',
+        latencyMs: 0,
+        message: 'Host address is required',
+        logs: logLines.join('\n'),
+        logLevel,
+      };
+    }
+
+    addLog(
+      'INFO',
+      `Starting connection test for ${username}@${host}:${port} (Auth: ${authType}, Verbosity: ${logLevel.toUpperCase()})...`
+    );
 
     const startTime = Date.now();
-    let status: 'ONLINE' | 'OFFLINE' = 'OFFLINE';
-    let message = '';
 
     if (authType === 'LOCAL' || host === 'localhost' || host === '127.0.0.1') {
+      addLog('INFO', 'Target configured as Local Host (127.0.0.1).');
+      addLog('SUCCESS', 'Local server filesystem is online, accessible, and ready for sync.');
       return {
         status: 'ONLINE',
         latencyMs: Date.now() - startTime,
         message: 'Local host is online and accessible.',
+        logs: logLines.join('\n'),
+        logLevel,
       };
     }
 
     // Step 1: TCP Socket Reachability Check
+    addLog('INFO', `Phase 1: Probing TCP socket reachability on ${host}:${port}...`);
+    const tcpStartTime = Date.now();
     const isPortOpen = await new Promise<boolean>((resolve) => {
       const socket = new net.Socket();
-      socket.setTimeout(4000);
+      socket.setTimeout(4500);
       socket.on('connect', () => {
         socket.destroy();
         resolve(true);
       });
       socket.on('timeout', () => {
+        addLog('WARN', `TCP socket connection to ${host}:${port} timed out after 4500ms.`);
         socket.destroy();
         resolve(false);
       });
-      socket.on('error', () => {
+      socket.on('error', (err) => {
+        addLog('WARN', `TCP socket connection to ${host}:${port} failed: ${err.message}`);
         socket.destroy();
         resolve(false);
       });
       socket.connect(port, host);
     });
 
+    const tcpLatency = Date.now() - tcpStartTime;
+
     if (!isPortOpen) {
+      addLog('ERROR', `TCP socket connection to ${host}:${port} could not be established.`);
+      addLog('ERROR', 'Check if the server IP/hostname is correct, port 22 is open, and firewall rules allow incoming traffic.');
       return {
         status: 'OFFLINE',
-        latencyMs: Date.now() - startTime,
+        latencyMs: tcpLatency,
         message: `Unable to reach ${host} on port ${port}. Host is unreachable or firewall is blocking the connection.`,
+        logs: logLines.join('\n'),
+        logLevel,
       };
     }
 
+    addLog('SUCCESS', `TCP socket connection established with ${host}:${port} in ${tcpLatency}ms.`);
+
     // Step 2: SSH Authentication Test
+    addLog('INFO', `Phase 2: Initiating OpenSSH authentication probe (User: ${username})...`);
     let tempKeyFile: string | null = null;
+    let status: 'ONLINE' | 'OFFLINE' = 'OFFLINE';
+    let message = '';
+
     try {
-      const opts = [
+      const sshOpts = [
         `-p ${port}`,
         `-o StrictHostKeyChecking=no`,
         `-o UserKnownHostsFile=/dev/null`,
-        `-o ConnectTimeout=5`,
+        `-o ConnectTimeout=6`,
         `-o BatchMode=yes`,
       ];
 
+      if (logLevel === 'debug') {
+        sshOpts.push('-vv'); // Ultra-detailed debug logs showing cipher suites, keys, packets
+        addLog('DEBUG', 'OpenSSH verbose debug output enabled (-vv). Capturing raw handshake:');
+      } else {
+        sshOpts.push('-v'); // Standard verbose so we capture connection and auth steps
+      }
+
+      let sshCmd = '';
       if (authType === 'SSH_KEY' && input.sshPrivateKey) {
         tempKeyFile = path.join(os.tmpdir(), `test_ssh_key_${Date.now()}_${Math.random().toString(36).substring(7)}`);
         fs.writeFileSync(tempKeyFile, input.sshPrivateKey, { mode: 0o600 });
-        opts.push(`-i "${tempKeyFile}"`);
-
-        await execAsync(`ssh ${opts.join(' ')} ${username}@${host} "echo OK"`);
-        status = 'ONLINE';
-        message = `SSH connection & private key authentication successful (${username}@${host}:${port}).`;
+        sshOpts.push(`-i "${tempKeyFile}"`);
+        sshCmd = `ssh ${sshOpts.join(' ')} ${username}@${host} "echo OK"`;
+        addLog('INFO', 'Loaded temporary private key for authentication test.');
       } else if (authType === 'PASSWORD') {
         if (input.password) {
-          try {
-            await execAsync(
-              `sshpass -p "${input.password}" ssh -p ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 ${username}@${host} "echo OK"`
-            );
-            status = 'ONLINE';
-            message = `SSH password authentication successful (${username}@${host}:${port}).`;
-          } catch (passErr: any) {
-            if (
-              passErr?.message?.includes('sshpass: not found') ||
-              passErr?.message?.includes('command not found') ||
-              passErr?.code === 127
-            ) {
-              status = 'ONLINE';
-              message = `SSH port ${port} is active and listening on ${host}. Password will be utilized during sync.`;
-            } else {
-              status = 'OFFLINE';
-              message = `SSH server responded, but authentication failed for ${username}: ${passErr.message}`;
-            }
-          }
+          sshCmd = `sshpass -p "${input.password}" ssh ${sshOpts.join(' ')} ${username}@${host} "echo OK"`;
+          addLog('INFO', 'Configured password authentication test via sshpass.');
         } else {
-          status = 'ONLINE';
-          message = `SSH port ${port} is active and listening on ${host}.`;
+          sshCmd = `ssh ${sshOpts.join(' ')} ${username}@${host} "echo OK"`;
+          addLog('INFO', 'No password provided; probing remote SSH banner.');
         }
       } else {
+        sshCmd = `ssh ${sshOpts.join(' ')} ${username}@${host} "echo OK"`;
+      }
+
+      addLog('DEBUG', `Executing command: ${sshCmd.replace(/-p ".*?"/g, '-p "[REDACTED]"')}`);
+
+      let rawStdout = '';
+      let rawStderr = '';
+
+      try {
+        const execRes = await execAsync(sshCmd);
+        rawStdout = execRes.stdout || '';
+        rawStderr = execRes.stderr || '';
         status = 'ONLINE';
-        message = `SSH port ${port} is active and reachable on ${host}.`;
+        message = `SSH connection & authentication successful (${username}@${host}:${port}).`;
+      } catch (execErr: any) {
+        rawStdout = execErr.stdout || '';
+        rawStderr = execErr.stderr || execErr.message || '';
+
+        // Check if sshpass is missing
+        if (
+          authType === 'PASSWORD' &&
+          (rawStderr.includes('sshpass: not found') || rawStderr.includes('command not found') || execErr?.code === 127)
+        ) {
+          status = 'ONLINE';
+          message = `SSH port ${port} is active and listening on ${host}. Password will be utilized during rsync.`;
+        } else if (rawStderr.includes('Permission denied')) {
+          status = 'OFFLINE';
+          message = `Authentication rejected: Permission denied (publickey/password). Ensure public key or password is valid on ${host}.`;
+        } else if (rawStderr.includes('Connection timed out') || rawStderr.includes('Operation timed out')) {
+          status = 'OFFLINE';
+          message = `Connection timed out while negotiating SSH handshake with ${host}:${port}.`;
+        } else {
+          status = 'OFFLINE';
+          message = rawStderr.trim().split('\n').pop() || 'SSH handshake failed.';
+        }
+      }
+
+      // Append and format SSH output
+      addLog('INFO', '--- [OpenSSH Connection Transcript] ---');
+      const sshOutputLines = (rawStderr + '\n' + rawStdout)
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
+
+      if (logLevel === 'debug') {
+        // In debug mode, print every raw line
+        for (const line of sshOutputLines) {
+          logLines.push(`    ${line}`);
+        }
+      } else {
+        // In info mode, filter out internal packet debug noise and retain significant milestones
+        const importantLines = sshOutputLines.filter((l) =>
+          l.includes('Connecting to') ||
+          l.includes('Connection established') ||
+          l.includes('identity file') ||
+          l.includes('Authenticating to') ||
+          l.includes('Next authentication method') ||
+          l.includes('Authentication succeeded') ||
+          l.includes('Permission denied') ||
+          l.includes('OpenSSH') ||
+          l.includes('Server host key') ||
+          l.includes('Failed') ||
+          l.includes('error') ||
+          l.includes('OK')
+        );
+
+        if (importantLines.length > 0) {
+          for (const line of importantLines) {
+            logLines.push(`    ${line}`);
+          }
+        } else {
+          // If no filtered line matched, show all lines up to 10
+          for (const line of sshOutputLines.slice(0, 10)) {
+            logLines.push(`    ${line}`);
+          }
+        }
+      }
+      addLog('INFO', '--------------------------------------');
+
+      if (status === 'ONLINE') {
+        addLog('SUCCESS', `Test passed! ${message}`);
+      } else {
+        addLog('ERROR', `Test failed! ${message}`);
       }
     } catch (err: any) {
       status = 'OFFLINE';
       message = err.message || 'SSH authentication handshake failed.';
+      addLog('ERROR', `Unexpected test failure: ${err.message}`);
     } finally {
       if (tempKeyFile && fs.existsSync(tempKeyFile)) {
         try {
           fs.unlinkSync(tempKeyFile);
+          addLog('DEBUG', 'Cleaned up temporary key file.');
         } catch (_) {}
       }
     }
 
     const latencyMs = Date.now() - startTime;
-    return { status, latencyMs, message };
+    addLog('INFO', `Diagnostic finished in ${latencyMs}ms with final status: ${status}.`);
+
+    return { status, latencyMs, message, logs: logLines.join('\n'), logLevel };
   }
 
   /**
    * Tests SSH connection to a registered remote server
    */
-  async testServerConnection(serverId: string): Promise<{
-    status: 'ONLINE' | 'OFFLINE';
-    latencyMs: number;
-    message: string;
-  }> {
+  async testServerConnection(
+    serverId: string,
+    logLevel: 'info' | 'debug' = 'info'
+  ): Promise<SshTestResult> {
     const server = await prisma.rsyncServer.findUnique({ where: { id: serverId } });
     if (!server) throw new Error(`Server not found: ${serverId}`);
 
-    const result = await this.testConnectionCredentials(server);
+    const result = await this.testConnectionCredentials({ ...server, logLevel });
 
     await prisma.rsyncServer.update({
       where: { id: serverId },
