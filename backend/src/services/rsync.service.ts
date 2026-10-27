@@ -542,6 +542,11 @@ export class RsyncService {
   /**
    * Executes an rsync job (Manual, Scheduled, or Dry-Run)
    */
+  /**
+   * Executes an rsync job (Manual, Scheduled, or Dry-Run)
+   * Supports Local-to-Local, Local-to-Remote, Remote-to-Local,
+   * Same-Remote-Node Disk Sync, and Cross-Server 2-Stage Delta Bridge.
+   */
   async executeJob(
     jobId: string,
     runType: 'MANUAL' | 'SCHEDULED' | 'DRY_RUN',
@@ -550,8 +555,8 @@ export class RsyncService {
     const job = await prisma.rsyncJob.findUnique({
       where: { id: jobId },
       include: {
-        sourceRepo: true,
-        destRepo: true,
+        sourceRepo: { include: { server: true } },
+        destRepo: { include: { server: true } },
         sourceServer: true,
         destServer: true,
       },
@@ -559,104 +564,86 @@ export class RsyncService {
 
     if (!job) throw new Error(`Rsync job not found: ${jobId}`);
 
-    const sourceEndpoint = this.formatRsyncEndpoint(job.sourceRepo, job.sourceSubpath, job.sourceServer);
-    let destEndpoint = this.formatRsyncEndpoint(job.destRepo, job.destSubpath, job.destServer);
+    // Auto-resolve servers from repository mounts if unassigned
+    const sourceServer = job.sourceServer || job.sourceRepo?.server || null;
+    const destServer = job.destServer || job.destRepo?.server || null;
+
+    if ((!job.sourceServerId && sourceServer) || (!job.destServerId && destServer)) {
+      await prisma.rsyncJob.update({
+        where: { id: job.id },
+        data: {
+          sourceServerId: sourceServer?.id || null,
+          destServerId: destServer?.id || null,
+        },
+      }).catch(() => {});
+    }
+
+    const isSourceRemote = !!(
+      sourceServer &&
+      sourceServer.authType !== 'LOCAL' &&
+      sourceServer.host !== 'localhost' &&
+      sourceServer.host !== '127.0.0.1'
+    );
+    const isDestRemote = !!(
+      destServer &&
+      destServer.authType !== 'LOCAL' &&
+      destServer.host !== 'localhost' &&
+      destServer.host !== '127.0.0.1'
+    );
+
+    let sourceRaw = job.sourceSubpath ? path.posix.join(job.sourceRepo.path, job.sourceSubpath) : job.sourceRepo.path;
+    if (!sourceRaw.endsWith('/')) sourceRaw += '/';
+
+    let destRaw = job.destSubpath ? path.posix.join(job.destRepo.path, job.destSubpath) : job.destRepo.path;
+    if (!destRaw.endsWith('/')) destRaw += '/';
 
     const now = new Date();
     const timestampStr = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
 
-    // Build rsync arguments array
-    const args: string[] = ['-av', '--stats'];
-
-    if (job.preservePermissions) args.push('-p');
-    if (job.preserveOwner) args.push('-og');
-    if (job.preserveTimes) args.push('-t');
-    if (job.enableCompression) args.push('-z');
-    if (job.deleteExtraneous) args.push('--delete');
-
-    if (runType === 'DRY_RUN') {
-      args.push('-n');
-    }
-
-    if (job.bandwidthLimitKb && job.bandwidthLimitKb > 0) {
-      args.push(`--bwlimit=${job.bandwidthLimitKb}`);
-    }
-
+    // Build common rsync arguments array
+    const baseArgs: string[] = ['-av', '--stats'];
+    if (job.preservePermissions) baseArgs.push('-p');
+    if (job.preserveOwner) baseArgs.push('-og');
+    if (job.preserveTimes) baseArgs.push('-t');
+    if (job.enableCompression) baseArgs.push('-z');
+    if (job.deleteExtraneous) baseArgs.push('--delete');
+    if (runType === 'DRY_RUN') baseArgs.push('-n');
+    if (job.bandwidthLimitKb && job.bandwidthLimitKb > 0) baseArgs.push(`--bwlimit=${job.bandwidthLimitKb}`);
     if (job.excludePatterns && job.excludePatterns.length > 0) {
       for (const pattern of job.excludePatterns) {
-        if (pattern.trim()) {
-          args.push(`--exclude=${pattern.trim()}`);
-        }
+        if (pattern.trim()) baseArgs.push(`--exclude=${pattern.trim()}`);
       }
     }
-
-    // Handle Strategies:
-    // 1. HARDLINK_SNAPSHOT:
-    // Target is dest/snapshots/snapshot_${timestampStr}/, and --link-dest=../latest
-    if (job.syncStrategy === 'HARDLINK_SNAPSHOT') {
-      const baseDest = destEndpoint.endsWith('/') ? destEndpoint.slice(0, -1) : destEndpoint;
-      destEndpoint = `${baseDest}/snapshot_${timestampStr}/`;
-      args.push(`--link-dest=${baseDest}/latest`);
-    }
-    // 2. BACKUP_DIR:
-    // Files are mirrored to dest/current/, but deletions/modifications are moved to dest/recycle_bin/${timestampStr}/
-    else if (job.syncStrategy === 'BACKUP_DIR') {
-      const baseDest = destEndpoint.endsWith('/') ? destEndpoint.slice(0, -1) : destEndpoint;
-      destEndpoint = `${baseDest}/current/`;
-      args.push(`--backup`);
-      args.push(`--backup-dir=${baseDest}/recycle_bin/${timestampStr}`);
-    }
-
-    // Configure SSH if remote server is involved
-    const remoteServer =
-      job.sourceServer && job.sourceServer.authType !== 'LOCAL'
-        ? job.sourceServer
-        : job.destServer && job.destServer.authType !== 'LOCAL'
-        ? job.destServer
-        : null;
-
-    let tempKeyFile: string | null = null;
-    const envExtra: NodeJS.ProcessEnv = { ...process.env };
-
-    if (remoteServer && remoteServer.authType === 'SSH_KEY' && remoteServer.sshPrivateKey) {
-      tempKeyFile = path.join(os.tmpdir(), `rsync_run_${Date.now()}.key`);
-      fs.writeFileSync(tempKeyFile, remoteServer.sshPrivateKey, { mode: 0o600 });
-      args.push(
-        `-e`,
-        `ssh -p ${remoteServer.port} -i "${tempKeyFile}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes`
-      );
-    } else if (remoteServer && remoteServer.authType === 'PASSWORD' && remoteServer.password) {
-      envExtra.SSHPASS = remoteServer.password;
-      args.push(
-        `-e`,
-        `sshpass -e ssh -p ${remoteServer.port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PreferredAuthentications=password,keyboard-interactive -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1`
-      );
-    } else if (remoteServer && remoteServer.authType !== 'LOCAL') {
-      args.push(`-e`, `ssh -p ${remoteServer.port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes`);
-    }
-
-    // Custom arguments
     if (job.customArgs) {
-      const customParts = job.customArgs.trim().split(/\s+/);
-      args.push(...customParts);
+      baseArgs.push(...job.customArgs.trim().split(/\s+/));
     }
 
-    // Source and Destination
-    args.push(sourceEndpoint, destEndpoint);
+    // Determine Topology
+    const isSameRemoteNode = isSourceRemote && isDestRemote && sourceServer!.host === destServer!.host;
+    const isCrossRemoteNodes = isSourceRemote && isDestRemote && sourceServer!.host !== destServer!.host;
 
-    // Create initial RsyncRun record
+    let sourceEndpointDisplay = sourceRaw;
+    let destEndpointDisplay = destRaw;
+
+    if (isSourceRemote && sourceServer) {
+      sourceEndpointDisplay = `${sourceServer.username}@${sourceServer.host}:${sourceRaw}`;
+    }
+    if (isDestRemote && destServer) {
+      destEndpointDisplay = `${destServer.username}@${destServer.host}:${destRaw}`;
+    }
+
+    // Initial RsyncRun audit record
     const run = await prisma.rsyncRun.create({
       data: {
         jobId: job.id,
         runType,
         status: 'IN_PROGRESS',
-        sourcePath: sourceEndpoint,
-        destinationPath: destEndpoint,
+        sourcePath: sourceEndpointDisplay,
+        destinationPath: destEndpointDisplay,
         startedAt: now,
       },
     });
 
-    // Update job status to IN_PROGRESS
     await prisma.rsyncJob.update({
       where: { id: job.id },
       data: {
@@ -665,29 +652,119 @@ export class RsyncService {
       },
     });
 
-    // Audit log
     await prisma.rsyncActivityLog.create({
       data: {
         action: runType === 'DRY_RUN' ? 'DRY_RUN_TRIGGERED' : 'JOB_STARTED',
         entityId: run.id,
         entityType: 'RUN',
         username: triggeredBy,
-        details: { jobId: job.id, jobName: job.name, runType, args: args.join(' ') },
+        details: { jobId: job.id, jobName: job.name, runType, topology: isSameRemoteNode ? 'SAME_REMOTE' : isCrossRemoteNodes ? 'CROSS_REMOTE' : 'STANDARD' },
       },
     });
 
-    // Execute rsync child process asynchronously
-    return new Promise((resolve, reject) => {
-      const startTime = Date.now();
+    const startTime = Date.now();
+
+    // ------------------------------------------------------------------------
+    // CASE 1: Cross-Server Sync between Two Different Remote Hosts (Bridge)
+    // ------------------------------------------------------------------------
+    if (isCrossRemoteNodes) {
+      return this.executeTwoStageBridge(
+        job,
+        sourceServer!,
+        destServer!,
+        sourceRaw,
+        destRaw,
+        baseArgs,
+        runType,
+        timestampStr,
+        run,
+        startTime,
+        triggeredBy
+      );
+    }
+
+    // ------------------------------------------------------------------------
+    // CASE 2 & 3: Same-Remote Host OR Standard (Local/Remote, Remote/Local, Local/Local)
+    // ------------------------------------------------------------------------
+    let childCmd = '';
+    let childArgs: string[] = [];
+    let envExtra: NodeJS.ProcessEnv = { ...process.env };
+    let tempKeyFile: string | null = null;
+    let baseDestForSymlink: string | null = null;
+    let sshInfoForRemote: { cmd: string; env: NodeJS.ProcessEnv; tempKeyFile?: string } | null = null;
+
+    if (isSameRemoteNode) {
+      // Both folders are on the SAME remote machine!
+      // Rsync runs natively on that machine via SSH tunnel at direct drive speed.
+      let targetDest = destRaw;
+      if (job.syncStrategy === 'HARDLINK_SNAPSHOT') {
+        baseDestForSymlink = targetDest.endsWith('/') ? targetDest.slice(0, -1) : targetDest;
+        targetDest = `${baseDestForSymlink}/snapshot_${timestampStr}/`;
+        baseArgs.push(`--link-dest=${baseDestForSymlink}/latest`);
+      } else if (job.syncStrategy === 'BACKUP_DIR') {
+        const baseDest = targetDest.endsWith('/') ? targetDest.slice(0, -1) : targetDest;
+        targetDest = `${baseDest}/current/`;
+        baseArgs.push(`--backup`, `--backup-dir=${baseDest}/recycle_bin/${timestampStr}`);
+      }
+
+      // Pick server credentials with valid auth
+      const execServer = destServer!.password || destServer!.sshPrivateKey ? destServer! : sourceServer!;
+      sshInfoForRemote = this.buildSshCommand(execServer);
+      tempKeyFile = sshInfoForRemote.tempKeyFile || null;
+      envExtra = sshInfoForRemote.env;
+
+      // Ensure dest directory exists on remote server before sync
+      const remoteCmd = `mkdir -p '${targetDest}' && rsync ${baseArgs.join(' ')} '${sourceRaw}' '${targetDest}'`;
+      childCmd = `${sshInfoForRemote.cmd} "${remoteCmd}"`;
+      childArgs = [];
+    } else {
+      // Standard Sync (Local to Local, Local to Remote, or Remote to Local)
+      let sourceEndpoint = this.formatRsyncEndpoint(job.sourceRepo, job.sourceSubpath, sourceServer);
+      let destEndpoint = this.formatRsyncEndpoint(job.destRepo, job.destSubpath, destServer);
+
+      if (job.syncStrategy === 'HARDLINK_SNAPSHOT') {
+        const baseDest = destEndpoint.endsWith('/') ? destEndpoint.slice(0, -1) : destEndpoint;
+        destEndpoint = `${baseDest}/snapshot_${timestampStr}/`;
+        baseArgs.push(`--link-dest=${baseDest}/latest`);
+        baseDestForSymlink = baseDest;
+      } else if (job.syncStrategy === 'BACKUP_DIR') {
+        const baseDest = destEndpoint.endsWith('/') ? destEndpoint.slice(0, -1) : destEndpoint;
+        destEndpoint = `${baseDest}/current/`;
+        baseArgs.push(`--backup`, `--backup-dir=${baseDest}/recycle_bin/${timestampStr}`);
+      }
+
+      const remoteServer = isSourceRemote ? sourceServer : isDestRemote ? destServer : null;
+      if (remoteServer && remoteServer.authType === 'SSH_KEY' && remoteServer.sshPrivateKey) {
+        tempKeyFile = path.join(os.tmpdir(), `rsync_run_${Date.now()}.key`);
+        fs.writeFileSync(tempKeyFile, remoteServer.sshPrivateKey, { mode: 0o600 });
+        baseArgs.push(
+          `-e`,
+          `ssh -p ${remoteServer.port} -i "${tempKeyFile}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes`
+        );
+      } else if (remoteServer && remoteServer.authType === 'PASSWORD' && remoteServer.password) {
+        envExtra.SSHPASS = remoteServer.password;
+        baseArgs.push(
+          `-e`,
+          `sshpass -e ssh -p ${remoteServer.port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PreferredAuthentications=password,keyboard-interactive -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1`
+        );
+      } else if (remoteServer && remoteServer.authType !== 'LOCAL') {
+        baseArgs.push(`-e`, `ssh -p ${remoteServer.port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes`);
+      }
+
+      baseArgs.push(sourceEndpoint, destEndpoint);
+      childCmd = 'rsync';
+      childArgs = baseArgs;
+    }
+
+    return new Promise((resolve) => {
       let stdoutBuffer = '';
       let stderrBuffer = '';
 
-      console.log(`[RSYNC] Executing command: rsync ${args.join(' ')}`);
+      console.log(`[RSYNC] Launching: ${childCmd} ${childArgs.join(' ')}`);
 
-      const child = spawn('rsync', args, {
-        env: envExtra,
-        shell: true,
-      });
+      const child = childArgs.length > 0
+        ? spawn(childCmd, childArgs, { env: envExtra, shell: true })
+        : spawn(childCmd, { env: envExtra, shell: true });
 
       child.stdout.on('data', (chunk) => {
         stdoutBuffer += chunk.toString();
@@ -722,10 +799,9 @@ export class RsyncService {
           data: { lastRunStatus: 'FAILED' },
         });
 
-        // Trigger Instant Failure Alert across all active notification channels
         dispatchInstantFailureAlert({
           projectName: `Rsync: ${job.name}`,
-          serverId: job.destServer?.name || 'Local Host',
+          serverId: destServer?.name || 'Local Host',
           hostname: os.hostname(),
           backupType: 'rsync_mirror',
           status: 'FAILED',
@@ -746,12 +822,16 @@ export class RsyncService {
         }
 
         // Post-execution hook for HARDLINK_SNAPSHOT: update symlink 'latest' -> new snapshot
-        if (isSuccess && job.syncStrategy === 'HARDLINK_SNAPSHOT') {
+        if (isSuccess && job.syncStrategy === 'HARDLINK_SNAPSHOT' && baseDestForSymlink) {
           try {
-            const baseDest = destEndpoint.replace(/\/snapshot_[^/]+\/$/, '');
             const snapshotFolder = `snapshot_${timestampStr}`;
-            const symlinkCmd = `cd "${baseDest}" && ln -sfn "${snapshotFolder}" latest`;
-            await execAsync(symlinkCmd).catch(() => {});
+            if (isSameRemoteNode && sshInfoForRemote) {
+              const symlinkCmd = `${sshInfoForRemote.cmd} "cd '${baseDestForSymlink}' && ln -sfn '${snapshotFolder}' latest"`;
+              await execAsync(symlinkCmd, { env: sshInfoForRemote.env }).catch(() => {});
+            } else {
+              const symlinkCmd = `cd "${baseDestForSymlink}" && ln -sfn "${snapshotFolder}" latest`;
+              await execAsync(symlinkCmd).catch(() => {});
+            }
           } catch (_) {}
         }
 
@@ -777,7 +857,6 @@ export class RsyncService {
           },
         });
 
-        // Update parent Job status
         await prisma.rsyncJob.update({
           where: { id: job.id },
           data: {
@@ -786,7 +865,6 @@ export class RsyncService {
           },
         });
 
-        // Audit log
         await prisma.rsyncActivityLog.create({
           data: {
             action: isSuccess ? 'JOB_COMPLETED' : 'JOB_FAILED',
@@ -804,11 +882,10 @@ export class RsyncService {
           },
         });
 
-        // If failed, trigger instant alert across notification channels
         if (!isSuccess) {
           dispatchInstantFailureAlert({
             projectName: `Rsync: ${job.name}`,
-            serverId: job.destServer?.name || 'Local Host',
+            serverId: destServer?.name || 'Local Host',
             hostname: os.hostname(),
             backupType: 'rsync_mirror',
             status: 'FAILED',
@@ -818,12 +895,193 @@ export class RsyncService {
           }).catch(() => {});
         }
 
-        // Refresh disk space in background
         this.probeRepositoryDiskSpace(job.destRepoId).catch(() => {});
 
         resolve(updatedRun);
       });
     });
+  }
+
+  /**
+   * Helper to execute a 2-stage delta bridge for syncing between two distinct remote servers
+   */
+  private async executeTwoStageBridge(
+    job: any,
+    sourceServer: any,
+    destServer: any,
+    sourceRaw: string,
+    destRaw: string,
+    baseArgs: string[],
+    runType: 'MANUAL' | 'SCHEDULED' | 'DRY_RUN',
+    timestampStr: string,
+    run: any,
+    startTime: number,
+    triggeredBy: string
+  ): Promise<any> {
+    const transitDir = path.join(os.tmpdir(), 'backuppulse_transit', job.id);
+    fs.mkdirSync(transitDir, { recursive: true });
+
+    let stdoutBuffer = '';
+    let stderrBuffer = '';
+
+    const getSshFlagForServer = (srv: any): { flag: string[]; env: NodeJS.ProcessEnv; tempKey?: string } => {
+      const env: NodeJS.ProcessEnv = { ...process.env };
+      let tempKey: string | undefined;
+      if (srv.authType === 'SSH_KEY' && srv.sshPrivateKey) {
+        tempKey = path.join(os.tmpdir(), `bridge_key_${Date.now()}_${Math.random().toString(36).substring(7)}.key`);
+        fs.writeFileSync(tempKey, srv.sshPrivateKey, { mode: 0o600 });
+        return {
+          flag: ['-e', `ssh -p ${srv.port} -i "${tempKey}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes`],
+          env,
+          tempKey,
+        };
+      } else if (srv.authType === 'PASSWORD' && srv.password) {
+        env.SSHPASS = srv.password;
+        return {
+          flag: [
+            '-e',
+            `sshpass -e ssh -p ${srv.port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PreferredAuthentications=password,keyboard-interactive -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1`,
+          ],
+          env,
+        };
+      }
+      return {
+        flag: ['-e', `ssh -p ${srv.port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes`],
+        env,
+      };
+    };
+
+    const pullSsh = getSshFlagForServer(sourceServer);
+    const pushSsh = getSshFlagForServer(destServer);
+
+    try {
+      stdoutBuffer += `[BACKUPPULSE BRIDGE] Phase 1: Pulling delta from ${sourceServer.username}@${sourceServer.host}:${sourceRaw} to transit buffer...\n`;
+      const pullArgs = [...baseArgs, ...pullSsh.flag, `${sourceServer.username}@${sourceServer.host}:${sourceRaw}`, `${transitDir}/`];
+
+      const pullRes = await new Promise<{ exitCode: number; stdout: string; stderr: string }>((res) => {
+        let pStdout = '';
+        let pStderr = '';
+        const pChild = spawn('rsync', pullArgs, { env: pullSsh.env, shell: true });
+        pChild.stdout.on('data', (c) => (pStdout += c.toString()));
+        pChild.stderr.on('data', (c) => (pStderr += c.toString()));
+        pChild.on('close', (code) => res({ exitCode: code || 0, stdout: pStdout, stderr: pStderr }));
+        pChild.on('error', (err) => res({ exitCode: 1, stdout: pStdout, stderr: err.message }));
+      });
+
+      stdoutBuffer += pullRes.stdout;
+      stderrBuffer += pullRes.stderr;
+
+      if (pullRes.exitCode !== 0) {
+        throw new Error(`Cross-server sync Phase 1 (pull) failed with exit code ${pullRes.exitCode}: ${pullRes.stderr.trim()}`);
+      }
+
+      stdoutBuffer += `\n[BACKUPPULSE BRIDGE] Phase 2: Pushing transit buffer to ${destServer.username}@${destServer.host}:${destRaw}...\n`;
+      let targetDest = destRaw;
+      const pushStrategyArgs: string[] = [];
+      if (job.syncStrategy === 'HARDLINK_SNAPSHOT') {
+        const baseDest = targetDest.endsWith('/') ? targetDest.slice(0, -1) : targetDest;
+        targetDest = `${baseDest}/snapshot_${timestampStr}/`;
+        pushStrategyArgs.push(`--link-dest=${baseDest}/latest`);
+      } else if (job.syncStrategy === 'BACKUP_DIR') {
+        const baseDest = targetDest.endsWith('/') ? targetDest.slice(0, -1) : targetDest;
+        targetDest = `${baseDest}/current/`;
+        pushStrategyArgs.push(`--backup`, `--backup-dir=${baseDest}/recycle_bin/${timestampStr}`);
+      }
+
+      const pushArgs = [
+        ...baseArgs,
+        ...pushStrategyArgs,
+        ...pushSsh.flag,
+        `${transitDir}/`,
+        `${destServer.username}@${destServer.host}:${targetDest}`,
+      ];
+
+      const pushRes = await new Promise<{ exitCode: number; stdout: string; stderr: string }>((res) => {
+        let pStdout = '';
+        let pStderr = '';
+        const pChild = spawn('rsync', pushArgs, { env: pushSsh.env, shell: true });
+        pChild.stdout.on('data', (c) => (pStdout += c.toString()));
+        pChild.stderr.on('data', (c) => (pStderr += c.toString()));
+        pChild.on('close', (code) => res({ exitCode: code || 0, stdout: pStdout, stderr: pStderr }));
+        pChild.on('error', (err) => res({ exitCode: 1, stdout: pStdout, stderr: err.message }));
+      });
+
+      stdoutBuffer += pushRes.stdout;
+      stderrBuffer += pushRes.stderr;
+
+      const durationSeconds = (Date.now() - startTime) / 1000;
+      const isSuccess = pushRes.exitCode === 0;
+      const parsedStats = parseRsyncStats(pushRes.stdout || pullRes.stdout);
+
+      const updatedRun = await prisma.rsyncRun.update({
+        where: { id: run.id },
+        data: {
+          status: isSuccess ? 'SUCCESS' : 'FAILED',
+          exitCode: pushRes.exitCode,
+          durationSeconds,
+          stdoutLog: stdoutBuffer,
+          stderrLog: stderrBuffer,
+          errorMessage: isSuccess ? null : (pushRes.stderr.trim() || `Phase 2 failed with exit code ${pushRes.exitCode}`),
+          totalFiles: parsedStats.totalFiles,
+          transferredFiles: parsedStats.transferredFiles,
+          deletedFiles: parsedStats.deletedFiles,
+          bytesTransferred: parsedStats.bytesTransferred,
+          totalSizeBytes: parsedStats.totalSizeBytes,
+          speedupRatio: parsedStats.speedupRatio,
+          completedAt: new Date(),
+        },
+      });
+
+      await prisma.rsyncJob.update({
+        where: { id: job.id },
+        data: {
+          lastRunStatus: isSuccess ? 'SUCCESS' : 'FAILED',
+          lastRunAt: new Date(),
+        },
+      });
+
+      await prisma.rsyncActivityLog.create({
+        data: {
+          action: isSuccess ? 'JOB_COMPLETED' : 'JOB_FAILED',
+          entityId: run.id,
+          entityType: 'RUN',
+          username: triggeredBy,
+          details: { jobId: job.id, jobName: job.name, status: isSuccess ? 'SUCCESS' : 'FAILED', durationSeconds },
+        },
+      });
+
+      this.probeRepositoryDiskSpace(job.destRepoId).catch(() => {});
+
+      return updatedRun;
+    } catch (err: any) {
+      const durationSeconds = (Date.now() - startTime) / 1000;
+      const failedRun = await prisma.rsyncRun.update({
+        where: { id: run.id },
+        data: {
+          status: 'FAILED',
+          exitCode: 1,
+          durationSeconds,
+          errorMessage: err.message,
+          stdoutLog: stdoutBuffer,
+          stderrLog: stderrBuffer + '\n' + err.message,
+          completedAt: new Date(),
+        },
+      });
+
+      await prisma.rsyncJob.update({
+        where: { id: job.id },
+        data: { lastRunStatus: 'FAILED' },
+      });
+
+      return failedRun;
+    } finally {
+      if (pullSsh.tempKey && fs.existsSync(pullSsh.tempKey)) {
+        try { fs.unlinkSync(pullSsh.tempKey); } catch (_) {}
+      }
+      if (pushSsh.tempKey && fs.existsSync(pushSsh.tempKey)) {
+        try { fs.unlinkSync(pushSsh.tempKey); } catch (_) {}
+      }
+    }
   }
 }
 

@@ -581,8 +581,8 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
           take: limitNum,
           orderBy: { createdAt: 'desc' },
           include: {
-            sourceRepo: { select: { id: true, name: true, path: true, type: true } },
-            destRepo: { select: { id: true, name: true, path: true, type: true } },
+            sourceRepo: { select: { id: true, name: true, path: true, type: true, server: { select: { id: true, name: true, host: true } } } },
+            destRepo: { select: { id: true, name: true, path: true, type: true, server: { select: { id: true, name: true, host: true } } } },
             sourceServer: { select: { id: true, name: true, host: true } },
             destServer: { select: { id: true, name: true, host: true } },
             _count: { select: { runs: true } },
@@ -624,6 +624,15 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
         return reply.status(400).send({ error: 'Job name, sourceRepoId, and destRepoId are required' });
       }
 
+      // Auto-resolve sourceServerId and destServerId from selected repositories if not explicitly passed
+      const [sourceRepo, destRepo] = await Promise.all([
+        prisma.rsyncRepository.findUnique({ where: { id: body.sourceRepoId } }),
+        prisma.rsyncRepository.findUnique({ where: { id: body.destRepoId } }),
+      ]);
+
+      const sourceServerId = body.sourceServerId || sourceRepo?.serverId || null;
+      const destServerId = body.destServerId || destRepo?.serverId || null;
+
       const job = await prisma.rsyncJob.create({
         data: {
           name: body.name.trim(),
@@ -631,8 +640,8 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
           sourceSubpath: body.sourceSubpath?.trim() || null,
           destRepoId: body.destRepoId,
           destSubpath: body.destSubpath?.trim() || null,
-          sourceServerId: body.sourceServerId || null,
-          destServerId: body.destServerId || null,
+          sourceServerId,
+          destServerId,
           syncStrategy: body.syncStrategy || 'EXACT_MIRROR',
           cronSchedule: body.cronSchedule?.trim() || null,
           bandwidthLimitKb: body.bandwidthLimitKb ? parseInt(body.bandwidthLimitKb, 10) : null,
@@ -674,6 +683,17 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
       const { id } = request.params;
       const body = request.body || {};
 
+      let sourceServerId = body.sourceServerId;
+      if (sourceServerId === undefined && body.sourceRepoId) {
+        const sourceRepo = await prisma.rsyncRepository.findUnique({ where: { id: body.sourceRepoId } });
+        sourceServerId = sourceRepo?.serverId || null;
+      }
+      let destServerId = body.destServerId;
+      if (destServerId === undefined && body.destRepoId) {
+        const destRepo = await prisma.rsyncRepository.findUnique({ where: { id: body.destRepoId } });
+        destServerId = destRepo?.serverId || null;
+      }
+
       const updated = await prisma.rsyncJob.update({
         where: { id },
         data: {
@@ -682,8 +702,8 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
           sourceSubpath: body.sourceSubpath !== undefined ? (body.sourceSubpath?.trim() || null) : undefined,
           destRepoId: body.destRepoId,
           destSubpath: body.destSubpath !== undefined ? (body.destSubpath?.trim() || null) : undefined,
-          sourceServerId: body.sourceServerId !== undefined ? (body.sourceServerId || null) : undefined,
-          destServerId: body.destServerId !== undefined ? (body.destServerId || null) : undefined,
+          sourceServerId: sourceServerId !== undefined ? (sourceServerId || null) : undefined,
+          destServerId: destServerId !== undefined ? (destServerId || null) : undefined,
           syncStrategy: body.syncStrategy,
           cronSchedule: body.cronSchedule !== undefined ? (body.cronSchedule?.trim() || null) : undefined,
           bandwidthLimitKb: body.bandwidthLimitKb !== undefined ? (body.bandwidthLimitKb ? parseInt(body.bandwidthLimitKb, 10) : null) : undefined,

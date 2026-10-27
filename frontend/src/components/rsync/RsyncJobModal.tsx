@@ -11,6 +11,7 @@ import {
   Archive,
   RefreshCw,
   AlertTriangle,
+  Server,
 } from 'lucide-react';
 import { RsyncJob, RsyncRepository, RsyncServer } from '../../types';
 import { api } from '../../services/api';
@@ -61,8 +62,10 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
       setSourceSubpath(job.sourceSubpath || '');
       setDestRepoId(job.destRepoId || '');
       setDestSubpath(job.destSubpath || '');
-      setSourceServerId(job.sourceServerId || '');
-      setDestServerId(job.destServerId || '');
+      const sRepo = repositories.find((r) => r.id === job.sourceRepoId);
+      const dRepo = repositories.find((r) => r.id === job.destRepoId);
+      setSourceServerId(job.sourceServerId || sRepo?.serverId || '');
+      setDestServerId(job.destServerId || dRepo?.serverId || '');
       setSyncStrategy(job.syncStrategy || 'EXACT_MIRROR');
       setCronSchedule(job.cronSchedule || '');
       setBandwidthLimitKb(job.bandwidthLimitKb || '');
@@ -76,12 +79,14 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
       setIsActive(job.isActive ?? true);
     } else {
       setName('');
-      setSourceRepoId(repositories.length > 0 ? repositories[0].id : '');
+      const firstRepo = repositories.length > 0 ? repositories[0] : null;
+      const secondRepo = repositories.length > 1 ? repositories[1] : firstRepo;
+      setSourceRepoId(firstRepo ? firstRepo.id : '');
+      setSourceServerId(firstRepo?.serverId || '');
       setSourceSubpath('');
-      setDestRepoId(repositories.length > 1 ? repositories[1].id : repositories.length > 0 ? repositories[0].id : '');
+      setDestRepoId(secondRepo ? secondRepo.id : '');
+      setDestServerId(secondRepo?.serverId || '');
       setDestSubpath('');
-      setSourceServerId('');
-      setDestServerId('');
       setSyncStrategy('EXACT_MIRROR');
       setCronSchedule('0 2 * * *');
       setBandwidthLimitKb('');
@@ -96,6 +101,23 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
     }
     setError(null);
   }, [job, isOpen, repositories]);
+
+  const selectedSourceRepo = repositories.find((r) => r.id === sourceRepoId);
+  const selectedDestRepo = repositories.find((r) => r.id === destRepoId);
+  const sourceServerObj = servers.find((s) => s.id === (sourceServerId || selectedSourceRepo?.serverId)) || selectedSourceRepo?.server;
+  const destServerObj = servers.find((s) => s.id === (destServerId || selectedDestRepo?.serverId)) || selectedDestRepo?.server;
+
+  const handleSourceRepoChange = (id: string) => {
+    setSourceRepoId(id);
+    const r = repositories.find((x) => x.id === id);
+    setSourceServerId(r?.serverId || '');
+  };
+
+  const handleDestRepoChange = (id: string) => {
+    setDestRepoId(id);
+    const r = repositories.find((x) => x.id === id);
+    setDestServerId(r?.serverId || '');
+  };
 
   if (!isOpen) return null;
 
@@ -218,17 +240,36 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
                 <label className="block text-[11px] text-slate-400 mb-1">Repository / Disk</label>
                 <select
                   value={sourceRepoId}
-                  onChange={(e) => setSourceRepoId(e.target.value)}
+                  onChange={(e) => handleSourceRepoChange(e.target.value)}
                   required
                   className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-amber-500"
                 >
                   <option value="">-- Select Source Disk --</option>
-                  {repositories.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name} ({r.path})
-                    </option>
-                  ))}
+                  {repositories.map((r) => {
+                    const s = servers.find((srv) => srv.id === r.serverId) || r.server;
+                    return (
+                      <option key={r.id} value={r.id}>
+                        {r.name} ({r.path}) {s ? `— [Remote: ${s.name} (${s.host})]` : '— [Local Disk]'}
+                      </option>
+                    );
+                  })}
                 </select>
+                {selectedSourceRepo && (
+                  <div className="flex items-center space-x-1.5 text-[10px] text-slate-400 mt-1.5">
+                    <span className="text-slate-500 font-medium">Node:</span>
+                    {sourceServerObj ? (
+                      <span className="px-1.5 py-0.5 rounded bg-cyan-950/60 text-cyan-300 border border-cyan-800/50 flex items-center space-x-1">
+                        <Server className="h-3 w-3" />
+                        <span>Remote: {sourceServerObj.name} ({sourceServerObj.host})</span>
+                      </span>
+                    ) : (
+                      <span className="px-1.5 py-0.5 rounded bg-slate-900 text-slate-300 border border-slate-800 flex items-center space-x-1">
+                        <HardDrive className="h-3 w-3" />
+                        <span>Local Host Disk</span>
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -253,17 +294,36 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
                 <label className="block text-[11px] text-slate-400 mb-1">Repository / Disk</label>
                 <select
                   value={destRepoId}
-                  onChange={(e) => setDestRepoId(e.target.value)}
+                  onChange={(e) => handleDestRepoChange(e.target.value)}
                   required
                   className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
                 >
                   <option value="">-- Select Target Disk --</option>
-                  {repositories.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name} ({r.path})
-                    </option>
-                  ))}
+                  {repositories.map((r) => {
+                    const s = servers.find((srv) => srv.id === r.serverId) || r.server;
+                    return (
+                      <option key={r.id} value={r.id}>
+                        {r.name} ({r.path}) {s ? `— [Remote: ${s.name} (${s.host})]` : '— [Local Disk]'}
+                      </option>
+                    );
+                  })}
                 </select>
+                {selectedDestRepo && (
+                  <div className="flex items-center space-x-1.5 text-[10px] text-slate-400 mt-1.5">
+                    <span className="text-slate-500 font-medium">Node:</span>
+                    {destServerObj ? (
+                      <span className="px-1.5 py-0.5 rounded bg-cyan-950/60 text-cyan-300 border border-cyan-800/50 flex items-center space-x-1">
+                        <Server className="h-3 w-3" />
+                        <span>Remote: {destServerObj.name} ({destServerObj.host})</span>
+                      </span>
+                    ) : (
+                      <span className="px-1.5 py-0.5 rounded bg-slate-900 text-slate-300 border border-slate-800 flex items-center space-x-1">
+                        <HardDrive className="h-3 w-3" />
+                        <span>Local Host Disk</span>
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -276,6 +336,30 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
                   className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
                 />
               </div>
+            </div>
+
+            {/* Sync Topology Banner */}
+            <div className="md:col-span-2 p-2.5 rounded-lg bg-slate-900/60 border border-slate-800/80 text-[11px] text-slate-300 flex items-center space-x-2">
+              <Zap className="h-4 w-4 text-amber-400 shrink-0" />
+              <span>
+                {sourceServerObj && destServerObj && sourceServerObj.host === destServerObj.host ? (
+                  <>
+                    <strong className="text-cyan-300">Direct Remote Execution:</strong> Both folders reside on remote host <code className="text-amber-300 px-1 py-0.5 rounded bg-slate-950 border border-slate-800">{sourceServerObj.host}</code>. Rsync will execute natively on that server via SSH at local drive bus speed.
+                  </>
+                ) : sourceServerObj && destServerObj && sourceServerObj.host !== destServerObj.host ? (
+                  <>
+                    <strong className="text-indigo-300">Cross-Server Sync Bridge:</strong> Transferring across two remote servers (<code className="text-amber-300 px-1 py-0.5 rounded bg-slate-950 border border-slate-800">{sourceServerObj.host}</code> ➔ <code className="text-emerald-300 px-1 py-0.5 rounded bg-slate-950 border border-slate-800">{destServerObj.host}</code>) orchestrated via BackupPulse delta bridge.
+                  </>
+                ) : (sourceServerObj && !destServerObj) || (!sourceServerObj && destServerObj) ? (
+                  <>
+                    <strong className="text-emerald-300">Remote Sync Tunnel:</strong> Syncing between local host and remote node <code className="text-amber-300 px-1 py-0.5 rounded bg-slate-950 border border-slate-800">{sourceServerObj?.host || destServerObj?.host}</code> over SSH.
+                  </>
+                ) : (
+                  <>
+                    <strong className="text-amber-300">Local Disk Mirror:</strong> Direct 1:1 disk transfer on local host storage pool.
+                  </>
+                )}
+              </span>
             </div>
           </div>
 
