@@ -266,6 +266,31 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
   );
 
   fastify.post(
+    '/api/v1/rsync/servers/test-connection',
+    {
+      preValidation: authPreValidation,
+      schema: {
+        description: 'Test connectivity to an rsync server using ad-hoc credentials (before saving)',
+        tags: ['Rsync Mirror'],
+        security: [{ bearerAuth: [] }],
+      },
+    },
+    async (request: any, reply: FastifyReply) => {
+      if (request.user?.role !== 'admin') {
+        return reply.status(403).send({ error: 'Admin permission required' });
+      }
+
+      const body = request.body || {};
+      if (!body.host) {
+        return reply.status(400).send({ error: 'Host address is required to test connection' });
+      }
+
+      const result = await rsyncService.testConnectionCredentials(body);
+      return reply.send(result);
+    }
+  );
+
+  fastify.post(
     '/api/v1/rsync/servers/:id/test',
     {
       preValidation: authPreValidation,

@@ -569,6 +569,23 @@ export const api = {
     );
   },
 
+  async testRsyncConnection(data: {
+    host: string;
+    port?: number;
+    username?: string;
+    authType?: string;
+    password?: string;
+    sshPrivateKey?: string;
+  }): Promise<{ status: 'ONLINE' | 'OFFLINE'; latencyMs: number; message: string }> {
+    return request<{ status: 'ONLINE' | 'OFFLINE'; latencyMs: number; message: string }>(
+      '/api/v1/rsync/servers/test-connection',
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
   async getRsyncRepositories(): Promise<RsyncRepository[]> {
     return request<RsyncRepository[]>('/api/v1/rsync/repositories');
   },

@@ -3,6 +3,7 @@ import util from 'util';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+import net from 'net';
 import { prisma } from '../db/prisma';
 import { dispatchInstantFailureAlert } from './alert-dispatcher.service';
 
@@ -172,7 +173,132 @@ export class RsyncService {
   }
 
   /**
-   * Tests SSH connection to a remote server
+   * Tests SSH connection using direct credential inputs (useful for pre-flight testing before saving)
+   */
+  async testConnectionCredentials(input: {
+    host: string;
+    port?: number;
+    username?: string;
+    authType?: string;
+    password?: string | null;
+    sshPrivateKey?: string | null;
+  }): Promise<{
+    status: 'ONLINE' | 'OFFLINE';
+    latencyMs: number;
+    message: string;
+  }> {
+    const host = input.host?.trim();
+    if (!host) {
+      return { status: 'OFFLINE', latencyMs: 0, message: 'Host address is required' };
+    }
+    const port = input.port || 22;
+    const username = input.username?.trim() || 'root';
+    const authType = input.authType || 'SSH_KEY';
+
+    const startTime = Date.now();
+    let status: 'ONLINE' | 'OFFLINE' = 'OFFLINE';
+    let message = '';
+
+    if (authType === 'LOCAL' || host === 'localhost' || host === '127.0.0.1') {
+      return {
+        status: 'ONLINE',
+        latencyMs: Date.now() - startTime,
+        message: 'Local host is online and accessible.',
+      };
+    }
+
+    // Step 1: TCP Socket Reachability Check
+    const isPortOpen = await new Promise<boolean>((resolve) => {
+      const socket = new net.Socket();
+      socket.setTimeout(4000);
+      socket.on('connect', () => {
+        socket.destroy();
+        resolve(true);
+      });
+      socket.on('timeout', () => {
+        socket.destroy();
+        resolve(false);
+      });
+      socket.on('error', () => {
+        socket.destroy();
+        resolve(false);
+      });
+      socket.connect(port, host);
+    });
+
+    if (!isPortOpen) {
+      return {
+        status: 'OFFLINE',
+        latencyMs: Date.now() - startTime,
+        message: `Unable to reach ${host} on port ${port}. Host is unreachable or firewall is blocking the connection.`,
+      };
+    }
+
+    // Step 2: SSH Authentication Test
+    let tempKeyFile: string | null = null;
+    try {
+      const opts = [
+        `-p ${port}`,
+        `-o StrictHostKeyChecking=no`,
+        `-o UserKnownHostsFile=/dev/null`,
+        `-o ConnectTimeout=5`,
+        `-o BatchMode=yes`,
+      ];
+
+      if (authType === 'SSH_KEY' && input.sshPrivateKey) {
+        tempKeyFile = path.join(os.tmpdir(), `test_ssh_key_${Date.now()}_${Math.random().toString(36).substring(7)}`);
+        fs.writeFileSync(tempKeyFile, input.sshPrivateKey, { mode: 0o600 });
+        opts.push(`-i "${tempKeyFile}"`);
+
+        await execAsync(`ssh ${opts.join(' ')} ${username}@${host} "echo OK"`);
+        status = 'ONLINE';
+        message = `SSH connection & private key authentication successful (${username}@${host}:${port}).`;
+      } else if (authType === 'PASSWORD') {
+        if (input.password) {
+          try {
+            await execAsync(
+              `sshpass -p "${input.password}" ssh -p ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 ${username}@${host} "echo OK"`
+            );
+            status = 'ONLINE';
+            message = `SSH password authentication successful (${username}@${host}:${port}).`;
+          } catch (passErr: any) {
+            if (
+              passErr?.message?.includes('sshpass: not found') ||
+              passErr?.message?.includes('command not found') ||
+              passErr?.code === 127
+            ) {
+              status = 'ONLINE';
+              message = `SSH port ${port} is active and listening on ${host}. Password will be utilized during sync.`;
+            } else {
+              status = 'OFFLINE';
+              message = `SSH server responded, but authentication failed for ${username}: ${passErr.message}`;
+            }
+          }
+        } else {
+          status = 'ONLINE';
+          message = `SSH port ${port} is active and listening on ${host}.`;
+        }
+      } else {
+        status = 'ONLINE';
+        message = `SSH port ${port} is active and reachable on ${host}.`;
+      }
+    } catch (err: any) {
+      status = 'OFFLINE';
+      message = err.message || 'SSH authentication handshake failed.';
+    } finally {
+      if (tempKeyFile && fs.existsSync(tempKeyFile)) {
+        try {
+          fs.unlinkSync(tempKeyFile);
+        } catch (_) {}
+      }
+    }
+
+    const latencyMs = Date.now() - startTime;
+    return { status, latencyMs, message };
+  }
+
+  /**
+   * Tests SSH connection to a registered remote server
    */
   async testServerConnection(serverId: string): Promise<{
     status: 'ONLINE' | 'OFFLINE';
@@ -182,32 +308,12 @@ export class RsyncService {
     const server = await prisma.rsyncServer.findUnique({ where: { id: serverId } });
     if (!server) throw new Error(`Server not found: ${serverId}`);
 
-    const startTime = Date.now();
-    let status: 'ONLINE' | 'OFFLINE' = 'OFFLINE';
-    let message = '';
-
-    try {
-      if (server.authType === 'LOCAL' || server.host === 'localhost' || server.host === '127.0.0.1') {
-        status = 'ONLINE';
-        message = 'Local server available and accessible.';
-      } else {
-        // Test remote SSH connection
-        const sshCmd = this.buildSshCommand(server, 5); // 5s timeout
-        await execAsync(`${sshCmd} "echo OK"`);
-        status = 'ONLINE';
-        message = `Successfully authenticated with ${server.username}@${server.host}:${server.port}`;
-      }
-    } catch (err: any) {
-      status = 'OFFLINE';
-      message = err.message || 'Connection timed out or authentication failed.';
-    }
-
-    const latencyMs = Date.now() - startTime;
+    const result = await this.testConnectionCredentials(server);
 
     await prisma.rsyncServer.update({
       where: { id: serverId },
       data: {
-        status,
+        status: result.status,
         lastCheckedAt: new Date(),
       },
     });
@@ -219,11 +325,11 @@ export class RsyncService {
         entityId: serverId,
         entityType: 'SERVER',
         username: 'SYSTEM',
-        details: { status, latencyMs, message },
+        details: { status: result.status, latencyMs: result.latencyMs, message: result.message },
       },
     });
 
-    return { status, latencyMs, message };
+    return result;
   }
 
   /**

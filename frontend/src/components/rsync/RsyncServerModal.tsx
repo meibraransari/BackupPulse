@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Server, Key, Lock, CheckCircle2, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { X, Server, Key, Lock, CheckCircle2, AlertTriangle, ShieldCheck, Wifi } from 'lucide-react';
 import { RsyncServer } from '../../types';
 import { api } from '../../services/api';
 
@@ -100,11 +100,22 @@ export const RsyncServerModal: React.FC<RsyncServerModalProps> = ({
   };
 
   const handleTestNow = async () => {
-    if (!server) return;
+    if (!host.trim()) {
+      setError('Please provide the Host / IP address before testing connection.');
+      return;
+    }
     setTesting(true);
     setTestResult(null);
+    setError(null);
     try {
-      const res = await api.testRsyncServer(server.id);
+      const res = await api.testRsyncConnection({
+        host: host.trim(),
+        port,
+        username: username.trim(),
+        authType,
+        password: password || undefined,
+        sshPrivateKey: sshPrivateKey || undefined,
+      });
       setTestResult(res);
     } catch (err: any) {
       setTestResult({ status: 'OFFLINE', message: err.message || 'Connection failed' });
@@ -271,18 +282,16 @@ export const RsyncServerModal: React.FC<RsyncServerModalProps> = ({
 
           {/* Footer Actions */}
           <div className="flex items-center justify-between pt-4 border-t border-slate-800">
-            {server ? (
-              <button
-                type="button"
-                onClick={handleTestNow}
-                disabled={testing}
-                className="px-3 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors"
-              >
-                {testing ? 'Pinging...' : 'Test SSH Connection'}
-              </button>
-            ) : (
-              <div />
-            )}
+            <button
+              type="button"
+              onClick={handleTestNow}
+              disabled={testing || !host.trim()}
+              className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors cursor-pointer disabled:opacity-40"
+              title="Test SSH connection using the entered credentials before saving"
+            >
+              <Wifi className={`h-3.5 w-3.5 ${testing ? 'animate-pulse text-indigo-400' : 'text-slate-400'}`} />
+              <span>{testing ? 'Testing Connection...' : 'Test SSH Connection'}</span>
+            </button>
 
             <div className="flex items-center space-x-2">
               <button
