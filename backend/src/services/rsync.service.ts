@@ -149,15 +149,21 @@ export class RsyncService {
         }
       } else {
         // Remote execution over SSH
-        const sshCmd = this.buildSshCommand(repo.server);
-        const { stdout } = await execAsync(`${sshCmd} "df -B1 '${repo.path}' || df -B1 /"`);
-        const lines = stdout.trim().split('\n');
-        if (lines.length >= 2) {
-          const parts = lines[lines.length - 1].split(/\s+/);
-          if (parts.length >= 4) {
-            total = BigInt(parts[1] || 0);
-            used = BigInt(parts[2] || 0);
-            available = BigInt(parts[3] || 0);
+        const sshInfo = this.buildSshCommand(repo.server);
+        try {
+          const { stdout } = await execAsync(`${sshInfo.cmd} "df -B1 '${repo.path}' || df -B1 /"`, { env: sshInfo.env });
+          const lines = stdout.trim().split('\n');
+          if (lines.length >= 2) {
+            const parts = lines[lines.length - 1].split(/\s+/);
+            if (parts.length >= 4) {
+              total = BigInt(parts[1] || 0);
+              used = BigInt(parts[2] || 0);
+              available = BigInt(parts[3] || 0);
+            }
+          }
+        } finally {
+          if (sshInfo.tempKeyFile && fs.existsSync(sshInfo.tempKeyFile)) {
+            try { fs.unlinkSync(sshInfo.tempKeyFile); } catch (_) {}
           }
         }
       }
@@ -285,8 +291,17 @@ export class RsyncService {
         `-o StrictHostKeyChecking=no`,
         `-o UserKnownHostsFile=/dev/null`,
         `-o ConnectTimeout=6`,
-        `-o BatchMode=yes`,
       ];
+
+      if (authType === 'PASSWORD') {
+        sshOpts.push(
+          `-o PreferredAuthentications=password,keyboard-interactive`,
+          `-o PubkeyAuthentication=no`,
+          `-o NumberOfPasswordPrompts=1`
+        );
+      } else {
+        sshOpts.push(`-o BatchMode=yes`);
+      }
 
       if (logLevel === 'debug') {
         sshOpts.push('-vv'); // Ultra-detailed debug logs showing cipher suites, keys, packets
@@ -295,6 +310,7 @@ export class RsyncService {
         sshOpts.push('-v'); // Standard verbose so we capture connection and auth steps
       }
 
+      const execEnv: NodeJS.ProcessEnv = { ...process.env };
       let sshCmd = '';
       if (authType === 'SSH_KEY' && input.sshPrivateKey) {
         tempKeyFile = path.join(os.tmpdir(), `test_ssh_key_${Date.now()}_${Math.random().toString(36).substring(7)}`);
@@ -304,7 +320,8 @@ export class RsyncService {
         addLog('INFO', 'Loaded temporary private key for authentication test.');
       } else if (authType === 'PASSWORD') {
         if (input.password) {
-          sshCmd = `sshpass -p "${input.password}" ssh ${sshOpts.join(' ')} ${username}@${host} "echo OK"`;
+          execEnv.SSHPASS = input.password;
+          sshCmd = `sshpass -e ssh ${sshOpts.join(' ')} ${username}@${host} "echo OK"`;
           addLog('INFO', 'Configured password authentication test via sshpass.');
         } else {
           sshCmd = `ssh ${sshOpts.join(' ')} ${username}@${host} "echo OK"`;
@@ -314,13 +331,13 @@ export class RsyncService {
         sshCmd = `ssh ${sshOpts.join(' ')} ${username}@${host} "echo OK"`;
       }
 
-      addLog('DEBUG', `Executing command: ${sshCmd.replace(/-p ".*?"/g, '-p "[REDACTED]"')}`);
+      addLog('DEBUG', `Executing command: ${sshCmd}`);
 
       let rawStdout = '';
       let rawStderr = '';
 
       try {
-        const execRes = await execAsync(sshCmd);
+        const execRes = await execAsync(sshCmd, { env: execEnv });
         rawStdout = execRes.stdout || '';
         rawStderr = execRes.stderr || '';
         status = 'ONLINE';
@@ -336,7 +353,7 @@ export class RsyncService {
         ) {
           status = 'ONLINE';
           message = `SSH port ${port} is active and listening on ${host}. Password will be utilized during rsync.`;
-        } else if (rawStderr.includes('Permission denied')) {
+        } else if (execErr?.code === 5 || rawStderr.includes('Permission denied')) {
           status = 'OFFLINE';
           message = `Authentication rejected: Permission denied (publickey/password). Ensure public key or password is valid on ${host}.`;
         } else if (rawStderr.includes('Connection timed out') || rawStderr.includes('Operation timed out')) {
@@ -449,32 +466,56 @@ export class RsyncService {
   }
 
   /**
-   * Helper to build the ssh connection prefix
+   * Helper to build the ssh connection prefix and environment
    */
-  private buildSshCommand(server: {
-    host: string;
-    port: number;
-    username: string;
-    authType: string;
-    password?: string | null;
-    sshPrivateKey?: string | null;
-  }, timeoutSeconds: number = 10): string {
+  private buildSshCommand(
+    server: {
+      host: string;
+      port: number;
+      username: string;
+      authType: string;
+      password?: string | null;
+      sshPrivateKey?: string | null;
+    },
+    timeoutSeconds: number = 10
+  ): { cmd: string; env: NodeJS.ProcessEnv; tempKeyFile?: string } {
     const opts = [
       `-p ${server.port}`,
       `-o StrictHostKeyChecking=no`,
       `-o UserKnownHostsFile=/dev/null`,
       `-o ConnectTimeout=${timeoutSeconds}`,
-      `-o BatchMode=yes`,
     ];
 
-    if (server.authType === 'SSH_KEY' && server.sshPrivateKey) {
-      // Create a temporary key file if necessary
-      const keyPath = path.join(os.tmpdir(), `rsync_key_${Date.now()}_${Math.random().toString(36).substring(7)}`);
-      fs.writeFileSync(keyPath, server.sshPrivateKey, { mode: 0o600 });
-      opts.push(`-i "${keyPath}"`);
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    let tempKeyFile: string | undefined;
+
+    if (server.authType === 'PASSWORD') {
+      opts.push(
+        `-o PreferredAuthentications=password,keyboard-interactive`,
+        `-o PubkeyAuthentication=no`,
+        `-o NumberOfPasswordPrompts=1`
+      );
+      if (server.password) {
+        env.SSHPASS = server.password;
+        return {
+          cmd: `sshpass -e ssh ${opts.join(' ')} ${server.username}@${server.host}`,
+          env,
+        };
+      }
+    } else {
+      opts.push(`-o BatchMode=yes`);
+      if (server.authType === 'SSH_KEY' && server.sshPrivateKey) {
+        tempKeyFile = path.join(os.tmpdir(), `rsync_key_${Date.now()}_${Math.random().toString(36).substring(7)}`);
+        fs.writeFileSync(tempKeyFile, server.sshPrivateKey, { mode: 0o600 });
+        opts.push(`-i "${tempKeyFile}"`);
+      }
     }
 
-    return `ssh ${opts.join(' ')} ${server.username}@${server.host}`;
+    return {
+      cmd: `ssh ${opts.join(' ')} ${server.username}@${server.host}`,
+      env,
+      tempKeyFile,
+    };
   }
 
   /**
@@ -567,14 +608,31 @@ export class RsyncService {
     }
 
     // Configure SSH if remote server is involved
-    const remoteServer = job.sourceServer || job.destServer;
+    const remoteServer =
+      job.sourceServer && job.sourceServer.authType !== 'LOCAL'
+        ? job.sourceServer
+        : job.destServer && job.destServer.authType !== 'LOCAL'
+        ? job.destServer
+        : null;
+
     let tempKeyFile: string | null = null;
+    const envExtra: NodeJS.ProcessEnv = { ...process.env };
+
     if (remoteServer && remoteServer.authType === 'SSH_KEY' && remoteServer.sshPrivateKey) {
       tempKeyFile = path.join(os.tmpdir(), `rsync_run_${Date.now()}.key`);
       fs.writeFileSync(tempKeyFile, remoteServer.sshPrivateKey, { mode: 0o600 });
-      args.push(`-e`, `ssh -p ${remoteServer.port} -i "${tempKeyFile}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null`);
+      args.push(
+        `-e`,
+        `ssh -p ${remoteServer.port} -i "${tempKeyFile}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes`
+      );
+    } else if (remoteServer && remoteServer.authType === 'PASSWORD' && remoteServer.password) {
+      envExtra.SSHPASS = remoteServer.password;
+      args.push(
+        `-e`,
+        `sshpass -e ssh -p ${remoteServer.port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PreferredAuthentications=password,keyboard-interactive -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1`
+      );
     } else if (remoteServer && remoteServer.authType !== 'LOCAL') {
-      args.push(`-e`, `ssh -p ${remoteServer.port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null`);
+      args.push(`-e`, `ssh -p ${remoteServer.port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes`);
     }
 
     // Custom arguments
@@ -627,6 +685,7 @@ export class RsyncService {
       console.log(`[RSYNC] Executing command: rsync ${args.join(' ')}`);
 
       const child = spawn('rsync', args, {
+        env: envExtra,
         shell: true,
       });
 
