@@ -55,8 +55,9 @@ export const RsyncServerModal: React.FC<RsyncServerModalProps> = ({
       setPort(server.port || 22);
       setUsername(server.username || 'root');
       setAuthType(server.authType || 'SSH_KEY');
-      setPassword(server.password || '');
-      setSshPrivateKey(server.sshPrivateKey || '');
+      // Keep password/key input blank so placeholder indicates existing credentials
+      setPassword('');
+      setSshPrivateKey('');
       setNotes(server.notes || '');
     } else {
       setName('');
@@ -86,31 +87,32 @@ export const RsyncServerModal: React.FC<RsyncServerModalProps> = ({
     setError(null);
 
     try {
-      if (server) {
-        await api.updateRsyncServer(server.id, {
-          name,
-          host,
-          port,
-          username,
-          authType,
-          password: password || undefined,
-          sshPrivateKey: sshPrivateKey || undefined,
-          notes,
-        });
-      } else {
-        await api.createRsyncServer({
-          name,
-          host,
-          port,
-          username,
-          authType,
-          password: password || undefined,
-          sshPrivateKey: sshPrivateKey || undefined,
-          notes,
-        });
+      const payload: any = {
+        name: name.trim(),
+        host: host.trim(),
+        port,
+        username: username.trim() || 'root',
+        authType,
+        notes: notes?.trim() || null,
+      };
+
+      if (authType === 'PASSWORD') {
+        if (password.trim()) {
+          payload.password = password.trim();
+        }
+      } else if (authType === 'SSH_KEY') {
+        if (sshPrivateKey.trim() && !sshPrivateKey.startsWith('••••')) {
+          payload.sshPrivateKey = sshPrivateKey.trim();
+        }
       }
 
-      onSaved();
+      if (server) {
+        await api.updateRsyncServer(server.id, payload);
+      } else {
+        await api.createRsyncServer(payload);
+      }
+
+      await onSaved();
       onClose();
     } catch (err: any) {
       setError(err?.message || 'Failed to save server credentials');
@@ -130,12 +132,13 @@ export const RsyncServerModal: React.FC<RsyncServerModalProps> = ({
     setCopiedLogs(false);
     try {
       const res = await api.testRsyncConnection({
+        serverId: server?.id,
         host: host.trim(),
         port,
-        username: username.trim(),
+        username: username.trim() || 'root',
         authType,
-        password: password || undefined,
-        sshPrivateKey: sshPrivateKey || undefined,
+        password: password.trim() || undefined,
+        sshPrivateKey: sshPrivateKey.trim() && !sshPrivateKey.startsWith('••••') ? sshPrivateKey.trim() : undefined,
         logLevel: selectedLevel,
       });
       setTestResult(res);
@@ -186,14 +189,16 @@ export const RsyncServerModal: React.FC<RsyncServerModalProps> = ({
           </button>
         </div>
 
-        {/* Form Body */}
-        <form onSubmit={handleSubmit} className="flex-1 p-6 overflow-y-auto space-y-4">
-          {error && (
-            <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-900/60 text-xs text-rose-300 flex items-center space-x-2">
-              <AlertTriangle className="h-4 w-4 shrink-0 text-rose-400" />
-              <span>{error}</span>
-            </div>
-          )}
+        {/* Form with Sticky Footer */}
+        <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          {/* Scrollable Content */}
+          <div className="flex-1 p-6 overflow-y-auto space-y-4">
+            {error && (
+              <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-900/60 text-xs text-rose-300 flex items-center space-x-2">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-rose-400" />
+                <span>{error}</span>
+              </div>
+            )}
 
           {/* Test Result & Live Log Transcript Box */}
           {testResult && (
@@ -389,19 +394,20 @@ export const RsyncServerModal: React.FC<RsyncServerModalProps> = ({
             </div>
           )}
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Optional Notes</label>
-            <textarea
-              rows={5}
-              placeholder="e.g. Rack B, Shelf 3, 10GbE interface&#10;Secondary DR node connected via private VPC peering&#10;Contact sysadmin for maintenance window"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-indigo-500 min-h-[120px] resize-y leading-relaxed"
-            />
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">Optional Notes</label>
+              <textarea
+                rows={5}
+                placeholder="e.g. Rack B, Shelf 3, 10GbE interface&#10;Secondary DR node connected via private VPC peering&#10;Contact sysadmin for maintenance window"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-indigo-500 min-h-[120px] resize-y leading-relaxed"
+              />
+            </div>
           </div>
 
-          {/* Footer Actions */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-4 border-t border-slate-800">
+          {/* Sticky Footer Actions - Always visible regardless of modal content scroll */}
+          <div className="px-6 py-4 bg-slate-950/90 border-t border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
             {/* Test Connection Controls: Log Level selector + Test button */}
             <div className="flex items-center space-x-2">
               {/* Log Level Toggle */}
@@ -457,14 +463,14 @@ export const RsyncServerModal: React.FC<RsyncServerModalProps> = ({
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white transition-colors"
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={saving}
-                className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-md transition-all cursor-pointer"
+                className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-md transition-all cursor-pointer disabled:opacity-50"
               >
                 {saving ? 'Saving...' : server ? 'Update Server' : 'Add Server'}
               </button>

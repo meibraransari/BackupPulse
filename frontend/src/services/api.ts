@@ -574,6 +574,7 @@ export const api = {
   },
 
   async testRsyncConnection(data: {
+    serverId?: string;
     host: string;
     port?: number;
     username?: string;

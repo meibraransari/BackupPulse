@@ -195,14 +195,19 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
       }
 
       const { id } = request.params;
+      const existing = await prisma.rsyncServer.findUnique({ where: { id } });
+      if (!existing) {
+        return reply.status(404).send({ error: `Server not found: ${id}` });
+      }
+
       const { name, host, port, username, authType, password, sshPrivateKey, notes } = request.body || {};
 
       const updateData: any = {};
-      if (name) updateData.name = name.trim();
-      if (host) updateData.host = host.trim();
-      if (port) updateData.port = parseInt(port, 10);
-      if (username) updateData.username = username.trim();
-      if (authType) updateData.authType = authType;
+      if (name !== undefined && name.trim()) updateData.name = name.trim();
+      if (host !== undefined && host.trim()) updateData.host = host.trim();
+      if (port !== undefined) updateData.port = parseInt(port, 10) || 22;
+      if (username !== undefined) updateData.username = username.trim() || 'root';
+      if (authType !== undefined) updateData.authType = authType;
       if (password !== undefined && password !== '••••••••') updateData.password = password ? password.trim() : null;
       if (sshPrivateKey !== undefined && !sshPrivateKey.startsWith('••••')) updateData.sshPrivateKey = sshPrivateKey ? sshPrivateKey.trim() : null;
       if (notes !== undefined) updateData.notes = notes?.trim() || null;
@@ -212,7 +217,30 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
         data: updateData,
       });
 
-      return reply.send(serializeBigInt(updated));
+      // Audit log
+      await prisma.rsyncActivityLog.create({
+        data: {
+          action: 'SERVER_UPDATED',
+          entityId: id,
+          entityType: 'SERVER',
+          username: request.user?.username || 'SYSTEM',
+          details: {
+            name: updated.name,
+            host: updated.host,
+            username: updated.username,
+            port: updated.port,
+            authType: updated.authType,
+          },
+        },
+      });
+
+      const masked = {
+        ...updated,
+        password: updated.password ? '••••••••' : null,
+        sshPrivateKey: updated.sshPrivateKey ? '•••• (Configured SSH Key)' : null,
+      };
+
+      return reply.send(serializeBigInt(masked));
     }
   );
 
@@ -280,9 +308,22 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
         return reply.status(403).send({ error: 'Admin permission required' });
       }
 
-      const body = request.body || {};
+      const body = { ...(request.body || {}) };
       if (!body.host) {
         return reply.status(400).send({ error: 'Host address is required to test connection' });
+      }
+
+      // If serverId is supplied (editing an existing node) and password/key is masked or blank, use stored credential from DB
+      if (body.serverId) {
+        const saved = await prisma.rsyncServer.findUnique({ where: { id: body.serverId } });
+        if (saved) {
+          if (!body.password || body.password === '••••••••') {
+            body.password = saved.password;
+          }
+          if (!body.sshPrivateKey || body.sshPrivateKey.startsWith('••••')) {
+            body.sshPrivateKey = saved.sshPrivateKey;
+          }
+        }
       }
 
       const result = await rsyncService.testConnectionCredentials(body);

@@ -1501,23 +1501,44 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
         repositories={repositories}
         servers={servers}
         isOpen={showJobModal}
-        onClose={() => setShowJobModal(false)}
-        onSaved={refreshCurrentTab}
+        onClose={() => {
+          setShowJobModal(false);
+          setEditingJob(null);
+        }}
+        onSaved={async () => {
+          showToast('Sync job saved successfully.');
+          await refreshCurrentTab();
+          setEditingJob(null);
+        }}
       />
 
       <RsyncServerModal
         server={editingServer}
         isOpen={showServerModal}
-        onClose={() => setShowServerModal(false)}
-        onSaved={refreshCurrentTab}
+        onClose={() => {
+          setShowServerModal(false);
+          setEditingServer(null);
+        }}
+        onSaved={async () => {
+          showToast('Server configuration saved successfully.');
+          await loadServers();
+          setEditingServer(null);
+        }}
       />
 
       <RsyncRepoModal
         repo={editingRepo}
         servers={servers}
         isOpen={showRepoModal}
-        onClose={() => setShowRepoModal(false)}
-        onSaved={refreshCurrentTab}
+        onClose={() => {
+          setShowRepoModal(false);
+          setEditingRepo(null);
+        }}
+        onSaved={async () => {
+          showToast('Repository saved successfully.');
+          await refreshCurrentTab();
+          setEditingRepo(null);
+        }}
       />
 
       <RsyncRunDetailModal
