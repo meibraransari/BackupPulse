@@ -149,16 +149,16 @@ export const ResolveModal: React.FC<ResolveModalProps> = ({
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-xs">
               <label className="font-semibold text-slate-300 uppercase tracking-wider">
-                Auditor Note <span className="text-slate-500 font-normal lowercase">(optional)</span>
+                Auditor Note <span className="text-slate-500 font-normal lowercase">(Optional)</span>
               </label>
               <span className="text-[11px] text-slate-500">Recorded in audit metadata</span>
             </div>
             <textarea
-              rows={2}
-              placeholder="e.g. S3 object manually verified via AWS Console, size 1.4GB."
+              rows={5}
+              placeholder="e.g. S3 object manually verified via AWS Console, size 1.4GB.&#10;Checksum validated against source database.&#10;Incident resolved per standard operating procedure."
               value={customNote}
               onChange={(e) => setCustomNote(e.target.value)}
-              className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs sm:text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors resize-none"
+              className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs sm:text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors min-h-[120px] resize-y leading-relaxed"
             />
           </div>
 

@@ -384,11 +384,11 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
               <span className="text-[10px] text-slate-500 font-mono">--exclude</span>
             </label>
             <textarea
-              rows={3}
-              placeholder=".git&#10;node_modules&#10;*.tmp"
+              rows={5}
+              placeholder=".git&#10;node_modules&#10;*.tmp&#10;*.log&#10;.DS_Store"
               value={excludePatterns}
               onChange={(e) => setExcludePatterns(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono text-slate-200 focus:outline-none focus:border-amber-500"
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono text-slate-200 focus:outline-none focus:border-amber-500 min-h-[110px] resize-y"
             />
           </div>
 

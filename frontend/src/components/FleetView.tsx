@@ -763,13 +763,13 @@ export const FleetView: React.FC<FleetViewProps> = ({ onSelectServer, onOpenDepl
               </div>
 
               <div>
-                <label className="block text-slate-300 font-medium mb-1">Additional Notes (Optional):</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Server decommissioned on ticket DEV-4829"
+                <label className="block text-slate-300 font-medium mb-1">Optional Notes:</label>
+                <textarea
+                  rows={5}
+                  placeholder="e.g. Server decommissioned on ticket DEV-4829&#10;Hardware scheduled for migration next quarter&#10;Approved by DevOps Lead"
                   value={customMuteNote}
                   onChange={(e) => setCustomMuteNote(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-amber-500"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-amber-500 min-h-[120px] resize-y leading-relaxed text-xs sm:text-sm"
                 />
               </div>
             </div>

@@ -187,13 +187,13 @@ export const RsyncRepoModal: React.FC<RsyncRepoModalProps> = ({
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Description / Notes</label>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">Optional Notes / Description</label>
             <textarea
-              rows={2}
-              placeholder="e.g. Primary 2TB NVMe SSD containing production databases"
+              rows={5}
+              placeholder="e.g. Primary 2TB NVMe SSD containing production databases&#10;Mounted on high-speed PCIe bus&#10;Retention policy: Daily mirror synchronized at 02:00 UTC"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500 min-h-[120px] resize-y leading-relaxed"
             />
           </div>
 

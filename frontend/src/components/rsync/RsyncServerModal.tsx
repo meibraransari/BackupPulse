@@ -391,12 +391,12 @@ export const RsyncServerModal: React.FC<RsyncServerModalProps> = ({
 
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1">Optional Notes</label>
-            <input
-              type="text"
-              placeholder="e.g. Rack B, Shelf 3, 10GbE interface"
+            <textarea
+              rows={5}
+              placeholder="e.g. Rack B, Shelf 3, 10GbE interface&#10;Secondary DR node connected via private VPC peering&#10;Contact sysadmin for maintenance window"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-indigo-500 min-h-[120px] resize-y leading-relaxed"
             />
           </div>
 
