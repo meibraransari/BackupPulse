@@ -739,7 +739,7 @@ export class RsyncService {
         fs.writeFileSync(tempKeyFile, remoteServer.sshPrivateKey, { mode: 0o600 });
         baseArgs.push(
           `-e`,
-          `ssh -p ${remoteServer.port} -i "${tempKeyFile}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes`
+          `ssh -p ${remoteServer.port} -i ${tempKeyFile} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes`
         );
       } else if (remoteServer && remoteServer.authType === 'PASSWORD' && remoteServer.password) {
         envExtra.SSHPASS = remoteServer.password;
@@ -763,7 +763,7 @@ export class RsyncService {
       console.log(`[RSYNC] Launching: ${childCmd} ${childArgs.join(' ')}`);
 
       const child = childArgs.length > 0
-        ? spawn(childCmd, childArgs, { env: envExtra, shell: true })
+        ? spawn(childCmd, childArgs, { env: envExtra })
         : spawn(childCmd, { env: envExtra, shell: true });
 
       child.stdout.on('data', (chunk) => {
@@ -931,7 +931,7 @@ export class RsyncService {
         tempKey = path.join(os.tmpdir(), `bridge_key_${Date.now()}_${Math.random().toString(36).substring(7)}.key`);
         fs.writeFileSync(tempKey, srv.sshPrivateKey, { mode: 0o600 });
         return {
-          flag: ['-e', `ssh -p ${srv.port} -i "${tempKey}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes`],
+          flag: ['-e', `ssh -p ${srv.port} -i ${tempKey} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes`],
           env,
           tempKey,
         };
@@ -955,13 +955,89 @@ export class RsyncService {
     const pushSsh = getSshFlagForServer(destServer);
 
     try {
+      // ----------------------------------------------------------------------
+      // SIMULATION (DRY-RUN) MODE
+      // ----------------------------------------------------------------------
+      if (runType === 'DRY_RUN') {
+        stdoutBuffer += `[BACKUPPULSE BRIDGE] [SIMULATION DRY-RUN] Probing delta transfer from source ${sourceServer.username}@${sourceServer.host}:${sourceRaw}...\n`;
+        const pullArgs = [...baseArgs, ...pullSsh.flag, `${sourceServer.username}@${sourceServer.host}:${sourceRaw}`, `${transitDir}/`];
+
+        console.log(`[RSYNC BRIDGE DRY-RUN] rsync ${pullArgs.join(' ')}`);
+
+        const pullRes = await new Promise<{ exitCode: number; stdout: string; stderr: string }>((res) => {
+          let pStdout = '';
+          let pStderr = '';
+          const pChild = spawn('rsync', pullArgs, { env: pullSsh.env });
+          pChild.stdout.on('data', (c) => (pStdout += c.toString()));
+          pChild.stderr.on('data', (c) => (pStderr += c.toString()));
+          pChild.on('close', (code) => res({ exitCode: code || 0, stdout: pStdout, stderr: pStderr }));
+          pChild.on('error', (err) => res({ exitCode: 1, stdout: pStdout, stderr: err.message }));
+        });
+
+        stdoutBuffer += pullRes.stdout;
+        stderrBuffer += pullRes.stderr;
+
+        if (pullRes.exitCode !== 0) {
+          throw new Error(`Cross-server sync dry-run failed with exit code ${pullRes.exitCode}: ${pullRes.stderr.trim()}`);
+        }
+
+        stdoutBuffer += `\n[BACKUPPULSE BRIDGE] [SIMULATION DRY-RUN] Completed. Target server ${destServer.name} (${destServer.host}:${destRaw}) is ready to receive sync.\n`;
+
+        const durationSeconds = (Date.now() - startTime) / 1000;
+        const parsedStats = parseRsyncStats(pullRes.stdout);
+
+        const updatedRun = await prisma.rsyncRun.update({
+          where: { id: run.id },
+          data: {
+            status: 'SUCCESS',
+            exitCode: 0,
+            durationSeconds,
+            stdoutLog: stdoutBuffer,
+            stderrLog: stderrBuffer,
+            errorMessage: null,
+            totalFiles: parsedStats.totalFiles,
+            transferredFiles: parsedStats.transferredFiles,
+            deletedFiles: parsedStats.deletedFiles,
+            bytesTransferred: parsedStats.bytesTransferred,
+            totalSizeBytes: parsedStats.totalSizeBytes,
+            speedupRatio: parsedStats.speedupRatio,
+            completedAt: new Date(),
+          },
+        });
+
+        await prisma.rsyncJob.update({
+          where: { id: job.id },
+          data: {
+            lastRunStatus: 'SUCCESS',
+            lastRunAt: new Date(),
+          },
+        });
+
+        await prisma.rsyncActivityLog.create({
+          data: {
+            action: 'DRY_RUN_TRIGGERED',
+            entityId: run.id,
+            entityType: 'RUN',
+            username: triggeredBy,
+            details: { jobId: job.id, jobName: job.name, status: 'SUCCESS', durationSeconds },
+          },
+        });
+
+        return updatedRun;
+      }
+
+      // ----------------------------------------------------------------------
+      // REAL EXECUTION: PHASE 1 (PULL DELTA TO TRANSIT BUFFER)
+      // ----------------------------------------------------------------------
       stdoutBuffer += `[BACKUPPULSE BRIDGE] Phase 1: Pulling delta from ${sourceServer.username}@${sourceServer.host}:${sourceRaw} to transit buffer...\n`;
       const pullArgs = [...baseArgs, ...pullSsh.flag, `${sourceServer.username}@${sourceServer.host}:${sourceRaw}`, `${transitDir}/`];
+
+      console.log(`[RSYNC BRIDGE] Phase 1: rsync ${pullArgs.join(' ')}`);
 
       const pullRes = await new Promise<{ exitCode: number; stdout: string; stderr: string }>((res) => {
         let pStdout = '';
         let pStderr = '';
-        const pChild = spawn('rsync', pullArgs, { env: pullSsh.env, shell: true });
+        const pChild = spawn('rsync', pullArgs, { env: pullSsh.env });
         pChild.stdout.on('data', (c) => (pStdout += c.toString()));
         pChild.stderr.on('data', (c) => (pStderr += c.toString()));
         pChild.on('close', (code) => res({ exitCode: code || 0, stdout: pStdout, stderr: pStderr }));
@@ -975,13 +1051,17 @@ export class RsyncService {
         throw new Error(`Cross-server sync Phase 1 (pull) failed with exit code ${pullRes.exitCode}: ${pullRes.stderr.trim()}`);
       }
 
+      // ----------------------------------------------------------------------
+      // REAL EXECUTION: PHASE 2 (PUSH TRANSIT BUFFER TO DESTINATION SERVER)
+      // ----------------------------------------------------------------------
       stdoutBuffer += `\n[BACKUPPULSE BRIDGE] Phase 2: Pushing transit buffer to ${destServer.username}@${destServer.host}:${destRaw}...\n`;
       let targetDest = destRaw;
+      let baseDestForSymlink: string | null = null;
       const pushStrategyArgs: string[] = [];
       if (job.syncStrategy === 'HARDLINK_SNAPSHOT') {
-        const baseDest = targetDest.endsWith('/') ? targetDest.slice(0, -1) : targetDest;
-        targetDest = `${baseDest}/snapshot_${timestampStr}/`;
-        pushStrategyArgs.push(`--link-dest=${baseDest}/latest`);
+        baseDestForSymlink = targetDest.endsWith('/') ? targetDest.slice(0, -1) : targetDest;
+        targetDest = `${baseDestForSymlink}/snapshot_${timestampStr}/`;
+        pushStrategyArgs.push(`--link-dest=${baseDestForSymlink}/latest`);
       } else if (job.syncStrategy === 'BACKUP_DIR') {
         const baseDest = targetDest.endsWith('/') ? targetDest.slice(0, -1) : targetDest;
         targetDest = `${baseDest}/current/`;
@@ -996,10 +1076,12 @@ export class RsyncService {
         `${destServer.username}@${destServer.host}:${targetDest}`,
       ];
 
+      console.log(`[RSYNC BRIDGE] Phase 2: rsync ${pushArgs.join(' ')}`);
+
       const pushRes = await new Promise<{ exitCode: number; stdout: string; stderr: string }>((res) => {
         let pStdout = '';
         let pStderr = '';
-        const pChild = spawn('rsync', pushArgs, { env: pushSsh.env, shell: true });
+        const pChild = spawn('rsync', pushArgs, { env: pushSsh.env });
         pChild.stdout.on('data', (c) => (pStdout += c.toString()));
         pChild.stderr.on('data', (c) => (pStderr += c.toString()));
         pChild.on('close', (code) => res({ exitCode: code || 0, stdout: pStdout, stderr: pStderr }));
@@ -1011,6 +1093,19 @@ export class RsyncService {
 
       const durationSeconds = (Date.now() - startTime) / 1000;
       const isSuccess = pushRes.exitCode === 0;
+
+      // Update symlink on destServer if HARDLINK_SNAPSHOT was successful
+      if (isSuccess && job.syncStrategy === 'HARDLINK_SNAPSHOT' && baseDestForSymlink) {
+        try {
+          const sshDestInfo = this.buildSshCommand(destServer);
+          const symlinkCmd = `${sshDestInfo.cmd} "cd '${baseDestForSymlink}' && ln -sfn 'snapshot_${timestampStr}' latest"`;
+          await execAsync(symlinkCmd, { env: sshDestInfo.env }).catch(() => {});
+          if (sshDestInfo.tempKeyFile && fs.existsSync(sshDestInfo.tempKeyFile)) {
+            try { fs.unlinkSync(sshDestInfo.tempKeyFile); } catch (_) {}
+          }
+        } catch (_) {}
+      }
+
       const parsedStats = parseRsyncStats(pushRes.stdout || pullRes.stdout);
 
       const updatedRun = await prisma.rsyncRun.update({
