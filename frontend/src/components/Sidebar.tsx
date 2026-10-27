@@ -25,6 +25,7 @@ import {
   Search,
   Tv,
   LayoutDashboard,
+  HardDrive,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { User, NavigationTab } from '../types';
@@ -86,6 +87,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Backup Telemetry',
       icon: Database,
       badge: 'Live',
+    },
+    {
+      id: 'rsync' as const,
+      label: 'Disk Sync & Mirror',
+      icon: HardDrive,
+      badge: 'Rsync',
     },
     {
       id: 'drills' as const,

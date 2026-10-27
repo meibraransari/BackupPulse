@@ -18,6 +18,7 @@ import { SlaHeatmap } from '../components/SlaHeatmap';
 import { DrillPulseView } from '../components/DrillPulseView';
 import { SettingsView } from '../components/SettingsView';
 import { AuditLogsView } from '../components/AuditLogsView';
+import { RsyncView } from '../components/rsync/RsyncView';
 import { CommandPaletteModal } from '../components/CommandPaletteModal';
 import { NocWallboardModal } from '../components/NocWallboardModal';
 import { NotificationCenterDrawer } from '../components/NotificationCenterDrawer';
@@ -39,6 +40,7 @@ import {
   Tv,
   Search,
   LayoutDashboard,
+  HardDrive,
 } from 'lucide-react';
 
 interface DashboardPageProps {
@@ -323,6 +325,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
               <h1 className="text-2xl font-bold tracking-tight text-white">
                 {activeTab === 'dashboard' && 'DevOps Fleet & Backup Dashboard'}
                 {activeTab === 'telemetry' && 'Backup Telemetry Records'}
+                {activeTab === 'rsync' && 'Disk Sync & Rsync Mirror Engine'}
                 {activeTab === 'drills' && 'Disaster Recovery DrillPulse'}
                 {activeTab === 'fleet' && 'Server Fleet Inventory'}
                 {activeTab === 'users' && 'Access & User Directory'}
@@ -340,6 +343,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
                 'Real-time health overview, 24-hour backup distribution heat, SLA trends, and fleet storage analytics.'}
               {activeTab === 'telemetry' &&
                 'Live status, cron logs, size anomaly guards, and automated cloud sync reports across 100+ servers.'}
+              {activeTab === 'rsync' &&
+                'Local disk-to-disk 1:1 mirroring, time-machine hard-link snapshots, remote SSH nodes, and execution audit.'}
               {activeTab === 'drills' &&
                 'Automated Disaster Recovery sandbox restore drills, row count validations, and SOC2 audit compliance logs.'}
               {activeTab === 'fleet' &&
@@ -382,6 +387,22 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
                 <span>Telemetry</span>
                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-950/60 font-mono">
                   {pagination.total}
+                </span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('rsync')}
+                className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                  activeTab === 'rsync'
+                    ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-950/40'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Go to Disk Sync & Rsync Mirror Engine"
+              >
+                <HardDrive className="h-3.5 w-3.5" />
+                <span>Disk Mirror</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-950/60 font-mono">
+                  Rsync
                 </span>
               </button>
 
@@ -568,6 +589,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
               currentUser={currentUser}
             />
           </div>
+        ) : activeTab === 'rsync' ? (
+          /* Disk Sync & Rsync Mirror Engine View */
+          <RsyncView currentUser={currentUser} />
         ) : activeTab === 'drills' ? (
           /* Disaster Recovery Verification Drills (DrillPulse) View */
           <DrillPulseView

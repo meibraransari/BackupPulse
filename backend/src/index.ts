@@ -26,6 +26,8 @@ import { metricsRoutes } from './routes/metrics.route';
 import { scriptRoutes } from './routes/script.route';
 import { settingsRoutes } from './routes/settings.route';
 import { auditRoutes } from './routes/audit.route';
+import { rsyncRoutes } from './routes/rsync.route';
+import { rsyncSchedulerService } from './services/rsync-scheduler.service';
 
 async function bootstrap() {
   // Initialize database-backed dynamic system settings early
@@ -161,6 +163,7 @@ async function bootstrap() {
   await fastify.register(scriptRoutes);
   await fastify.register(settingsRoutes);
   await fastify.register(auditRoutes);
+  await fastify.register(rsyncRoutes);
 
   // Serve static frontend build if present (for single container deployment)
   const frontendDistPath = path.resolve(__dirname, '../../frontend/dist');
@@ -205,6 +208,7 @@ async function bootstrap() {
     // Seed admin user and start background cron
     await seedInitialAdmin();
     initCronJobs();
+    await rsyncSchedulerService.initScheduler();
 
     // Initialize Prometheus metrics with PostgreSQL database state
     await initMetrics();

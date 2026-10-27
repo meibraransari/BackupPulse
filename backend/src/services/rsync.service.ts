@@ -1,0 +1,549 @@
+import { spawn, exec } from 'child_process';
+import util from 'util';
+import path from 'path';
+import fs from 'fs';
+import os from 'os';
+import { prisma } from '../db/prisma';
+import { dispatchInstantFailureAlert } from './alert-dispatcher.service';
+
+const execAsync = util.promisify(exec);
+
+export interface RsyncStats {
+  totalFiles: number;
+  transferredFiles: number;
+  deletedFiles: number;
+  totalSizeBytes: bigint;
+  bytesTransferred: bigint;
+  speedupRatio: number | null;
+}
+
+/**
+ * Parses stdout from rsync --stats to extract quantitative metrics
+ */
+export function parseRsyncStats(output: string): RsyncStats {
+  const stats: RsyncStats = {
+    totalFiles: 0,
+    transferredFiles: 0,
+    deletedFiles: 0,
+    totalSizeBytes: BigInt(0),
+    bytesTransferred: BigInt(0),
+    speedupRatio: null,
+  };
+
+  if (!output) return stats;
+
+  const lines = output.split('\n');
+  for (const line of lines) {
+    // Number of files: 12,450 (reg: 11,200, dir: 1,250)
+    if (line.includes('Number of files:')) {
+      const match = line.match(/Number of files:\s+([\d,]+)/);
+      if (match) stats.totalFiles = parseInt(match[1].replace(/,/g, ''), 10) || 0;
+    }
+    // Number of regular files transferred: 340
+    else if (line.includes('Number of regular files transferred:')) {
+      const match = line.match(/Number of regular files transferred:\s+([\d,]+)/);
+      if (match) stats.transferredFiles = parseInt(match[1].replace(/,/g, ''), 10) || 0;
+    }
+    // Number of deleted files: 12
+    else if (line.includes('Number of deleted files:')) {
+      const match = line.match(/Number of deleted files:\s+([\d,]+)/);
+      if (match) stats.deletedFiles = parseInt(match[1].replace(/,/g, ''), 10) || 0;
+    }
+    // Total file size: 145,234,890 bytes
+    else if (line.includes('Total file size:')) {
+      const match = line.match(/Total file size:\s+([\d,]+)/);
+      if (match) {
+        try {
+          stats.totalSizeBytes = BigInt(match[1].replace(/,/g, ''));
+        } catch (_) {}
+      }
+    }
+    // Total transferred file size: 12,456,789 bytes
+    else if (line.includes('Total transferred file size:')) {
+      const match = line.match(/Total transferred file size:\s+([\d,]+)/);
+      if (match) {
+        try {
+          stats.bytesTransferred = BigInt(match[1].replace(/,/g, ''));
+        } catch (_) {}
+      }
+    }
+    // Literal data: 4,500,000 bytes (fallback if transferred file size is 0)
+    else if (line.includes('Literal data:') && stats.bytesTransferred === BigInt(0)) {
+      const match = line.match(/Literal data:\s+([\d,]+)/);
+      if (match) {
+        try {
+          stats.bytesTransferred = BigInt(match[1].replace(/,/g, ''));
+        } catch (_) {}
+      }
+    }
+    // Total bytes sent: 4,567,123 / Total bytes received: 12,345
+    else if (line.includes('Total bytes sent:') && stats.bytesTransferred === BigInt(0)) {
+      const match = line.match(/Total bytes sent:\s+([\d,]+)/);
+      if (match) {
+        try {
+          stats.bytesTransferred = BigInt(match[1].replace(/,/g, ''));
+        } catch (_) {}
+      }
+    }
+    // Speedup is 12.45
+    else if (line.includes('Speedup is')) {
+      const match = line.match(/Speedup is\s+([\d.]+)/);
+      if (match) stats.speedupRatio = parseFloat(match[1]) || null;
+    }
+  }
+
+  return stats;
+}
+
+export class RsyncService {
+  /**
+   * Probes disk capacity (total, used, free) for a repository
+   */
+  async probeRepositoryDiskSpace(repoId: string): Promise<{
+    totalBytes: bigint;
+    usedBytes: bigint;
+    availableBytes: bigint;
+    isMounted: boolean;
+  }> {
+    const repo = await prisma.rsyncRepository.findUnique({
+      where: { id: repoId },
+      include: { server: true },
+    });
+
+    if (!repo) {
+      throw new Error(`Repository not found: ${repoId}`);
+    }
+
+    let total = BigInt(0);
+    let used = BigInt(0);
+    let available = BigInt(0);
+    let isMounted = true;
+
+    try {
+      if (repo.type === 'LOCAL_DISK' || !repo.server) {
+        // Local execution: run df -B1
+        const cleanPath = path.resolve(repo.path);
+        const { stdout } = await execAsync(`df -B1 "${cleanPath}"`).catch(() => {
+          // If path doesn't exist yet, check its parent or root
+          return execAsync(`df -B1 .`);
+        });
+
+        const lines = stdout.trim().split('\n');
+        if (lines.length >= 2) {
+          const parts = lines[lines.length - 1].split(/\s+/);
+          // Filesystem 1B-blocks Used Available Use% Mounted on
+          if (parts.length >= 4) {
+            total = BigInt(parts[1] || 0);
+            used = BigInt(parts[2] || 0);
+            available = BigInt(parts[3] || 0);
+          }
+        }
+      } else {
+        // Remote execution over SSH
+        const sshCmd = this.buildSshCommand(repo.server);
+        const { stdout } = await execAsync(`${sshCmd} "df -B1 '${repo.path}' || df -B1 /"`);
+        const lines = stdout.trim().split('\n');
+        if (lines.length >= 2) {
+          const parts = lines[lines.length - 1].split(/\s+/);
+          if (parts.length >= 4) {
+            total = BigInt(parts[1] || 0);
+            used = BigInt(parts[2] || 0);
+            available = BigInt(parts[3] || 0);
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[RSYNC] Failed to probe disk space for ${repo.path}:`, err.message);
+      isMounted = false;
+    }
+
+    // Update in database
+    await prisma.rsyncRepository.update({
+      where: { id: repoId },
+      data: {
+        totalBytes: total,
+        usedBytes: used,
+        availableBytes: available,
+        isMounted,
+      },
+    });
+
+    return { totalBytes: total, usedBytes: used, availableBytes: available, isMounted };
+  }
+
+  /**
+   * Tests SSH connection to a remote server
+   */
+  async testServerConnection(serverId: string): Promise<{
+    status: 'ONLINE' | 'OFFLINE';
+    latencyMs: number;
+    message: string;
+  }> {
+    const server = await prisma.rsyncServer.findUnique({ where: { id: serverId } });
+    if (!server) throw new Error(`Server not found: ${serverId}`);
+
+    const startTime = Date.now();
+    let status: 'ONLINE' | 'OFFLINE' = 'OFFLINE';
+    let message = '';
+
+    try {
+      if (server.authType === 'LOCAL' || server.host === 'localhost' || server.host === '127.0.0.1') {
+        status = 'ONLINE';
+        message = 'Local server available and accessible.';
+      } else {
+        // Test remote SSH connection
+        const sshCmd = this.buildSshCommand(server, 5); // 5s timeout
+        await execAsync(`${sshCmd} "echo OK"`);
+        status = 'ONLINE';
+        message = `Successfully authenticated with ${server.username}@${server.host}:${server.port}`;
+      }
+    } catch (err: any) {
+      status = 'OFFLINE';
+      message = err.message || 'Connection timed out or authentication failed.';
+    }
+
+    const latencyMs = Date.now() - startTime;
+
+    await prisma.rsyncServer.update({
+      where: { id: serverId },
+      data: {
+        status,
+        lastCheckedAt: new Date(),
+      },
+    });
+
+    // Audit log
+    await prisma.rsyncActivityLog.create({
+      data: {
+        action: 'SERVER_TESTED',
+        entityId: serverId,
+        entityType: 'SERVER',
+        username: 'SYSTEM',
+        details: { status, latencyMs, message },
+      },
+    });
+
+    return { status, latencyMs, message };
+  }
+
+  /**
+   * Helper to build the ssh connection prefix
+   */
+  private buildSshCommand(server: {
+    host: string;
+    port: number;
+    username: string;
+    authType: string;
+    password?: string | null;
+    sshPrivateKey?: string | null;
+  }, timeoutSeconds: number = 10): string {
+    const opts = [
+      `-p ${server.port}`,
+      `-o StrictHostKeyChecking=no`,
+      `-o UserKnownHostsFile=/dev/null`,
+      `-o ConnectTimeout=${timeoutSeconds}`,
+      `-o BatchMode=yes`,
+    ];
+
+    if (server.authType === 'SSH_KEY' && server.sshPrivateKey) {
+      // Create a temporary key file if necessary
+      const keyPath = path.join(os.tmpdir(), `rsync_key_${Date.now()}_${Math.random().toString(36).substring(7)}`);
+      fs.writeFileSync(keyPath, server.sshPrivateKey, { mode: 0o600 });
+      opts.push(`-i "${keyPath}"`);
+    }
+
+    return `ssh ${opts.join(' ')} ${server.username}@${server.host}`;
+  }
+
+  /**
+   * Formats a path into local or remote syntax for rsync
+   */
+  private formatRsyncEndpoint(
+    repo: { path: string },
+    subpath?: string | null,
+    server?: { host: string; username: string; authType: string } | null
+  ): string {
+    let fullPath = subpath ? path.posix.join(repo.path, subpath) : repo.path;
+    // Ensure trailing slash for directory syncing semantics in rsync
+    if (!fullPath.endsWith('/')) {
+      fullPath += '/';
+    }
+
+    if (server && server.authType !== 'LOCAL' && server.host !== 'localhost' && server.host !== '127.0.0.1') {
+      return `${server.username}@${server.host}:${fullPath}`;
+    }
+
+    return fullPath;
+  }
+
+  /**
+   * Executes an rsync job (Manual, Scheduled, or Dry-Run)
+   */
+  async executeJob(
+    jobId: string,
+    runType: 'MANUAL' | 'SCHEDULED' | 'DRY_RUN',
+    triggeredBy: string = 'admin'
+  ): Promise<any> {
+    const job = await prisma.rsyncJob.findUnique({
+      where: { id: jobId },
+      include: {
+        sourceRepo: true,
+        destRepo: true,
+        sourceServer: true,
+        destServer: true,
+      },
+    });
+
+    if (!job) throw new Error(`Rsync job not found: ${jobId}`);
+
+    const sourceEndpoint = this.formatRsyncEndpoint(job.sourceRepo, job.sourceSubpath, job.sourceServer);
+    let destEndpoint = this.formatRsyncEndpoint(job.destRepo, job.destSubpath, job.destServer);
+
+    const now = new Date();
+    const timestampStr = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+
+    // Build rsync arguments array
+    const args: string[] = ['-av', '--stats'];
+
+    if (job.preservePermissions) args.push('-p');
+    if (job.preserveOwner) args.push('-og');
+    if (job.preserveTimes) args.push('-t');
+    if (job.enableCompression) args.push('-z');
+    if (job.deleteExtraneous) args.push('--delete');
+
+    if (runType === 'DRY_RUN') {
+      args.push('-n');
+    }
+
+    if (job.bandwidthLimitKb && job.bandwidthLimitKb > 0) {
+      args.push(`--bwlimit=${job.bandwidthLimitKb}`);
+    }
+
+    if (job.excludePatterns && job.excludePatterns.length > 0) {
+      for (const pattern of job.excludePatterns) {
+        if (pattern.trim()) {
+          args.push(`--exclude=${pattern.trim()}`);
+        }
+      }
+    }
+
+    // Handle Strategies:
+    // 1. HARDLINK_SNAPSHOT:
+    // Target is dest/snapshots/snapshot_${timestampStr}/, and --link-dest=../latest
+    if (job.syncStrategy === 'HARDLINK_SNAPSHOT') {
+      const baseDest = destEndpoint.endsWith('/') ? destEndpoint.slice(0, -1) : destEndpoint;
+      destEndpoint = `${baseDest}/snapshot_${timestampStr}/`;
+      args.push(`--link-dest=${baseDest}/latest`);
+    }
+    // 2. BACKUP_DIR:
+    // Files are mirrored to dest/current/, but deletions/modifications are moved to dest/recycle_bin/${timestampStr}/
+    else if (job.syncStrategy === 'BACKUP_DIR') {
+      const baseDest = destEndpoint.endsWith('/') ? destEndpoint.slice(0, -1) : destEndpoint;
+      destEndpoint = `${baseDest}/current/`;
+      args.push(`--backup`);
+      args.push(`--backup-dir=${baseDest}/recycle_bin/${timestampStr}`);
+    }
+
+    // Configure SSH if remote server is involved
+    const remoteServer = job.sourceServer || job.destServer;
+    let tempKeyFile: string | null = null;
+    if (remoteServer && remoteServer.authType === 'SSH_KEY' && remoteServer.sshPrivateKey) {
+      tempKeyFile = path.join(os.tmpdir(), `rsync_run_${Date.now()}.key`);
+      fs.writeFileSync(tempKeyFile, remoteServer.sshPrivateKey, { mode: 0o600 });
+      args.push(`-e`, `ssh -p ${remoteServer.port} -i "${tempKeyFile}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null`);
+    } else if (remoteServer && remoteServer.authType !== 'LOCAL') {
+      args.push(`-e`, `ssh -p ${remoteServer.port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null`);
+    }
+
+    // Custom arguments
+    if (job.customArgs) {
+      const customParts = job.customArgs.trim().split(/\s+/);
+      args.push(...customParts);
+    }
+
+    // Source and Destination
+    args.push(sourceEndpoint, destEndpoint);
+
+    // Create initial RsyncRun record
+    const run = await prisma.rsyncRun.create({
+      data: {
+        jobId: job.id,
+        runType,
+        status: 'IN_PROGRESS',
+        sourcePath: sourceEndpoint,
+        destinationPath: destEndpoint,
+        startedAt: now,
+      },
+    });
+
+    // Update job status to IN_PROGRESS
+    await prisma.rsyncJob.update({
+      where: { id: job.id },
+      data: {
+        lastRunStatus: 'IN_PROGRESS',
+        lastRunAt: now,
+      },
+    });
+
+    // Audit log
+    await prisma.rsyncActivityLog.create({
+      data: {
+        action: runType === 'DRY_RUN' ? 'DRY_RUN_TRIGGERED' : 'JOB_STARTED',
+        entityId: run.id,
+        entityType: 'RUN',
+        username: triggeredBy,
+        details: { jobId: job.id, jobName: job.name, runType, args: args.join(' ') },
+      },
+    });
+
+    // Execute rsync child process asynchronously
+    return new Promise((resolve, reject) => {
+      const startTime = Date.now();
+      let stdoutBuffer = '';
+      let stderrBuffer = '';
+
+      console.log(`[RSYNC] Executing command: rsync ${args.join(' ')}`);
+
+      const child = spawn('rsync', args, {
+        shell: true,
+      });
+
+      child.stdout.on('data', (chunk) => {
+        stdoutBuffer += chunk.toString();
+      });
+
+      child.stderr.on('data', (chunk) => {
+        stderrBuffer += chunk.toString();
+      });
+
+      child.on('error', async (err) => {
+        console.error(`[RSYNC] Process error on job ${job.name}:`, err);
+        const durationSeconds = (Date.now() - startTime) / 1000;
+
+        if (tempKeyFile && fs.existsSync(tempKeyFile)) {
+          try { fs.unlinkSync(tempKeyFile); } catch (_) {}
+        }
+
+        const failedRun = await prisma.rsyncRun.update({
+          where: { id: run.id },
+          data: {
+            status: 'FAILED',
+            exitCode: 1,
+            durationSeconds,
+            errorMessage: err.message,
+            stderrLog: stderrBuffer + '\n' + err.message,
+            completedAt: new Date(),
+          },
+        });
+
+        await prisma.rsyncJob.update({
+          where: { id: job.id },
+          data: { lastRunStatus: 'FAILED' },
+        });
+
+        // Trigger Instant Failure Alert across all active notification channels
+        dispatchInstantFailureAlert({
+          projectName: `Rsync: ${job.name}`,
+          serverId: job.destServer?.name || 'Local Host',
+          hostname: os.hostname(),
+          backupType: 'rsync_mirror',
+          status: 'FAILED',
+          durationSeconds: Math.round(durationSeconds),
+          backupSizeBytes: 0,
+          errorMessage: `Rsync Process Error: ${err.message}`,
+        }).catch(() => {});
+
+        resolve(failedRun);
+      });
+
+      child.on('close', async (exitCode) => {
+        const durationSeconds = (Date.now() - startTime) / 1000;
+        const isSuccess = exitCode === 0;
+
+        if (tempKeyFile && fs.existsSync(tempKeyFile)) {
+          try { fs.unlinkSync(tempKeyFile); } catch (_) {}
+        }
+
+        // Post-execution hook for HARDLINK_SNAPSHOT: update symlink 'latest' -> new snapshot
+        if (isSuccess && job.syncStrategy === 'HARDLINK_SNAPSHOT') {
+          try {
+            const baseDest = destEndpoint.replace(/\/snapshot_[^/]+\/$/, '');
+            const snapshotFolder = `snapshot_${timestampStr}`;
+            const symlinkCmd = `cd "${baseDest}" && ln -sfn "${snapshotFolder}" latest`;
+            await execAsync(symlinkCmd).catch(() => {});
+          } catch (_) {}
+        }
+
+        // Parse rsync transfer statistics
+        const parsedStats = parseRsyncStats(stdoutBuffer);
+
+        const updatedRun = await prisma.rsyncRun.update({
+          where: { id: run.id },
+          data: {
+            status: isSuccess ? 'SUCCESS' : 'FAILED',
+            exitCode,
+            durationSeconds,
+            stdoutLog: stdoutBuffer,
+            stderrLog: stderrBuffer,
+            errorMessage: isSuccess ? null : (stderrBuffer.trim() || `Rsync exited with code ${exitCode}`),
+            totalFiles: parsedStats.totalFiles,
+            transferredFiles: parsedStats.transferredFiles,
+            deletedFiles: parsedStats.deletedFiles,
+            bytesTransferred: parsedStats.bytesTransferred,
+            totalSizeBytes: parsedStats.totalSizeBytes,
+            speedupRatio: parsedStats.speedupRatio,
+            completedAt: new Date(),
+          },
+        });
+
+        // Update parent Job status
+        await prisma.rsyncJob.update({
+          where: { id: job.id },
+          data: {
+            lastRunStatus: isSuccess ? 'SUCCESS' : 'FAILED',
+            lastRunAt: new Date(),
+          },
+        });
+
+        // Audit log
+        await prisma.rsyncActivityLog.create({
+          data: {
+            action: isSuccess ? 'JOB_COMPLETED' : 'JOB_FAILED',
+            entityId: run.id,
+            entityType: 'RUN',
+            username: triggeredBy,
+            details: {
+              jobId: job.id,
+              jobName: job.name,
+              status: isSuccess ? 'SUCCESS' : 'FAILED',
+              exitCode,
+              durationSeconds,
+              bytesTransferred: parsedStats.bytesTransferred.toString(),
+            },
+          },
+        });
+
+        // If failed, trigger instant alert across notification channels
+        if (!isSuccess) {
+          dispatchInstantFailureAlert({
+            projectName: `Rsync: ${job.name}`,
+            serverId: job.destServer?.name || 'Local Host',
+            hostname: os.hostname(),
+            backupType: 'rsync_mirror',
+            status: 'FAILED',
+            durationSeconds: Math.round(durationSeconds),
+            backupSizeBytes: parsedStats.bytesTransferred,
+            errorMessage: stderrBuffer.trim() || `Rsync mirror failed with exit code ${exitCode}`,
+          }).catch(() => {});
+        }
+
+        // Refresh disk space in background
+        this.probeRepositoryDiskSpace(job.destRepoId).catch(() => {});
+
+        resolve(updatedRun);
+      });
+    });
+  }
+}
+
+export const rsyncService = new RsyncService();

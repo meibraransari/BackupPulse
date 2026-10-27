@@ -57,6 +57,13 @@ services:
       INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-Admin@123456}
     ports:
       - "${PORT:-3000}:3000"
+    volumes:
+      # Physical Disk 1 (Source Data Disk - default /mnt/disk1, read-only for safety)
+      - ${DISK1_PATH:-/mnt/disk1}:/data/disk1:ro
+      # Physical Disk 2 (Target Backup/Mirror Disk - default /mnt/disk2, read-write)
+      - ${DISK2_PATH:-/mnt/disk2}:/data/disk2:rw
+      # Optional host SSH keys directory for remote server rsync operations
+      - ${RSYNC_SSH_DIR:-./ssh_keys}:/root/.ssh:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 15s

@@ -9,6 +9,7 @@ export interface HousekeepingResult {
   deletedBackupReports: number;
   deletedNotificationLogs: number;
   deletedUserLoginLogs: number;
+  deletedRsyncRuns: number;
 }
 
 /**
@@ -27,6 +28,7 @@ export async function runDatabaseHousekeeping(daysOverride?: number): Promise<Ho
       deletedBackupReports: 0,
       deletedNotificationLogs: 0,
       deletedUserLoginLogs: 0,
+      deletedRsyncRuns: 0,
     };
   }
 
@@ -64,7 +66,16 @@ export async function runDatabaseHousekeeping(daysOverride?: number): Promise<Ho
       },
     });
 
-    const msg = `[HOUSEKEEPING] Database cleanup successful: Purged ${deletedReports.count} backup report(s), ${deletedLogs.count} notification log(s), and ${deletedLoginLogs.count} user login log(s) older than ${retentionDays} days.`;
+    // 4. Purge ancient rsync run logs
+    const deletedRsync = await prisma.rsyncRun.deleteMany({
+      where: {
+        startedAt: {
+          lt: cutoffDate,
+        },
+      },
+    });
+
+    const msg = `[HOUSEKEEPING] Database cleanup successful: Purged ${deletedReports.count} backup report(s), ${deletedLogs.count} notification log(s), ${deletedLoginLogs.count} login log(s), and ${deletedRsync.count} rsync run(s) older than ${retentionDays} days.`;
     console.log(msg);
 
     return {
@@ -75,6 +86,7 @@ export async function runDatabaseHousekeeping(daysOverride?: number): Promise<Ho
       deletedBackupReports: deletedReports.count,
       deletedNotificationLogs: deletedLogs.count,
       deletedUserLoginLogs: deletedLoginLogs.count,
+      deletedRsyncRuns: deletedRsync.count,
     };
   } catch (error: any) {
     console.error('[HOUSEKEEPING] Database cleanup failed with error:', error.message);
@@ -86,6 +98,7 @@ export async function runDatabaseHousekeeping(daysOverride?: number): Promise<Ho
       deletedBackupReports: 0,
       deletedNotificationLogs: 0,
       deletedUserLoginLogs: 0,
+      deletedRsyncRuns: 0,
     };
   }
 }

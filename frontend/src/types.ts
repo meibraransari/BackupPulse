@@ -287,7 +287,7 @@ export interface AuditLogsResponse {
   };
 }
 
-export type NavigationTab = 'dashboard' | 'telemetry' | 'drills' | 'fleet' | 'users' | 'settings' | 'audit';
+export type NavigationTab = 'dashboard' | 'telemetry' | 'rsync' | 'drills' | 'fleet' | 'users' | 'settings' | 'audit';
 
 export interface HourlyDistributionItem {
   hour: number;
@@ -318,6 +318,144 @@ export interface HourlyDistributionResponse {
   congestionLevel: 'OPTIMAL' | 'MODERATE' | 'HIGH' | 'CRITICAL';
   loadAdvice: string;
   distribution: HourlyDistributionItem[];
+}
+
+// ============================================================================
+// Disk Sync & Rsync Mirroring Frontend Types
+// ============================================================================
+
+export interface RsyncServer {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  authType: 'SSH_KEY' | 'PASSWORD' | 'LOCAL';
+  password?: string | null;
+  sshPrivateKey?: string | null;
+  status: 'ONLINE' | 'OFFLINE' | 'UNTESTED';
+  lastCheckedAt?: string | null;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  _count?: {
+    repositories: number;
+    jobsAsSource: number;
+    jobsAsDest: number;
+  };
+}
+
+export interface RsyncRepository {
+  id: string;
+  name: string;
+  type: 'LOCAL_DISK' | 'REMOTE_SSH';
+  serverId?: string | null;
+  path: string;
+  totalBytes?: string | number | null;
+  usedBytes?: string | number | null;
+  availableBytes?: string | number | null;
+  totalHuman?: string;
+  usedHuman?: string;
+  availableHuman?: string;
+  percentUsed?: number;
+  isMounted: boolean;
+  description?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  server?: {
+    id: string;
+    name: string;
+    host: string;
+    authType: string;
+  } | null;
+  _count?: {
+    sourceJobs: number;
+    destJobs: number;
+  };
+}
+
+export interface RsyncJob {
+  id: string;
+  name: string;
+  sourceRepoId: string;
+  sourceSubpath?: string | null;
+  destRepoId: string;
+  destSubpath?: string | null;
+  sourceServerId?: string | null;
+  destServerId?: string | null;
+  syncStrategy: 'EXACT_MIRROR' | 'HARDLINK_SNAPSHOT' | 'BACKUP_DIR';
+  cronSchedule?: string | null;
+  bandwidthLimitKb?: number | null;
+  excludePatterns: string[];
+  customArgs?: string | null;
+  preservePermissions: boolean;
+  preserveOwner: boolean;
+  preserveTimes: boolean;
+  enableCompression: boolean;
+  deleteExtraneous: boolean;
+  isActive: boolean;
+  lastRunStatus?: 'SUCCESS' | 'FAILED' | 'IN_PROGRESS' | 'DRY_RUN' | null;
+  lastRunAt?: string | null;
+  nextRunAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  sourceRepo?: { id: string; name: string; path: string; type: string };
+  destRepo?: { id: string; name: string; path: string; type: string };
+  sourceServer?: { id: string; name: string; host: string } | null;
+  destServer?: { id: string; name: string; host: string } | null;
+  _count?: { runs: number };
+}
+
+export interface RsyncRun {
+  id: string;
+  jobId: string;
+  runType: 'MANUAL' | 'SCHEDULED' | 'DRY_RUN';
+  status: 'SUCCESS' | 'FAILED' | 'IN_PROGRESS' | 'CANCELLED';
+  sourcePath: string;
+  destinationPath: string;
+  totalFiles: number;
+  transferredFiles: number;
+  deletedFiles: number;
+  bytesTransferred: string | number;
+  totalSizeBytes: string | number;
+  bytesTransferredHuman?: string;
+  totalSizeHuman?: string;
+  speedupRatio?: number | null;
+  durationSeconds: number;
+  exitCode?: number | null;
+  stdoutLog?: string | null;
+  stderrLog?: string | null;
+  errorMessage?: string | null;
+  startedAt: string;
+  completedAt?: string | null;
+  job?: {
+    id: string;
+    name: string;
+    syncStrategy: string;
+  };
+}
+
+export interface RsyncActivityLog {
+  id: string;
+  action: string;
+  entityId?: string | null;
+  entityType: string;
+  username: string;
+  details?: Record<string, any> | null;
+  createdAt: string;
+}
+
+export interface RsyncDashboardStats {
+  totalJobs: number;
+  activeJobs: number;
+  totalRuns: number;
+  successfulRuns: number;
+  failedRuns: number;
+  successRate: number;
+  totalSyncedBytes: string | number;
+  totalSyncedBytesHuman: string;
+  repositories: RsyncRepository[];
+  recentRuns: RsyncRun[];
 }
 
 

@@ -35,7 +35,7 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 
 # Install openssl for Prisma and curl for Docker healthchecks
-RUN apk add --no-cache openssl curl bash
+RUN apk add --no-cache openssl curl bash rsync openssh-client
 
 ENV NODE_ENV=production
 ENV PORT=3000

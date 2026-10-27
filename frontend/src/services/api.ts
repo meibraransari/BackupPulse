@@ -19,6 +19,12 @@ import {
   AuditQueryFilters,
   AuditLogsResponse,
   HourlyDistributionResponse,
+  RsyncServer,
+  RsyncRepository,
+  RsyncJob,
+  RsyncRun,
+  RsyncActivityLog,
+  RsyncDashboardStats,
 } from '../types';
 
 const TOKEN_KEY = 'backup_monitor_auth_token';
@@ -518,6 +524,181 @@ export const api = {
     a.click();
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
+  },
+
+  // ============================================================================
+  // Rsync & Disk Mirror API
+  // ============================================================================
+  async getRsyncDashboard(): Promise<RsyncDashboardStats> {
+    return request<RsyncDashboardStats>('/api/v1/rsync/dashboard');
+  },
+
+  async getRsyncServers(): Promise<RsyncServer[]> {
+    return request<RsyncServer[]>('/api/v1/rsync/servers');
+  },
+
+  async createRsyncServer(data: Partial<RsyncServer>): Promise<RsyncServer> {
+    return request<RsyncServer>('/api/v1/rsync/servers', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateRsyncServer(id: string, data: Partial<RsyncServer>): Promise<RsyncServer> {
+    return request<RsyncServer>(`/api/v1/rsync/servers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteRsyncServer(id: string): Promise<void> {
+    return request<void>(`/api/v1/rsync/servers/${id}`, { method: 'DELETE' });
+  },
+
+  async bulkDeleteRsyncServers(ids: string[]): Promise<void> {
+    return request<void>('/api/v1/rsync/servers/bulk-delete', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    });
+  },
+
+  async testRsyncServer(id: string): Promise<{ status: 'ONLINE' | 'OFFLINE'; latencyMs: number; message: string }> {
+    return request<{ status: 'ONLINE' | 'OFFLINE'; latencyMs: number; message: string }>(
+      `/api/v1/rsync/servers/${id}/test`,
+      { method: 'POST' }
+    );
+  },
+
+  async getRsyncRepositories(): Promise<RsyncRepository[]> {
+    return request<RsyncRepository[]>('/api/v1/rsync/repositories');
+  },
+
+  async createRsyncRepository(data: Partial<RsyncRepository>): Promise<RsyncRepository> {
+    return request<RsyncRepository>('/api/v1/rsync/repositories', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateRsyncRepository(id: string, data: Partial<RsyncRepository>): Promise<RsyncRepository> {
+    return request<RsyncRepository>(`/api/v1/rsync/repositories/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteRsyncRepository(id: string): Promise<void> {
+    return request<void>(`/api/v1/rsync/repositories/${id}`, { method: 'DELETE' });
+  },
+
+  async bulkDeleteRsyncRepositories(ids: string[]): Promise<void> {
+    return request<void>('/api/v1/rsync/repositories/bulk-delete', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    });
+  },
+
+  async refreshRsyncRepoSpace(id: string): Promise<RsyncRepository> {
+    return request<RsyncRepository>(`/api/v1/rsync/repositories/${id}/refresh-space`, { method: 'POST' });
+  },
+
+  async getRsyncJobs(params: {
+    search?: string;
+    status?: string;
+    strategy?: string;
+    page?: number;
+    limit?: number;
+  } = {}): Promise<{ data: RsyncJob[]; pagination: { page: number; limit: number; total: number; totalPages: number } }> {
+    const q = new URLSearchParams();
+    if (params.search) q.append('search', params.search);
+    if (params.status && params.status !== 'ALL') q.append('status', params.status);
+    if (params.strategy && params.strategy !== 'ALL') q.append('strategy', params.strategy);
+    if (params.page) q.append('page', String(params.page));
+    if (params.limit) q.append('limit', String(params.limit));
+    return request<{ data: RsyncJob[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>(
+      `/api/v1/rsync/jobs?${q.toString()}`
+    );
+  },
+
+  async createRsyncJob(data: Partial<RsyncJob>): Promise<RsyncJob> {
+    return request<RsyncJob>('/api/v1/rsync/jobs', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateRsyncJob(id: string, data: Partial<RsyncJob>): Promise<RsyncJob> {
+    return request<RsyncJob>(`/api/v1/rsync/jobs/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteRsyncJob(id: string): Promise<void> {
+    return request<void>(`/api/v1/rsync/jobs/${id}`, { method: 'DELETE' });
+  },
+
+  async bulkDeleteRsyncJobs(ids: string[]): Promise<void> {
+    return request<void>('/api/v1/rsync/jobs/bulk-delete', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    });
+  },
+
+  async runRsyncJob(id: string): Promise<RsyncRun> {
+    return request<RsyncRun>(`/api/v1/rsync/jobs/${id}/run`, { method: 'POST' });
+  },
+
+  async dryRunRsyncJob(id: string): Promise<RsyncRun> {
+    return request<RsyncRun>(`/api/v1/rsync/jobs/${id}/dry-run`, { method: 'POST' });
+  },
+
+  async getRsyncRuns(params: {
+    jobId?: string;
+    status?: string;
+    runType?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  } = {}): Promise<{ data: RsyncRun[]; pagination: { page: number; limit: number; total: number; totalPages: number } }> {
+    const q = new URLSearchParams();
+    if (params.jobId) q.append('jobId', params.jobId);
+    if (params.status && params.status !== 'ALL') q.append('status', params.status);
+    if (params.runType && params.runType !== 'ALL') q.append('runType', params.runType);
+    if (params.search) q.append('search', params.search);
+    if (params.page) q.append('page', String(params.page));
+    if (params.limit) q.append('limit', String(params.limit));
+    return request<{ data: RsyncRun[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>(
+      `/api/v1/rsync/runs?${q.toString()}`
+    );
+  },
+
+  async getRsyncRunDetail(id: string): Promise<RsyncRun> {
+    return request<RsyncRun>(`/api/v1/rsync/runs/${id}`);
+  },
+
+  async deleteRsyncRun(id: string): Promise<void> {
+    return request<void>(`/api/v1/rsync/runs/${id}`, { method: 'DELETE' });
+  },
+
+  async bulkDeleteRsyncRuns(ids: string[]): Promise<void> {
+    return request<void>('/api/v1/rsync/runs/bulk-delete', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    });
+  },
+
+  async getRsyncActivityLogs(params: { page?: number; limit?: number } = {}): Promise<{
+    data: RsyncActivityLog[];
+    pagination: { page: number; limit: number; total: number; totalPages: number };
+  }> {
+    const q = new URLSearchParams();
+    if (params.page) q.append('page', String(params.page));
+    if (params.limit) q.append('limit', String(params.limit));
+    return request<{
+      data: RsyncActivityLog[];
+      pagination: { page: number; limit: number; total: number; totalPages: number };
+    }>(`/api/v1/rsync/activity-logs?${q.toString()}`);
   },
 };
 

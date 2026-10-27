@@ -34,6 +34,7 @@ A high-performance Node.js & React telemetry platform designed to monitor automa
        │
        ▼
 [BackupPulse Dashboard] (React + Vite + Tailwind CSS)
+       ├──► 🪞 Disk Sync & Rsync Mirror Engine (1:1 Disk Mirror, Hardlink Snapshots, Remote SSH & Audit Logs)
        ├──► 🧭 Enterprise Dark Sidebar (Core Workspaces, DevOps Operations, Profile, Timezone)
        ├──► 🏠 1-Click Home Navigation (Logo & Home button reset all filters & refresh telemetry)
        ├──► ⚙️ Zero-Restart Dynamic Settings Engine (PostgreSQL 'system_settings' table, hot-reload, single-card per service, multi-line category filters)
@@ -95,6 +96,85 @@ docker compose logs -f app
   * Default Password: `Admin@123456`
 * **Swagger OpenAPI Docs**: [http://localhost:3000/api/docs](http://localhost:3000/api/docs) (Toggle dynamically in **System Settings** for production security hardening)
 * **Health Check**: [http://localhost:3000/health](http://localhost:3000/health)
+
+---
+
+## 🪞 Disk Sync & Rsync Mirroring Engine
+
+BackupPulse includes a dedicated, container-native **Disk Sync & Rsync Mirroring Engine** that enables scheduled 1:1 disk mirroring, incremental hardlink snapshots, remote SSH synchronization, physical disk mounts, and audit logging.
+
+### Supported Synchronization Strategies
+
+| Strategy | Engine Flags | Behavior & Benefits |
+| :--- | :--- | :--- |
+| **Exact 1:1 Mirror** | `rsync -av --delete --stats` | Disk 2 is an exact real-time replica of Disk 1. Deletions on Disk 1 are mirrored to Disk 2. Perfect for warm standby and hardware failover. |
+| **Time-Machine Snapshots** | `rsync -av --delete --link-dest=../latest --stats` | Creates dated point-in-time snapshot folders (`/disk2/snapshot_YYYY-MM-DD_HH-mm/`). Unchanged files share hardlink inodes taking **0 extra bytes** on disk, allowing infinite version browsing! |
+| **Mirror + Safe Recycle Bin** | `rsync -av --delete --backup --backup-dir=...` | Disk 2 contains the current working mirror, but any files modified or deleted on Disk 1 are preserved in a dated recycle bin archive (`/disk2/recycle_bin/DATE/`). |
+
+### Physical Disk Mounting via Docker Compose
+
+To sync physical host disks into the container, define `DISK1_PATH` and `DISK2_PATH` in your `.env` file or mount them directly in `docker-compose.yml`:
+
+```yaml
+services:
+  app:
+    volumes:
+      # Physical Source Disk (mounted read-only for safety)
+      - ${DISK1_PATH:-/mnt/disk1}:/data/disk1:ro
+      # Physical Target Mirror Disk (mounted read-write)
+      - ${DISK2_PATH:-/mnt/disk2}:/data/disk2:rw
+      # SSH keys directory for cross-server remote sync
+      - ${RSYNC_SSH_DIR:-./ssh_keys}:/root/.ssh:ro
+```
+
+### Module Features & Sub-Views
+
+1. **Dashboard & KPIs**:
+   - Total Rsync jobs, cumulative transferred data volume, overall success rate, and physical disk count.
+   - Real-time disk capacity utilization progress bars probed directly via `df -B1`.
+   - Live feed of the latest 5 execution runs.
+2. **Jobs Management**:
+   - Define source repository/subpath and destination repository/subpath.
+   - Choose sync strategy, custom exclude patterns (`.git`, `node_modules`, `*.tmp`), and bandwidth limits (`--bwlimit`).
+   - One-click **Run Now** or **Dry Run** simulation (`-n`) to preview changes without disk writes.
+   - Checkbox multi-select with **Bulk Delete** and search filtering.
+3. **Remote SSH Servers**:
+   - Manage remote hosts with port, username, password, or SSH private key authentication.
+   - 1-click **Test Connection** with live latency ping (ms).
+   - Checkbox multi-select with **Bulk Delete**.
+4. **Disks & Repositories**:
+   - Register local mount paths or remote SSH endpoints.
+   - Real-time free/used capacity display and 1-click **Refresh Space** action.
+5. **Execution History & Terminal Logs**:
+   - Paginated log table with limit selector (**25 / 50 / 100** per page) and page jumping.
+   - Horizontal scrolling (`overflow-x-auto`) for wide columns.
+   - Slide-over terminal viewer to inspect complete `stdout`, `stderr`, transferred files, and exit codes.
+   - Checkbox multi-select with **Bulk Delete**.
+6. **Activity & Audit Trail**:
+   - Full governance log tracking job creation, execution, and deletion.
+
+### Rsync REST API Endpoints
+
+```
+GET    /api/v1/rsync/dashboard             - KPI metrics and disk space summary
+GET    /api/v1/rsync/jobs                  - List sync jobs (paginated, search, filter)
+POST   /api/v1/rsync/jobs                  - Create new sync job
+PUT    /api/v1/rsync/jobs/:id              - Update sync job
+DELETE /api/v1/rsync/jobs/:id              - Delete sync job
+POST   /api/v1/rsync/jobs/bulk-delete      - Bulk delete jobs
+POST   /api/v1/rsync/jobs/:id/run          - Execute job immediately
+POST   /api/v1/rsync/jobs/:id/dry-run      - Simulate job execution (dry-run)
+GET    /api/v1/rsync/servers               - List remote SSH servers
+POST   /api/v1/rsync/servers               - Register remote server credentials
+POST   /api/v1/rsync/servers/:id/test      - Test SSH connection
+GET    /api/v1/rsync/repositories          - List storage repositories / disks
+POST   /api/v1/rsync/repositories          - Register storage path
+POST   /api/v1/rsync/repositories/:id/refresh-space - Probe df -B1 disk capacity
+GET    /api/v1/rsync/runs                  - Execution history (limit 25/50/100)
+GET    /api/v1/rsync/runs/:id              - Full run stdout/stderr terminal log
+POST   /api/v1/rsync/runs/bulk-delete      - Bulk delete execution logs
+GET    /api/v1/rsync/activity-logs         - Rsync operations audit trail
+```
 
 ---
 

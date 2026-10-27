@@ -173,3 +173,137 @@ model AdminAuditLog {
   @@map("admin_audit_logs")
 }
 
+// ============================================================================
+// Disk Sync & Rsync Mirroring Models
+// ============================================================================
+
+model RsyncServer {
+  id             String            @id @default(uuid())
+  name           String            // e.g. "Primary Storage Node", "Offsite DR Server"
+  host           String            // IP address or hostname
+  port           Int               @default(22)
+  username       String            @default("root")
+  authType       String            @default("SSH_KEY") @map("auth_type") // SSH_KEY, PASSWORD, LOCAL
+  password       String?           // Masked/Encrypted
+  sshPrivateKey  String?           @map("ssh_private_key") @db.Text
+  status         String            @default("UNTESTED") // ONLINE, OFFLINE, UNTESTED
+  lastCheckedAt  DateTime?         @map("last_checked_at")
+  notes          String?
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+
+  repositories   RsyncRepository[]
+  jobsAsSource   RsyncJob[]        @relation("JobSourceServer")
+  jobsAsDest     RsyncJob[]        @relation("JobDestServer")
+
+  @@index([status])
+  @@index([createdAt(sort: Desc)])
+  @@map("rsync_servers")
+}
+
+model RsyncRepository {
+  id             String        @id @default(uuid())
+  name           String        // e.g. "Local NVMe Source", "Secondary SATA Mirror"
+  type           String        @default("LOCAL_DISK") // LOCAL_DISK, REMOTE_SSH
+  serverId       String?       @map("server_id")
+  path           String        // e.g. "/data/disk1" or "/mnt/disk2"
+  totalBytes     BigInt?       @map("total_bytes")
+  usedBytes      BigInt?       @map("used_bytes")
+  availableBytes BigInt?       @map("available_bytes")
+  isMounted      Boolean       @default(true) @map("is_mounted")
+  description    String?
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  server         RsyncServer?  @relation(fields: [serverId], references: [id], onDelete: SetNull)
+  sourceJobs     RsyncJob[]    @relation("JobSourceRepo")
+  destJobs       RsyncJob[]    @relation("JobDestRepo")
+
+  @@index([type])
+  @@index([serverId])
+  @@index([createdAt(sort: Desc)])
+  @@map("rsync_repositories")
+}
+
+model RsyncJob {
+  id                  String            @id @default(uuid())
+  name                String            // e.g. "Daily NVMe Disk Mirror to SATA Pool"
+  sourceRepoId        String            @map("source_repo_id")
+  sourceSubpath       String?           @map("source_subpath")
+  destRepoId          String            @map("dest_repo_id")
+  destSubpath         String?           @map("dest_subpath")
+  sourceServerId      String?           @map("source_server_id")
+  destServerId        String?           @map("dest_server_id")
+  syncStrategy        String            @default("EXACT_MIRROR") @map("sync_strategy") // EXACT_MIRROR, HARDLINK_SNAPSHOT, BACKUP_DIR
+  cronSchedule        String?           @map("cron_schedule")    // e.g. "0 2 * * *"
+  bandwidthLimitKb    Int?              @map("bandwidth_limit_kb")
+  excludePatterns     String[]          @default([]) @map("exclude_patterns")
+  customArgs          String?           @map("custom_args")
+  preservePermissions Boolean           @default(true) @map("preserve_permissions")
+  preserveOwner       Boolean           @default(true) @map("preserve_owner")
+  preserveTimes       Boolean           @default(true) @map("preserve_times")
+  enableCompression   Boolean           @default(false) @map("enable_compression")
+  deleteExtraneous    Boolean           @default(true) @map("delete_extraneous")
+  isActive            Boolean           @default(true) @map("is_active")
+  lastRunStatus       String?           @map("last_run_status")
+  lastRunAt           DateTime?         @map("last_run_at")
+  nextRunAt           DateTime?         @map("next_run_at")
+  createdAt           DateTime          @default(now()) @map("created_at")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
+
+  sourceRepo          RsyncRepository   @relation("JobSourceRepo", fields: [sourceRepoId], references: [id], onDelete: Restrict)
+  destRepo            RsyncRepository   @relation("JobDestRepo", fields: [destRepoId], references: [id], onDelete: Restrict)
+  sourceServer        RsyncServer?      @relation("JobSourceServer", fields: [sourceServerId], references: [id], onDelete: SetNull)
+  destServer          RsyncServer?      @relation("JobDestServer", fields: [destServerId], references: [id], onDelete: SetNull)
+  runs                RsyncRun[]
+
+  @@index([isActive])
+  @@index([lastRunStatus])
+  @@index([createdAt(sort: Desc)])
+  @@map("rsync_jobs")
+}
+
+model RsyncRun {
+  id               String       @id @default(uuid())
+  jobId            String       @map("job_id")
+  runType          String       @default("MANUAL") @map("run_type") // MANUAL, SCHEDULED, DRY_RUN
+  status           String       @default("IN_PROGRESS") // SUCCESS, FAILED, IN_PROGRESS, CANCELLED
+  sourcePath       String       @map("source_path")
+  destinationPath  String       @map("destination_path")
+  totalFiles       Int          @default(0) @map("total_files")
+  transferredFiles Int          @default(0) @map("transferred_files")
+  deletedFiles     Int          @default(0) @map("deleted_files")
+  bytesTransferred BigInt       @default(0) @map("bytes_transferred")
+  totalSizeBytes   BigInt       @default(0) @map("total_size_bytes")
+  speedupRatio     Float?       @map("speedup_ratio")
+  durationSeconds  Float        @default(0) @map("duration_seconds")
+  exitCode         Int?         @map("exit_code")
+  stdoutLog        String?      @map("stdout_log") @db.Text
+  stderrLog        String?      @map("stderr_log") @db.Text
+  errorMessage     String?      @map("error_message")
+  startedAt        DateTime     @default(now()) @map("started_at")
+  completedAt      DateTime?    @map("completed_at")
+
+  job              RsyncJob     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId, startedAt(sort: Desc)])
+  @@index([status, startedAt(sort: Desc)])
+  @@index([startedAt(sort: Desc)])
+  @@map("rsync_runs")
+}
+
+model RsyncActivityLog {
+  id         String   @id @default(uuid())
+  action     String   // JOB_CREATED, JOB_RUN, JOB_DELETED, SERVER_TESTED, DRY_RUN, REPO_CREATED
+  entityId   String?  @map("entity_id")
+  entityType String   @map("entity_type") // JOB, SERVER, REPOSITORY, RUN
+  username   String
+  details    Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([action, createdAt(sort: Desc)])
+  @@index([entityType, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@map("rsync_activity_logs")
+}
+
