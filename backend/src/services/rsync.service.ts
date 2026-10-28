@@ -130,35 +130,32 @@ export class RsyncService {
 
     try {
       if (repo.type === 'LOCAL_DISK' || !repo.server) {
-        // Local execution: run df -B1
+        // Local execution: run df -P -B1
         const cleanPath = path.resolve(repo.path);
-        const { stdout } = await execAsync(`df -B1 "${cleanPath}"`).catch(() => {
-          // If path doesn't exist yet, check its parent or root
-          return execAsync(`df -B1 .`);
-        });
-
+        const { stdout } = await execAsync(`df -P -B1 "${cleanPath}" 2>/dev/null || df -P -B1 .`);
         const lines = stdout.trim().split('\n');
-        if (lines.length >= 2) {
-          const parts = lines[lines.length - 1].split(/\s+/);
-          // Filesystem 1B-blocks Used Available Use% Mounted on
-          if (parts.length >= 4) {
+        for (let i = lines.length - 1; i >= 0; i--) {
+          const parts = lines[i].trim().split(/\s+/);
+          if (parts.length >= 5 && /^\d+$/.test(parts[1]) && /^\d+$/.test(parts[2])) {
             total = BigInt(parts[1] || 0);
             used = BigInt(parts[2] || 0);
             available = BigInt(parts[3] || 0);
+            break;
           }
         }
       } else {
         // Remote execution over SSH
         const sshInfo = this.buildSshCommand(repo.server);
         try {
-          const { stdout } = await execAsync(`${sshInfo.cmd} "df -B1 '${repo.path}' || df -B1 /"`, { env: sshInfo.env });
+          const { stdout } = await execAsync(`${sshInfo.cmd} "df -P -B1 '${repo.path}' 2>/dev/null || df -P -B1 /"`, { env: sshInfo.env });
           const lines = stdout.trim().split('\n');
-          if (lines.length >= 2) {
-            const parts = lines[lines.length - 1].split(/\s+/);
-            if (parts.length >= 4) {
+          for (let i = lines.length - 1; i >= 0; i--) {
+            const parts = lines[i].trim().split(/\s+/);
+            if (parts.length >= 5 && /^\d+$/.test(parts[1]) && /^\d+$/.test(parts[2])) {
               total = BigInt(parts[1] || 0);
               used = BigInt(parts[2] || 0);
               available = BigInt(parts[3] || 0);
+              break;
             }
           }
         } finally {
@@ -602,8 +599,18 @@ export class RsyncService {
 
     // Build common rsync arguments array
     const baseArgs: string[] = ['-av', '--stats'];
+
+    // If destination is remote, or user is not root, or preserveOwner is false:
+    // Drop foreign ownership and group chown to prevent EPERM errors
+    if (!job.preserveOwner || (destServer && destServer.username !== 'root')) {
+      baseArgs.push('--no-owner', '--no-group');
+    }
+    // Omit directory modification timestamps when writing to remote destination to prevent EPERM on destination folder
+    if (destServer && destServer.authType !== 'LOCAL') {
+      baseArgs.push('--omit-dir-times');
+    }
+
     if (job.preservePermissions) baseArgs.push('-p');
-    if (job.preserveOwner) baseArgs.push('-og');
     if (job.preserveTimes) baseArgs.push('-t');
     if (job.enableCompression) baseArgs.push('-z');
     if (job.deleteExtraneous) baseArgs.push('--delete');
@@ -1068,9 +1075,27 @@ export class RsyncService {
         pushStrategyArgs.push(`--backup`, `--backup-dir=${baseDest}/recycle_bin/${timestampStr}`);
       }
 
+      // Pre-flight check on destination server directory permissions
+      const sshDestProbe = this.buildSshCommand(destServer);
+      try {
+        const testScript = `mkdir -p '${targetDest}' 2>/dev/null; [ -w '${targetDest}' ] && echo WRITABLE || echo NOT_WRITABLE`;
+        const { stdout: permCheck } = await execAsync(`${sshDestProbe.cmd} "${testScript}"`, { env: sshDestProbe.env }).catch(() => ({ stdout: '' }));
+        if (permCheck.includes('NOT_WRITABLE')) {
+          stdoutBuffer += `\n[BACKUPPULSE PRE-FLIGHT WARNING] Remote user "${destServer.username}" does not have write permissions on "${targetDest}" on ${destServer.host}.\n` +
+            `[FIX COMMAND] Run on ${destServer.host}: sudo chown -R ${destServer.username}:${destServer.username} ${destRaw} || sudo chmod 777 ${destRaw}\n\n`;
+        }
+      } catch (_) {} finally {
+        if (sshDestProbe.tempKeyFile && fs.existsSync(sshDestProbe.tempKeyFile)) {
+          try { fs.unlinkSync(sshDestProbe.tempKeyFile); } catch (_) {}
+        }
+      }
+
       const pushArgs = [
         ...baseArgs,
         ...pushStrategyArgs,
+        '--omit-dir-times',
+        '--no-owner',
+        '--no-group',
         ...pushSsh.flag,
         `${transitDir}/`,
         `${destServer.username}@${destServer.host}:${targetDest}`,
@@ -1106,6 +1131,17 @@ export class RsyncService {
         } catch (_) {}
       }
 
+      let friendlyErrorMessage: string | null = null;
+      if (!isSuccess) {
+        if (pushRes.stderr.includes('Permission denied (13)') || pushRes.stderr.includes('mkstemp')) {
+          friendlyErrorMessage = `Destination Permission Denied (13): User "${destServer.username}" does not have write permissions on "${destRaw}" on ${destServer.host}. Please run on ${destServer.host}: sudo chown -R ${destServer.username}:${destServer.username} ${destRaw}`;
+        } else if (pushRes.stderr.includes('failed to set times') && pushRes.stderr.includes('Operation not permitted')) {
+          friendlyErrorMessage = `Destination Permission Warning (1): User "${destServer.username}" lacks permission to set directory timestamps on "${destRaw}". Omitting directory times (--omit-dir-times).`;
+        } else {
+          friendlyErrorMessage = pushRes.stderr.trim() || `Phase 2 failed with exit code ${pushRes.exitCode}`;
+        }
+      }
+
       const parsedStats = parseRsyncStats(pushRes.stdout || pullRes.stdout);
 
       const updatedRun = await prisma.rsyncRun.update({
@@ -1116,7 +1152,7 @@ export class RsyncService {
           durationSeconds,
           stdoutLog: stdoutBuffer,
           stderrLog: stderrBuffer,
-          errorMessage: isSuccess ? null : (pushRes.stderr.trim() || `Phase 2 failed with exit code ${pushRes.exitCode}`),
+          errorMessage: friendlyErrorMessage,
           totalFiles: parsedStats.totalFiles,
           transferredFiles: parsedStats.transferredFiles,
           deletedFiles: parsedStats.deletedFiles,
