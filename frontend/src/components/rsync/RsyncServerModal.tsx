@@ -273,6 +273,33 @@ export const RsyncServerModal: React.FC<RsyncServerModalProps> = ({
                 </span>
               </div>
 
+              {/* Realtime Telemetry Metrics Chips */}
+              {testResult.metrics && (testResult.metrics.cpuPercent !== null || testResult.metrics.memoryPercent !== null || testResult.metrics.diskPercent !== null) && (
+                <div className="px-4 py-2.5 bg-slate-950/90 border-b border-slate-800 flex items-center space-x-4 sm:space-x-6 text-xs">
+                  <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Telemetry:</span>
+                  <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-1.5 font-mono text-[11px]">
+                      <span className="text-slate-400">Disk:</span>
+                      <span className={`font-semibold ${testResult.metrics.diskPercent !== null && testResult.metrics.diskPercent >= 90 ? 'text-rose-400' : testResult.metrics.diskPercent !== null && testResult.metrics.diskPercent >= 70 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                        {testResult.metrics.diskPercent !== null ? `${testResult.metrics.diskPercent}%` : '--'}
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-1.5 font-mono text-[11px]">
+                      <span className="text-slate-400">Memory:</span>
+                      <span className={`font-semibold ${testResult.metrics.memoryPercent !== null && testResult.metrics.memoryPercent >= 90 ? 'text-rose-400' : testResult.metrics.memoryPercent !== null && testResult.metrics.memoryPercent >= 70 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                        {testResult.metrics.memoryPercent !== null ? `${testResult.metrics.memoryPercent}%` : '--'}
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-1.5 font-mono text-[11px]">
+                      <span className="text-slate-400">CPU:</span>
+                      <span className={`font-semibold ${testResult.metrics.cpuPercent !== null && testResult.metrics.cpuPercent >= 90 ? 'text-rose-400' : testResult.metrics.cpuPercent !== null && testResult.metrics.cpuPercent >= 70 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                        {testResult.metrics.cpuPercent !== null ? `${testResult.metrics.cpuPercent}%` : '--'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Terminal Logs Output */}
               {showLogs && (
                 <div className="p-3 max-h-52 overflow-y-auto bg-slate-950 font-mono text-[11px] leading-relaxed select-text space-y-0.5">

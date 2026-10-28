@@ -330,6 +330,11 @@ export interface SshTestResult {
   message: string;
   logs: string;
   logLevel: 'info' | 'debug';
+  metrics?: {
+    cpuPercent: number | null;
+    memoryPercent: number | null;
+    diskPercent: number | null;
+  };
 }
 
 export interface RsyncServer {
@@ -343,6 +348,9 @@ export interface RsyncServer {
   sshPrivateKey?: string | null;
   status: 'ONLINE' | 'OFFLINE' | 'UNTESTED';
   lastCheckedAt?: string | null;
+  cpuPercent?: number | null;
+  memoryPercent?: number | null;
+  diskPercent?: number | null;
   notes?: string | null;
   createdAt: string;
   updatedAt: string;

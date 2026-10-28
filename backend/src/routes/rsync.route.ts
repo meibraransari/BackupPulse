@@ -397,6 +397,23 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
       }
 
       const result = await rsyncService.testConnectionCredentials(body);
+
+      // If serverId was provided and test succeeded, persist status and fresh telemetry metrics
+      if (body.serverId && result.status === 'ONLINE' && result.metrics) {
+        await prisma.rsyncServer
+          .update({
+            where: { id: body.serverId },
+            data: {
+              status: result.status,
+              lastCheckedAt: new Date(),
+              cpuPercent: result.metrics.cpuPercent !== null ? result.metrics.cpuPercent : undefined,
+              memoryPercent: result.metrics.memoryPercent !== null ? result.metrics.memoryPercent : undefined,
+              diskPercent: result.metrics.diskPercent !== null ? result.metrics.diskPercent : undefined,
+            },
+          })
+          .catch(() => {});
+      }
+
       return reply.send(result);
     }
   );

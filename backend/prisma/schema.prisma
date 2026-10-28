@@ -188,6 +188,9 @@ model RsyncServer {
   sshPrivateKey  String?           @map("ssh_private_key") @db.Text
   status         String            @default("UNTESTED") // ONLINE, OFFLINE, UNTESTED
   lastCheckedAt  DateTime?         @map("last_checked_at")
+  cpuPercent     Float?            @map("cpu_percent")
+  memoryPercent  Float?            @map("memory_percent")
+  diskPercent    Float?            @map("disk_percent")
   notes          String?
   createdAt      DateTime          @default(now()) @map("created_at")
   updatedAt      DateTime          @updatedAt @map("updated_at")

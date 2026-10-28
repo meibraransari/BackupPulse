@@ -96,12 +96,19 @@ export function parseRsyncStats(output: string): RsyncStats {
   return stats;
 }
 
+export interface SshMetrics {
+  cpuPercent: number | null;
+  memoryPercent: number | null;
+  diskPercent: number | null;
+}
+
 export interface SshTestResult {
   status: 'ONLINE' | 'OFFLINE';
   latencyMs: number;
   message: string;
   logs: string;
   logLevel: 'info' | 'debug';
+  metrics?: SshMetrics;
 }
 
 export class RsyncService {
@@ -228,12 +235,20 @@ export class RsyncService {
     if (authType === 'LOCAL' || host === 'localhost' || host === '127.0.0.1') {
       addLog('INFO', 'Target configured as Local Host (127.0.0.1).');
       addLog('SUCCESS', 'Local server filesystem is online, accessible, and ready for sync.');
+      const metrics = await this.collectLocalHostMetrics();
+      if (metrics.cpuPercent !== null || metrics.memoryPercent !== null || metrics.diskPercent !== null) {
+        addLog(
+          'INFO',
+          `Local host metrics: CPU ${metrics.cpuPercent !== null ? metrics.cpuPercent + '%' : '--'}, Memory ${metrics.memoryPercent !== null ? metrics.memoryPercent + '%' : '--'}, Disk ${metrics.diskPercent !== null ? metrics.diskPercent + '%' : '--'}`
+        );
+      }
       return {
         status: 'ONLINE',
         latencyMs: Date.now() - startTime,
         message: 'Local host is online and accessible.',
         logs: logLines.join('\n'),
         logLevel,
+        metrics,
       };
     }
 
@@ -281,6 +296,7 @@ export class RsyncService {
     let tempKeyFile: string | null = null;
     let status: 'ONLINE' | 'OFFLINE' = 'OFFLINE';
     let message = '';
+    let metrics: SshMetrics | undefined;
 
     try {
       const sshOpts = [
@@ -308,24 +324,33 @@ export class RsyncService {
       }
 
       const execEnv: NodeJS.ProcessEnv = { ...process.env };
+
+      // Encoded remote probe script to fetch CPU, Memory and Disk metrics safely across any Linux distro
+      const remoteProbeScript = `echo OK
+awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{if(t>0&&a>0)printf "BP_MEM:%.1f\\n",((t-a)/t)*100}' /proc/meminfo 2>/dev/null || free -m 2>/dev/null | awk 'NR==2{if($2>0)printf "BP_MEM:%.1f\\n",($3*100)/$2}'
+df -k / 2>/dev/null | awk 'NR==2{if(($3+$4)>0)printf "BP_DISK:%.1f\\n",($3*100)/($3+$4)}'
+awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8;i=$5;if(t>0)printf "BP_CPU:%.1f\\n",(1-(i/t))*100}' /proc/stat 2>/dev/null`;
+      const probeB64 = Buffer.from(remoteProbeScript).toString('base64');
+      const remoteCmd = `(echo ${probeB64} | base64 -d 2>/dev/null | sh) || echo OK`;
+
       let sshCmd = '';
       if (authType === 'SSH_KEY' && input.sshPrivateKey) {
         tempKeyFile = path.join(os.tmpdir(), `test_ssh_key_${Date.now()}_${Math.random().toString(36).substring(7)}`);
         fs.writeFileSync(tempKeyFile, input.sshPrivateKey, { mode: 0o600 });
         sshOpts.push(`-i "${tempKeyFile}"`);
-        sshCmd = `ssh ${sshOpts.join(' ')} ${username}@${host} "echo OK"`;
+        sshCmd = `ssh ${sshOpts.join(' ')} ${username}@${host} "${remoteCmd}"`;
         addLog('INFO', 'Loaded temporary private key for authentication test.');
       } else if (authType === 'PASSWORD') {
         if (input.password) {
           execEnv.SSHPASS = input.password;
-          sshCmd = `sshpass -e ssh ${sshOpts.join(' ')} ${username}@${host} "echo OK"`;
+          sshCmd = `sshpass -e ssh ${sshOpts.join(' ')} ${username}@${host} "${remoteCmd}"`;
           addLog('INFO', 'Configured password authentication test via sshpass.');
         } else {
-          sshCmd = `ssh ${sshOpts.join(' ')} ${username}@${host} "echo OK"`;
+          sshCmd = `ssh ${sshOpts.join(' ')} ${username}@${host} "${remoteCmd}"`;
           addLog('INFO', 'No password provided; probing remote SSH banner.');
         }
       } else {
-        sshCmd = `ssh ${sshOpts.join(' ')} ${username}@${host} "echo OK"`;
+        sshCmd = `ssh ${sshOpts.join(' ')} ${username}@${host} "${remoteCmd}"`;
       }
 
       addLog('DEBUG', `Executing command: ${sshCmd}`);
@@ -362,12 +387,38 @@ export class RsyncService {
         }
       }
 
+      // Parse telemetry metrics if node answered online
+      if (status === 'ONLINE') {
+        const memMatch = rawStdout.match(/BP_MEM:([0-9.]+)/);
+        const diskMatch = rawStdout.match(/BP_DISK:([0-9.]+)/);
+        const cpuMatch = rawStdout.match(/BP_CPU:([0-9.]+)/);
+
+        metrics = {
+          cpuPercent: cpuMatch ? Math.min(100, Math.max(0, Math.round(parseFloat(cpuMatch[1]) * 10) / 10)) : null,
+          memoryPercent: memMatch ? Math.min(100, Math.max(0, Math.round(parseFloat(memMatch[1]) * 10) / 10)) : null,
+          diskPercent: diskMatch ? Math.min(100, Math.max(0, Math.round(parseFloat(diskMatch[1]) * 10) / 10)) : null,
+        };
+
+        if (metrics.cpuPercent !== null || metrics.memoryPercent !== null || metrics.diskPercent !== null) {
+          addLog(
+            'INFO',
+            `Server telemetry collected: CPU ${metrics.cpuPercent !== null ? metrics.cpuPercent + '%' : '--'}, Memory ${metrics.memoryPercent !== null ? metrics.memoryPercent + '%' : '--'}, Disk ${metrics.diskPercent !== null ? metrics.diskPercent + '%' : '--'}`
+          );
+        }
+      }
+
       // Append and format SSH output
       addLog('INFO', '--- [OpenSSH Connection Transcript] ---');
       const sshOutputLines = (rawStderr + '\n' + rawStdout)
         .split('\n')
         .map((l) => l.trim())
-        .filter((l) => l.length > 0);
+        .filter(
+          (l) =>
+            l.length > 0 &&
+            !l.startsWith('BP_MEM:') &&
+            !l.startsWith('BP_DISK:') &&
+            !l.startsWith('BP_CPU:')
+        );
 
       if (logLevel === 'debug') {
         // In debug mode, print every raw line
@@ -425,7 +476,52 @@ export class RsyncService {
     const latencyMs = Date.now() - startTime;
     addLog('INFO', `Diagnostic finished in ${latencyMs}ms with final status: ${status}.`);
 
-    return { status, latencyMs, message, logs: logLines.join('\n'), logLevel };
+    return { status, latencyMs, message, logs: logLines.join('\n'), logLevel, metrics };
+  }
+
+  /**
+   * Helper to collect CPU, Memory, and Disk metrics on the local machine
+   */
+  async collectLocalHostMetrics(): Promise<SshMetrics> {
+    try {
+      // Memory: used % = (total - free) / total
+      const totalMem = os.totalmem();
+      const freeMem = os.freemem();
+      const memoryPercent =
+        totalMem > 0 ? Math.round(((totalMem - freeMem) / totalMem) * 1000) / 10 : null;
+
+      // CPU: calculate usage % from cpus times
+      const cpus = os.cpus();
+      let totalTick = 0;
+      let idleTick = 0;
+      for (const cpu of cpus) {
+        for (const type in cpu.times) {
+          totalTick += (cpu.times as any)[type];
+        }
+        idleTick += cpu.times.idle;
+      }
+      const cpuPercent =
+        totalTick > 0 ? Math.max(0, Math.min(100, Math.round((1 - idleTick / totalTick) * 1000) / 10)) : null;
+
+      // Disk: use fs.promises.statfs cross-platform
+      let diskPercent: number | null = null;
+      try {
+        const rootPath = process.platform === 'win32' ? process.cwd() : '/';
+        const stats = await fs.promises.statfs(rootPath);
+        const totalBytes = stats.blocks * stats.bsize;
+        const availBytes = stats.bavail * stats.bsize;
+        if (totalBytes > 0) {
+          diskPercent = Math.max(
+            0,
+            Math.min(100, Math.round(((totalBytes - availBytes) / totalBytes) * 1000) / 10)
+          );
+        }
+      } catch (_) {}
+
+      return { cpuPercent, memoryPercent, diskPercent };
+    } catch (_) {
+      return { cpuPercent: null, memoryPercent: null, diskPercent: null };
+    }
   }
 
   /**
@@ -440,12 +536,19 @@ export class RsyncService {
 
     const result = await this.testConnectionCredentials({ ...server, logLevel });
 
+    const updateData: any = {
+      status: result.status,
+      lastCheckedAt: new Date(),
+    };
+    if (result.metrics) {
+      if (result.metrics.cpuPercent !== null) updateData.cpuPercent = result.metrics.cpuPercent;
+      if (result.metrics.memoryPercent !== null) updateData.memoryPercent = result.metrics.memoryPercent;
+      if (result.metrics.diskPercent !== null) updateData.diskPercent = result.metrics.diskPercent;
+    }
+
     await prisma.rsyncServer.update({
       where: { id: serverId },
-      data: {
-        status: result.status,
-        lastCheckedAt: new Date(),
-      },
+      data: updateData,
     });
 
     // Audit log

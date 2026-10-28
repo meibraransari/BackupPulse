@@ -488,13 +488,56 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
   // ============================================================================
   // Actions: Servers
   // ============================================================================
+  const renderServerMetricBar = (val: number | null | undefined) => {
+    if (val === null || val === undefined || isNaN(val)) {
+      return (
+        <div className="flex flex-col space-y-1">
+          <span className="text-slate-500 font-mono text-[11px]">--</span>
+          <div className="w-20 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+            <div className="w-0 h-full bg-slate-700" />
+          </div>
+        </div>
+      );
+    }
+
+    const clamped = Math.min(100, Math.max(0, val));
+    let color = 'bg-emerald-500';
+    let textColor = 'text-emerald-400';
+    if (clamped >= 90) {
+      color = 'bg-rose-500';
+      textColor = 'text-rose-400';
+    } else if (clamped >= 70) {
+      color = 'bg-amber-500';
+      textColor = 'text-amber-400';
+    }
+
+    return (
+      <div className="flex flex-col space-y-1">
+        <span className={`font-mono text-[11px] font-semibold ${textColor}`}>
+          {clamped.toFixed(1)}%
+        </span>
+        <div className="w-20 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+          <div
+            className={`h-full ${color} rounded-full transition-all duration-500`}
+            style={{ width: `${clamped}%` }}
+          />
+        </div>
+      </div>
+    );
+  };
+
   const handleTestServer = async (id: string, name: string) => {
     if (!isAdmin) return;
     setActionLoading(`test-${id}`);
     try {
       const res = await api.testRsyncServer(id);
       if (res.status === 'ONLINE') {
-        showToast(`Server "${name}" is ONLINE (${res.latencyMs}ms): ${res.message}`);
+        const m = res.metrics;
+        const metricsInfo =
+          m && (m.cpuPercent !== null || m.memoryPercent !== null || m.diskPercent !== null)
+            ? ` [Disk: ${m.diskPercent !== null ? m.diskPercent + '%' : '--'}, Mem: ${m.memoryPercent !== null ? m.memoryPercent + '%' : '--'}, CPU: ${m.cpuPercent !== null ? m.cpuPercent + '%' : '--'}]`
+            : '';
+        showToast(`Server "${name}" is ONLINE (${res.latencyMs}ms)${metricsInfo}`);
       } else {
         showToast(`Server "${name}" status: ${res.status}. ${res.message}`, 'error');
       }
@@ -1075,6 +1118,55 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
                         {s.authType}
                       </span>
                     </div>
+
+                    {(s.diskPercent !== null && s.diskPercent !== undefined) ||
+                    (s.memoryPercent !== null && s.memoryPercent !== undefined) ||
+                    (s.cpuPercent !== null && s.cpuPercent !== undefined) ? (
+                      <div className="grid grid-cols-3 gap-1 pt-1.5 pb-0.5 border-t border-slate-900 text-[10px] font-mono">
+                        <div>
+                          <span className="text-slate-500 block">Disk</span>
+                          <span
+                            className={
+                              s.diskPercent && s.diskPercent >= 90
+                                ? 'text-rose-400 font-semibold'
+                                : s.diskPercent && s.diskPercent >= 70
+                                ? 'text-amber-400 font-semibold'
+                                : 'text-emerald-400 font-semibold'
+                            }
+                          >
+                            {s.diskPercent !== null && s.diskPercent !== undefined ? `${s.diskPercent}%` : '--'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block">Mem</span>
+                          <span
+                            className={
+                              s.memoryPercent && s.memoryPercent >= 90
+                                ? 'text-rose-400 font-semibold'
+                                : s.memoryPercent && s.memoryPercent >= 70
+                                ? 'text-amber-400 font-semibold'
+                                : 'text-emerald-400 font-semibold'
+                            }
+                          >
+                            {s.memoryPercent !== null && s.memoryPercent !== undefined ? `${s.memoryPercent}%` : '--'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block">CPU</span>
+                          <span
+                            className={
+                              s.cpuPercent && s.cpuPercent >= 90
+                                ? 'text-rose-400 font-semibold'
+                                : s.cpuPercent && s.cpuPercent >= 70
+                                ? 'text-amber-400 font-semibold'
+                                : 'text-emerald-400 font-semibold'
+                            }
+                          >
+                            {s.cpuPercent !== null && s.cpuPercent !== undefined ? `${s.cpuPercent}%` : '--'}
+                          </span>
+                        </div>
+                      </div>
+                    ) : null}
 
                     <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-900">
                       <span>{s.latencyMs !== null && s.latencyMs !== undefined ? `${s.latencyMs}ms latency` : 'Tunnel ready'}</span>
@@ -1855,16 +1947,19 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
                     )}
                     <th className="p-3.5 min-w-[160px]">Server Name</th>
                     <th className="p-3.5 min-w-[160px]">Host & Port</th>
-                    <th className="p-3.5 min-w-[140px]">Auth Mode</th>
-                    <th className="p-3.5 min-w-[120px]">Status</th>
-                    <th className="p-3.5 min-w-[160px]">Last Checked</th>
+                    <th className="p-3.5 min-w-[130px]">Auth Mode</th>
+                    <th className="p-3.5 min-w-[110px]">Status</th>
+                    <th className="p-3.5 min-w-[120px]">Disk</th>
+                    <th className="p-3.5 min-w-[120px]">Memory</th>
+                    <th className="p-3.5 min-w-[120px]">CPU</th>
+                    <th className="p-3.5 min-w-[150px]">Last Checked</th>
                     <th className="p-3.5 text-right min-w-[160px]">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
                   {servers.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="p-8 text-center text-slate-500 italic">
+                      <td colSpan={isAdmin ? 10 : 9} className="p-8 text-center text-slate-500 italic">
                         No remote SSH servers added yet. Add one to enable cross-server mirroring.
                       </td>
                     </tr>
@@ -1908,6 +2003,15 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
                           >
                             {s.status}
                           </span>
+                        </td>
+                        <td className="p-3.5">
+                          {renderServerMetricBar(s.diskPercent)}
+                        </td>
+                        <td className="p-3.5">
+                          {renderServerMetricBar(s.memoryPercent)}
+                        </td>
+                        <td className="p-3.5">
+                          {renderServerMetricBar(s.cpuPercent)}
                         </td>
                         <td className="p-3.5 text-slate-400 text-[11px]">
                           {s.lastCheckedAt ? formatTimestamp(s.lastCheckedAt) : 'Never'}
