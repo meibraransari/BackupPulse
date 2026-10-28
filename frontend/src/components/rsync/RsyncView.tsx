@@ -1607,13 +1607,29 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
                         )}
                         <td className="p-3.5">
                           <span className="font-bold text-white block">{j.name}</span>
-                          <span className="text-[11px] text-slate-400">
-                            {j.isActive ? (
-                              <span className="text-emerald-400 font-semibold">Active</span>
-                            ) : (
-                              <span className="text-slate-500">Disabled</span>
+                          <div className="flex items-center space-x-1.5 mt-0.5">
+                            <span className="text-[11px] text-slate-400">
+                              {j.isActive ? (
+                                <span className="text-emerald-400 font-semibold">Active</span>
+                              ) : (
+                                <span className="text-slate-500">Disabled</span>
+                              )}
+                            </span>
+                            {j.recordTelemetry && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-semibold bg-indigo-950/80 text-indigo-300 border border-indigo-800/50" title="Syncs to central Backup Telemetry records">
+                                Telemetry
+                              </span>
                             )}
-                          </span>
+                            {j.notifyPolicy === 'ALWAYS' ? (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-800/50" title="Sends alerts on both success & failure">
+                                Notify: All
+                              </span>
+                            ) : j.notifyPolicy === 'NONE' ? (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-slate-900 text-slate-500 border border-slate-800" title="All notifications muted">
+                                Muted
+                              </span>
+                            ) : null}
+                          </div>
                         </td>
                         <td className="p-3.5">
                           <div className="flex flex-col space-y-1.5 items-start">

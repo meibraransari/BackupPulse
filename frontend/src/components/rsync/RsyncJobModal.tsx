@@ -25,6 +25,10 @@ import {
   HelpCircle,
   FileCode,
   Edit3,
+  Bell,
+  BellOff,
+  Database,
+  Activity,
 } from 'lucide-react';
 import { RsyncJob, RsyncRepository, RsyncServer } from '../../types';
 import { api } from '../../services/api';
@@ -63,6 +67,9 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
   const [showCommandBox, setShowCommandBox] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  const [recordTelemetry, setRecordTelemetry] = useState(false);
+  const [notifyPolicy, setNotifyPolicy] = useState<'NONE' | 'FAILURE_ONLY' | 'ALWAYS'>('FAILURE_ONLY');
+
   const [preservePermissions, setPreservePermissions] = useState(true);
   const [preserveOwner, setPreserveOwner] = useState(true);
   const [preserveTimes, setPreserveTimes] = useState(true);
@@ -93,6 +100,8 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
       setCustomCommand(initialCustomCmd);
       const initialMode = job.commandMode || (initialCustomCmd.trim() ? 'USER' : 'SYSTEM');
       setCommandMode(initialMode);
+      setRecordTelemetry(job.recordTelemetry ?? false);
+      setNotifyPolicy(job.notifyPolicy || 'FAILURE_ONLY');
       setShowCommandBox(false);
       setPreservePermissions(job.preservePermissions ?? true);
       setPreserveOwner(job.preserveOwner ?? true);
@@ -117,6 +126,8 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
       setCustomArgs('');
       setCustomCommand('');
       setCommandMode('SYSTEM');
+      setRecordTelemetry(false);
+      setNotifyPolicy('FAILURE_ONLY');
       setShowCommandBox(false);
       setPreservePermissions(true);
       setPreserveOwner(true);
@@ -331,6 +342,8 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
         customCommand: effectiveCustomCmd,
         customArgs: effectiveCustomCmd,
         commandMode,
+        recordTelemetry,
+        notifyPolicy,
         preservePermissions,
         preserveOwner,
         preserveTimes,
@@ -726,6 +739,67 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
               />
               <span className="text-emerald-400 font-semibold">Enable Schedule</span>
             </label>
+          </div>
+
+          {/* ========================================================================= */}
+          {/* TELEMETRY & NOTIFICATIONS SETTINGS (USER'S CHOICE) */}
+          {/* ========================================================================= */}
+          <div className="pt-2 border-t border-slate-800 space-y-3">
+            <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-3">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-1.5 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">
+                  <Bell className="h-4 w-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-white">Telemetry Recording & Notification Alerts</h4>
+                  <p className="text-[11px] text-slate-400">
+                    Optionally show this job in central Backup Telemetry records and configure failure/success alerting
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                {/* Option 1: Record in Central Backup Telemetry */}
+                <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 flex items-start space-x-2.5">
+                  <input
+                    type="checkbox"
+                    id="recordTelemetryCheck"
+                    checked={recordTelemetry}
+                    onChange={(e) => setRecordTelemetry(e.target.checked)}
+                    className="rounded border-slate-700 text-indigo-500 focus:ring-0 mt-0.5 cursor-pointer"
+                  />
+                  <label htmlFor="recordTelemetryCheck" className="cursor-pointer select-none">
+                    <span className="text-xs font-semibold text-slate-200 flex items-center space-x-1.5">
+                      <Database className="h-3.5 w-3.5 text-indigo-400" />
+                      <span>Record in Backup Telemetry</span>
+                    </span>
+                    <span className="text-[10px] text-slate-400 leading-snug block mt-1">
+                      Pushes execution results into primary Telemetry records (<code className="text-indigo-300">backup_reports</code>). Visible on main Overview Dashboard alongside database and server backups.
+                    </span>
+                  </label>
+                </div>
+
+                {/* Option 2: Notification & Alert Policy */}
+                <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-200 flex items-center space-x-1.5">
+                    <Activity className="h-3.5 w-3.5 text-amber-400" />
+                    <span>Notification & Alert Policy</span>
+                  </label>
+                  <select
+                    value={notifyPolicy}
+                    onChange={(e) => setNotifyPolicy(e.target.value as any)}
+                    className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+                  >
+                    <option value="FAILURE_ONLY">🚨 Alert on Failure Only (Default)</option>
+                    <option value="ALWAYS">🚀 Notify on Both Success & Failure</option>
+                    <option value="NONE">🔕 Mute All Notifications for this Job</option>
+                  </select>
+                  <span className="text-[10px] text-slate-500 block leading-tight">
+                    Dispatches instant alerts across all enabled channels (Google Chat, Email, Slack, Discord, Telegram).
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* ========================================================================= */}

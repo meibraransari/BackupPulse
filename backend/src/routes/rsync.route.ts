@@ -667,6 +667,8 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
         ...job,
         commandMode: (job as any).commandMode || ((job as any).customCommand || (job.customArgs && job.customArgs.trim()) ? 'USER' : 'SYSTEM'),
         customCommand: (job as any).customCommand || job.customArgs || null,
+        recordTelemetry: (job as any).recordTelemetry ?? false,
+        notifyPolicy: (job as any).notifyPolicy || 'FAILURE_ONLY',
       }));
 
       return reply.send(
@@ -728,6 +730,8 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
           customArgs: body.customArgs?.trim() || body.customCommand?.trim() || null,
           customCommand: body.customCommand?.trim() || body.customArgs?.trim() || null,
           commandMode: body.commandMode || (body.customCommand?.trim() || body.customArgs?.trim() ? 'USER' : 'SYSTEM'),
+          recordTelemetry: body.recordTelemetry ?? false,
+          notifyPolicy: body.notifyPolicy || 'FAILURE_ONLY',
           preservePermissions: body.preservePermissions ?? true,
           preserveOwner: body.preserveOwner ?? true,
           preserveTimes: body.preserveTimes ?? true,
@@ -792,6 +796,8 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
           customArgs: body.customArgs !== undefined ? (body.customArgs?.trim() || null) : (body.customCommand !== undefined ? (body.customCommand?.trim() || null) : undefined),
           customCommand: body.customCommand !== undefined ? (body.customCommand?.trim() || null) : (body.customArgs !== undefined ? (body.customArgs?.trim() || null) : undefined),
           commandMode: body.commandMode !== undefined ? body.commandMode : (body.customCommand !== undefined ? (body.customCommand?.trim() ? 'USER' : 'SYSTEM') : (body.customArgs !== undefined ? (body.customArgs?.trim() ? 'USER' : 'SYSTEM') : undefined)),
+          recordTelemetry: body.recordTelemetry !== undefined ? body.recordTelemetry : undefined,
+          notifyPolicy: body.notifyPolicy !== undefined ? body.notifyPolicy : undefined,
           preservePermissions: body.preservePermissions,
           preserveOwner: body.preserveOwner,
           preserveTimes: body.preserveTimes,

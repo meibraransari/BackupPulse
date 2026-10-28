@@ -32,20 +32,23 @@ export interface BackupReportAlertInput {
  * Dispatches real-time instant alerts across all configured channels
  * when a backup fails or reports an anomaly.
  */
-export async function dispatchInstantFailureAlert(report: BackupReportAlertInput): Promise<{
+export async function dispatchInstantFailureAlert(
+  report: BackupReportAlertInput,
+  options?: { force?: boolean }
+): Promise<{
   dispatched: boolean;
   throttled: boolean;
   channels: Record<string, { attempted: boolean; success?: boolean; message?: string }>;
 }> {
-  if (!config.INSTANT_ALERT_ON_FAILURE) {
+  if (!config.INSTANT_ALERT_ON_FAILURE && !options?.force) {
     return { dispatched: false, throttled: false, channels: {} };
   }
 
-  // Only trigger on FAILED or when anomaly is flagged
+  // Only trigger on FAILED or when anomaly is flagged, unless explicitly forced (e.g. for user-selected success notifications)
   const isFailed = report.status === 'FAILED';
   const isAnomaly = report.isAnomaly === true;
 
-  if (!isFailed && !isAnomaly) {
+  if (!isFailed && !isAnomaly && !options?.force) {
     return { dispatched: false, throttled: false, channels: {} };
   }
 

@@ -241,6 +241,8 @@ model RsyncJob {
   customArgs          String?           @map("custom_args")
   customCommand       String?           @map("custom_command") @db.Text
   commandMode         String            @default("SYSTEM") @map("command_mode")
+  recordTelemetry     Boolean           @default(false) @map("record_telemetry")
+  notifyPolicy        String            @default("FAILURE_ONLY") @map("notify_policy")
   preservePermissions Boolean           @default(true) @map("preserve_permissions")
   preserveOwner       Boolean           @default(true) @map("preserve_owner")
   preserveTimes       Boolean           @default(true) @map("preserve_times")

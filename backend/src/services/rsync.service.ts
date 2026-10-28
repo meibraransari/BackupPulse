@@ -852,16 +852,53 @@ export class RsyncService {
           data: { lastRunStatus: 'FAILED' },
         });
 
-        dispatchInstantFailureAlert({
-          projectName: `Rsync: ${job.name}`,
-          serverId: destServer?.name || 'Local Host',
-          hostname: os.hostname(),
-          backupType: 'rsync_mirror',
-          status: 'FAILED',
-          durationSeconds: Math.round(durationSeconds),
-          backupSizeBytes: 0,
-          errorMessage: `Rsync Process Error: ${err.message}`,
-        }).catch(() => {});
+        if ((job as any).recordTelemetry) {
+          try {
+            await prisma.backupReport.create({
+              data: {
+                serverId: destServer?.name || sourceServer?.name || 'Local Host',
+                hostname: destServer?.host || sourceServer?.host || os.hostname(),
+                serverIp: destServer?.host || sourceServer?.host || '127.0.0.1',
+                projectName: `Rsync: ${job.name}`,
+                environment: 'production',
+                backupType: 'rsync_mirror',
+                status: 'FAILED',
+                startTime: new Date(startTime),
+                endTime: new Date(),
+                durationSeconds: Math.max(1, Math.round(durationSeconds)),
+                backupSizeBytes: BigInt(0),
+                backupSizeHuman: '0 B',
+                zipFilename: `${job.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_mirror`,
+                exitCode: 1,
+                errorMessage: `Rsync Process Error: ${err.message}`,
+                stdoutLog: stdoutBuffer.slice(-50000),
+                stderrLog: (stderrBuffer + '\n' + err.message).slice(-50000),
+                metadata: {
+                  jobId: job.id,
+                  runId: run.id,
+                  syncStrategy: job.syncStrategy,
+                  commandMode: job.commandMode,
+                },
+              },
+            });
+          } catch (telemetryErr) {
+            console.error('[RSYNC TELEMETRY] Failed to record process error to BackupReport:', telemetryErr);
+          }
+        }
+
+        const notifyPolicy = (job as any).notifyPolicy || 'FAILURE_ONLY';
+        if (notifyPolicy !== 'NONE') {
+          dispatchInstantFailureAlert({
+            projectName: `Rsync: ${job.name}`,
+            serverId: destServer?.name || 'Local Host',
+            hostname: os.hostname(),
+            backupType: 'rsync_mirror',
+            status: 'FAILED',
+            durationSeconds: Math.round(durationSeconds),
+            backupSizeBytes: 0,
+            errorMessage: `Rsync Process Error: ${err.message}`,
+          }).catch(() => {});
+        }
 
         resolve(failedRun);
       });
@@ -935,17 +972,67 @@ export class RsyncService {
           },
         });
 
-        if (!isSuccess) {
-          dispatchInstantFailureAlert({
-            projectName: `Rsync: ${job.name}`,
-            serverId: destServer?.name || 'Local Host',
-            hostname: os.hostname(),
-            backupType: 'rsync_mirror',
-            status: 'FAILED',
-            durationSeconds: Math.round(durationSeconds),
-            backupSizeBytes: parsedStats.bytesTransferred,
-            errorMessage: stderrBuffer.trim() || `Rsync mirror failed with exit code ${exitCode}`,
-          }).catch(() => {});
+        // Central Backup Telemetry Recording (User's Choice)
+        if ((job as any).recordTelemetry) {
+          try {
+            const sizeNum = Number(parsedStats.bytesTransferred || 0);
+            const sizeHuman = sizeNum > 0 ? this.formatBytes(sizeNum) : '0 B';
+            await prisma.backupReport.create({
+              data: {
+                serverId: destServer?.name || sourceServer?.name || 'Local Host',
+                hostname: destServer?.host || sourceServer?.host || os.hostname(),
+                serverIp: destServer?.host || sourceServer?.host || '127.0.0.1',
+                projectName: `Rsync: ${job.name}`,
+                environment: 'production',
+                backupType: 'rsync_mirror',
+                status: isSuccess ? 'SUCCESS' : 'FAILED',
+                startTime: new Date(startTime),
+                endTime: new Date(),
+                durationSeconds: Math.max(1, Math.round(durationSeconds)),
+                backupSizeBytes: BigInt(parsedStats.bytesTransferred || 0),
+                backupSizeHuman: sizeHuman,
+                zipFilename: `${job.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_mirror`,
+                exitCode: exitCode || 0,
+                errorMessage: isSuccess ? null : (stderrBuffer.trim() || `Rsync mirror failed with exit code ${exitCode}`),
+                stdoutLog: stdoutBuffer.slice(-50000),
+                stderrLog: stderrBuffer.slice(-50000),
+                metadata: {
+                  jobId: job.id,
+                  runId: run.id,
+                  syncStrategy: job.syncStrategy,
+                  totalFiles: parsedStats.totalFiles,
+                  transferredFiles: parsedStats.transferredFiles,
+                  deletedFiles: parsedStats.deletedFiles,
+                  speedupRatio: parsedStats.speedupRatio,
+                  commandMode: job.commandMode,
+                },
+              },
+            });
+          } catch (telemetryErr) {
+            console.error('[RSYNC TELEMETRY] Failed to record to BackupReport:', telemetryErr);
+          }
+        }
+
+        // Notification Dispatch Policy (User's Choice: NONE, FAILURE_ONLY, ALWAYS)
+        const notifyPolicy = (job as any).notifyPolicy || 'FAILURE_ONLY';
+        const shouldNotify =
+          (notifyPolicy === 'FAILURE_ONLY' && !isSuccess) ||
+          (notifyPolicy === 'ALWAYS');
+
+        if (shouldNotify) {
+          dispatchInstantFailureAlert(
+            {
+              projectName: `Rsync: ${job.name}`,
+              serverId: destServer?.name || sourceServer?.name || 'Local Host',
+              hostname: os.hostname(),
+              backupType: 'rsync_mirror',
+              status: isSuccess ? 'SUCCESS' : 'FAILED',
+              durationSeconds: Math.round(durationSeconds),
+              backupSizeBytes: parsedStats.bytesTransferred,
+              errorMessage: isSuccess ? null : (stderrBuffer.trim() || `Rsync mirror failed with exit code ${exitCode}`),
+            },
+            { force: isSuccess }
+          ).catch(() => {});
         }
 
         this.probeRepositoryDiskSpace(job.destRepoId).catch(() => {});
@@ -1227,6 +1314,69 @@ export class RsyncService {
         },
       });
 
+      // Central Backup Telemetry Recording (User's Choice)
+      if ((job as any).recordTelemetry) {
+        try {
+          const sizeNum = Number(parsedStats.bytesTransferred || 0);
+          const sizeHuman = sizeNum > 0 ? this.formatBytes(sizeNum) : '0 B';
+          await prisma.backupReport.create({
+            data: {
+              serverId: destServer?.name || sourceServer?.name || 'Local Host',
+              hostname: destServer?.host || sourceServer?.host || os.hostname(),
+              serverIp: destServer?.host || sourceServer?.host || '127.0.0.1',
+              projectName: `Rsync: ${job.name}`,
+              environment: 'production',
+              backupType: 'rsync_mirror',
+              status: isSuccess ? 'SUCCESS' : 'FAILED',
+              startTime: new Date(startTime),
+              endTime: new Date(),
+              durationSeconds: Math.max(1, Math.round(durationSeconds)),
+              backupSizeBytes: BigInt(parsedStats.bytesTransferred || 0),
+              backupSizeHuman: sizeHuman,
+              zipFilename: `${job.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_bridge`,
+              exitCode: pushRes.exitCode || 0,
+              errorMessage: friendlyErrorMessage,
+              stdoutLog: stdoutBuffer.slice(-50000),
+              stderrLog: stderrBuffer.slice(-50000),
+              metadata: {
+                jobId: job.id,
+                runId: run.id,
+                topology: 'CROSS_REMOTE_BRIDGE',
+                totalFiles: parsedStats.totalFiles,
+                transferredFiles: parsedStats.transferredFiles,
+                deletedFiles: parsedStats.deletedFiles,
+                speedupRatio: parsedStats.speedupRatio,
+                commandMode: job.commandMode,
+              },
+            },
+          });
+        } catch (telemetryErr) {
+          console.error('[RSYNC TELEMETRY] Failed to record bridge run to BackupReport:', telemetryErr);
+        }
+      }
+
+      // Notification Dispatch Policy (User's Choice: NONE, FAILURE_ONLY, ALWAYS)
+      const notifyPolicy = (job as any).notifyPolicy || 'FAILURE_ONLY';
+      const shouldNotify =
+        (notifyPolicy === 'FAILURE_ONLY' && !isSuccess) ||
+        (notifyPolicy === 'ALWAYS');
+
+      if (shouldNotify) {
+        dispatchInstantFailureAlert(
+          {
+            projectName: `Rsync Bridge: ${job.name}`,
+            serverId: destServer?.name || 'Remote Target',
+            hostname: destServer?.host || os.hostname(),
+            backupType: 'rsync_mirror',
+            status: isSuccess ? 'SUCCESS' : 'FAILED',
+            durationSeconds: Math.round(durationSeconds),
+            backupSizeBytes: parsedStats.bytesTransferred,
+            errorMessage: isSuccess ? null : friendlyErrorMessage || pushRes.stderr.trim() || `Phase 2 failed with exit code ${pushRes.exitCode}`,
+          },
+          { force: isSuccess }
+        ).catch(() => {});
+      }
+
       this.probeRepositoryDiskSpace(job.destRepoId).catch(() => {});
 
       return updatedRun;
@@ -1250,6 +1400,47 @@ export class RsyncService {
         data: { lastRunStatus: 'FAILED' },
       });
 
+      if ((job as any).recordTelemetry) {
+        try {
+          await prisma.backupReport.create({
+            data: {
+              serverId: destServer?.name || sourceServer?.name || 'Local Host',
+              hostname: destServer?.host || sourceServer?.host || os.hostname(),
+              serverIp: destServer?.host || sourceServer?.host || '127.0.0.1',
+              projectName: `Rsync Bridge: ${job.name}`,
+              environment: 'production',
+              backupType: 'rsync_mirror',
+              status: 'FAILED',
+              startTime: new Date(startTime),
+              endTime: new Date(),
+              durationSeconds: Math.max(1, Math.round(durationSeconds)),
+              backupSizeBytes: BigInt(0),
+              backupSizeHuman: '0 B',
+              zipFilename: `${job.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_bridge`,
+              exitCode: 1,
+              errorMessage: err.message,
+              stdoutLog: stdoutBuffer.slice(-50000),
+              stderrLog: (stderrBuffer + '\n' + err.message).slice(-50000),
+              metadata: { jobId: job.id, runId: run.id, error: err.message },
+            },
+          });
+        } catch (_) {}
+      }
+
+      const notifyPolicy = (job as any).notifyPolicy || 'FAILURE_ONLY';
+      if (notifyPolicy !== 'NONE') {
+        dispatchInstantFailureAlert({
+          projectName: `Rsync Bridge: ${job.name}`,
+          serverId: destServer?.name || 'Remote Target',
+          hostname: destServer?.host || os.hostname(),
+          backupType: 'rsync_mirror',
+          status: 'FAILED',
+          durationSeconds: Math.round(durationSeconds),
+          backupSizeBytes: 0,
+          errorMessage: err.message,
+        }).catch(() => {});
+      }
+
       return failedRun;
     } finally {
       if (pullSsh.tempKey && fs.existsSync(pullSsh.tempKey)) {
@@ -1259,6 +1450,14 @@ export class RsyncService {
         try { fs.unlinkSync(pushSsh.tempKey); } catch (_) {}
       }
     }
+  }
+
+  private formatBytes(bytes: number): string {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
   }
 }
 

@@ -398,6 +398,8 @@ export interface RsyncJob {
   customArgs?: string | null;
   customCommand?: string | null;
   commandMode?: 'SYSTEM' | 'USER';
+  recordTelemetry?: boolean;
+  notifyPolicy?: 'NONE' | 'FAILURE_ONLY' | 'ALWAYS';
   preservePermissions: boolean;
   preserveOwner: boolean;
   preserveTimes: boolean;
