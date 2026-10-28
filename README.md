@@ -34,7 +34,7 @@ A high-performance Node.js & React telemetry platform designed to monitor automa
        │
        ▼
 [BackupPulse Dashboard] (React + Vite + Tailwind CSS)
-       ├──► 🪞 Disk Sync & Rsync Mirror Engine (1:1 Disk Mirror, Hardlink Snapshots, Remote SSH & Audit Logs)
+       ├──► 🪞 Disk Sync & Rsync Mirror Engine (1:1 Mirror, Hardlink Snapshots, Pre/Post Hooks, Server Telemetry, Expert Command Editor, Cross-Server Bridge)
        ├──► 🧭 Enterprise Dark Sidebar (Core Workspaces, DevOps Operations, Profile, Timezone)
        ├──► 🏠 1-Click Home Navigation (Logo & Home button reset all filters & refresh telemetry)
        ├──► ⚙️ Zero-Restart Dynamic Settings Engine (PostgreSQL 'system_settings' table, hot-reload, single-card per service, multi-line category filters)
@@ -127,53 +127,128 @@ services:
       - ${RSYNC_SSH_DIR:-./ssh_keys}:/root/.ssh:ro
 ```
 
-### Module Features & Sub-Views
+### Key Architecture & Modern Capabilities
 
-1. **Dashboard & KPIs**:
-   - Total Rsync jobs, cumulative transferred data volume, overall success rate, and physical disk count.
-   - Real-time disk capacity utilization progress bars probed directly via `df -B1`.
-   - Live feed of the latest 5 execution runs.
-2. **Jobs Management**:
-   - Define source repository/subpath and destination repository/subpath.
-   - Choose sync strategy, custom exclude patterns (`.git`, `node_modules`, `*.tmp`), and bandwidth limits (`--bwlimit`).
-   - One-click **Run Now** or **Dry Run** simulation (`-n`) to preview changes without disk writes.
-   - Checkbox multi-select with **Bulk Delete** and search filtering.
-3. **Remote SSH Servers**:
-   - Manage remote hosts with port, username, password, or SSH private key authentication.
-   - 1-click **Test Connection** with live latency ping (ms).
-   - Checkbox multi-select with **Bulk Delete**.
-4. **Disks & Repositories**:
-   - Register local mount paths or remote SSH endpoints.
-   - Real-time free/used capacity display and 1-click **Refresh Space** action.
-5. **Execution History & Terminal Logs**:
-   - Paginated log table with limit selector (**25 / 50 / 100** per page) and page jumping.
-   - Horizontal scrolling (`overflow-x-auto`) for wide columns.
-   - Slide-over terminal viewer to inspect complete `stdout`, `stderr`, transferred files, and exit codes.
-   - Checkbox multi-select with **Bulk Delete**.
-6. **Activity & Audit Trail**:
-   - Full governance log tracking job creation, execution, and deletion.
+1. **🪝 Pre-Hook & Post-Hook Lifecycle Execution Engine**:
+   - **Pre-sync Hook (`preHookCommand`)**: Executes preparation scripts (e.g., stopping active daemon services, initiating database read locks, or creating LVM snapshots) prior to file synchronization.
+   - **Post-sync Hook (`postHookCommand`)**: Executes follow-up automation (e.g., restarting services, unlocking databases, flushing cache layers, or dispatching external webhook notifications) after synchronization concludes.
+   - **Data-Safety Pre-Hook Abort**: If the pre-hook command fails (non-zero exit code or execution error), the rsync transfer is **aborted immediately**, protecting destination target data from corrupted or inconsistent synchronization.
+   - **Dynamic Argument Variable Substitution**: Injects runtime execution context into hook commands using `{variable}` syntax:
+     - `{job_id}`: Unique identifier of the sync job.
+     - `{job_name}`: Human-readable name of the job.
+     - `{trigger}`: Execution trigger (`MANUAL`, `SCHEDULED`, `RETRY`).
+     - `{job_sequence}`: Incremental run counter (e.g. `1`, `42`).
+     - `{source_id}` & `{source_name}`: Origin repository ID and name.
+     - `{destination_id}` & `{destination_name}`: Target repository ID and name.
+     - `{started_at}`: ISO timestamp of execution start.
+     - `{user_id}` & `{user_name}`: Operator identity (`admin`, `system`).
+     - `{completed_at}`: ISO timestamp of completion (*Post-hook only*).
+     - `{duration}`: Execution elapsed time in seconds (*Post-hook only*).
+     - `{status}`: Run outcome (`SUCCESS`, `FAILED`, `ABORTED`) (*Post-hook only*).
+     - `{error}`: Truncated error message if failed (*Post-hook only*).
+   - **Dynamic Environment Variables (`BP_*`)**: In addition to argument string substitution, hooks automatically receive runtime variables as shell environment variables:
+     - `BP_JOB_ID`, `BP_JOB_NAME`, `BP_TRIGGER`, `BP_JOB_SEQUENCE`, `BP_SOURCE_NAME`, `BP_DEST_NAME`, `BP_STATUS`, `BP_DURATION_SEC`, `BP_ERROR`.
+   - **Unified Terminal Logging**: Both pre-hook and post-hook `stdout` and `stderr` streams are cleanly demarcated with section banners in the real-time execution terminal viewer.
+
+2. **📊 On-Demand Remote Server Telemetry (Real-Time Disk, Memory, CPU)**:
+   - **Non-Intrusive SSH Probing**: Gathers live system utilization metrics directly over SSH during the "Test Connection" action using lightweight POSIX commands (`df -h /`, `free -b` / `awk`, `/proc/stat` & `top`).
+   - **Zero Background Polling Overhead**: Probing is strictly on-demand—no background daemons, cron agents, or continuous SSH polling pinging production servers.
+   - **Color-Coded Visual Indicators**: Displayed directly in the Remote SSH Servers inventory table with live horizontal progress bars:
+     - 🟢 **Green** (`< 70%`): Optimal capacity & low resource consumption.
+     - 🟡 **Amber** (`70% - 89%`): Warning threshold, approaching capacity.
+     - 🔴 **Red** (`≥ 90%`): Critical resource exhaustion requiring immediate sysadmin attention.
+   - Displays exact percentage and relative timestamp of the last probe.
+
+3. **⚡ Underlying Rsync Command Console & Linux Expert Mode**:
+   - **Complete Operational Transparency**: Dedicated **"Rsync Command"** console accessible from both Job Creation and Job Editing dialogs.
+   - **System Managed Mode**: Live interactive preview of the dynamic `rsync` command line constructed by BackupPulse according to the selected strategy, exclude patterns, bandwidth limit, and flags.
+   - **User Managed (Linux Expert) Mode**: Grants Linux system engineers 100% freedom to customize, edit, and save the entire bash command string, adding custom pipes, shell wrappers, or non-standard rsync flags.
+   - **1-Click Linux Expert Preset Flags**: Rapidly inject standard enterprise rsync flags:
+     - `--partial`: Keep partially transferred files for fast resume.
+     - `--inplace`: Update target files directly in-place without creating intermediate temp files.
+     - `--sparse`: Handle sparse filesystem allocations efficiently.
+     - `--numeric-ids`: Preserve numeric UID/GID numbers across differing host user databases.
+     - `--protect-args`: Prevent remote shell from interpreting wildcards and spaces.
+     - `--delete-after`: Perform file deletions on the destination only after all transfers succeed.
+     - `--hard-links`: Recreate hard links on destination mirroring the source filesystem.
+     - `--compress-level=6`: Explicitly configure zlib compression ratio.
+   - **Execution Fidelity**: When `isUserManaged` is active, the engine executes the exact user-defined bash command verbatim in production runs.
+
+4. **🛡️ Central Backup Telemetry & Multi-Channel Alert Policies**:
+   - **Central Telemetry Recording (`recordTelemetry`)**:
+     - Optional per-job toggle. When enabled, every Rsync run automatically writes a standardized telemetry record to the central `backup_reports` database.
+     - Integrated seamlessly into the global 365-day SLA heatmap, server fleet inventory, anomaly detector, and executive KPI aggregations.
+   - **Customizable Alert Notification Policies (`notifyPolicy`)**:
+     - `NONE`: Suppress notifications (silent execution).
+     - `FAILURE_ONLY`: Immediately dispatch failure alerts to DevOps channels if pre-hook, rsync, or post-hook fails.
+     - `ALWAYS`: Dispatch notification alerts on both successful completions and unexpected failures.
+   - **Enterprise Notification Gateways**: Dispatches rich notifications across all 5 configured notification channels: Google Chat (Cards v2), Dark-Mode HTML Email, Slack (Block Kit), Discord (Rich Embeds), and Telegram (HTML).
+
+5. **🖥️ Dedicated NOC Overview Hub & Isolated Execution History**:
+   - **NOC Monitoring Dashboard**:
+     - Centralized monitoring console featuring interactive KPI stat cards (Total Jobs, Transferred Volume, Success Rate %, Registered Servers, Storage Repositories).
+     - Direct 1-click navigation links jumping straight into filtered target workspaces.
+     - Real-time physical storage pool capacity tracking.
+   - **Dedicated Execution History Workspace**:
+     - Cleanly separated from the overview dashboard to eliminate clutter and provide high-density log management.
+     - Limit selector supporting **25 / 50 / 100** runs per page with previous/next pagination.
+     - Slide-over terminal viewer with syntax highlighting, stdout/stderr streams, file transfer counts, and exit codes.
+
+6. **📘 Interactive Operations Guide & Activity Audit Governance**:
+   - **Built-in Operations Walkthrough Modal**:
+     - Accessible via the `(i)` info button next to the header refresh trigger.
+     - 5-step interactive guide outlining the complete Rsync workflow:
+       1. Register remote SSH servers & credentials.
+       2. Define local or remote storage repositories.
+       3. Create synchronization jobs with custom schedules & strategies.
+       4. Run & test jobs with non-destructive Dry-Run (`-n`) simulation.
+       5. Monitor lifecycle logs, terminal output, and central telemetry.
+   - **Activity Audit Trail Enhancements**:
+     - Tamper-evident governance tracking every job run, create, edit, delete, and test operation.
+     - Fast multi-dropdown filters for **Action Type** (Job Run, Create, Update, Delete, Hook Execution) and **Entity Type** (Job, Server, Repository, Run).
+     - Draggable, resizable table columns with visual cursor handles and state persistence.
+     - Accordion-style collapsible JSON parameter inspector for deep payload debugging.
+     - Smooth horizontal scrolling (`overflow-x-auto`) for wide monitor displays.
+
+7. **🔒 Enterprise Confirmation Modals & Non-Root Permission Hardening**:
+   - **Professional Modal Dialogs**:
+     - Completely replaced browser-native `window.confirm()` and `window.alert()` popups with styled, theme-consistent confirmation modals across all delete, bulk delete, run, and test actions.
+     - Non-intrusive toast notifications with auto-dismiss timers and clear status badges.
+   - **Cross-Server Delta Bridge & Permission Hardening**:
+     - Seamless direct SSH execution for same-host pairs.
+     - 2-Stage Delta Bridge with ephemeral staging for distinct remote server pairs.
+     - Built-in `--no-owner`, `--no-group`, `--omit-dir-times` flags to prevent permission denied errors (`rsync: chown failed: Operation not permitted`) when syncing to non-root SSH user accounts.
+     - Resilient multi-line POSIX `df -B1` parsing avoiding filesystem header misalignments.
 
 ### Rsync REST API Endpoints
 
 ```
-GET    /api/v1/rsync/dashboard             - KPI metrics and disk space summary
+GET    /api/v1/rsync/dashboard             - KPI metrics and storage capacity summary
 GET    /api/v1/rsync/jobs                  - List sync jobs (paginated, search, filter)
-POST   /api/v1/rsync/jobs                  - Create new sync job
+POST   /api/v1/rsync/jobs                  - Create sync job (with pre/post hooks, customCommand, notifyPolicy, recordTelemetry)
+GET    /api/v1/rsync/jobs/:id              - Get sync job details
 PUT    /api/v1/rsync/jobs/:id              - Update sync job
 DELETE /api/v1/rsync/jobs/:id              - Delete sync job
 POST   /api/v1/rsync/jobs/bulk-delete      - Bulk delete jobs
-POST   /api/v1/rsync/jobs/:id/run          - Execute job immediately
-POST   /api/v1/rsync/jobs/:id/dry-run      - Simulate job execution (dry-run)
-GET    /api/v1/rsync/servers               - List remote SSH servers
-POST   /api/v1/rsync/servers               - Register remote server credentials
-POST   /api/v1/rsync/servers/:id/test      - Test SSH connection
+POST   /api/v1/rsync/jobs/:id/run          - Execute job immediately (triggers pre-hook, rsync, post-hook)
+POST   /api/v1/rsync/jobs/:id/dry-run      - Simulate job execution (dry-run simulation)
+GET    /api/v1/rsync/servers               - List remote SSH servers (includes lastMetrics: disk, memory, cpu)
+POST   /api/v1/rsync/servers               - Register remote SSH server credentials
+PUT    /api/v1/rsync/servers/:id           - Update remote server credentials
+DELETE /api/v1/rsync/servers/:id           - Delete remote server
+POST   /api/v1/rsync/servers/bulk-delete   - Bulk delete remote servers
+POST   /api/v1/rsync/servers/:id/test      - Test SSH connection & probe realtime Disk/Memory/CPU metrics
 GET    /api/v1/rsync/repositories          - List storage repositories / disks
 POST   /api/v1/rsync/repositories          - Register storage path
+PUT    /api/v1/rsync/repositories/:id      - Update storage repository
+DELETE /api/v1/rsync/repositories/:id      - Delete storage repository
+POST   /api/v1/rsync/repositories/bulk-delete - Bulk delete storage repositories
 POST   /api/v1/rsync/repositories/:id/refresh-space - Probe df -B1 disk capacity
-GET    /api/v1/rsync/runs                  - Execution history (limit 25/50/100)
-GET    /api/v1/rsync/runs/:id              - Full run stdout/stderr terminal log
+GET    /api/v1/rsync/runs                  - Execution history (paginated, limit 25/50/100)
+GET    /api/v1/rsync/runs/:id              - Full run stdout/stderr terminal log (includes hook stages)
+DELETE /api/v1/rsync/runs/:id              - Delete single execution log
 POST   /api/v1/rsync/runs/bulk-delete      - Bulk delete execution logs
-GET    /api/v1/rsync/activity-logs         - Rsync operations audit trail
+GET    /api/v1/rsync/activity-logs         - Rsync operations audit trail (filterable by action & entity)
 ```
 
 ---
