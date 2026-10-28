@@ -24,6 +24,7 @@ import {
   RotateCcw,
   HelpCircle,
   FileCode,
+  Edit3,
 } from 'lucide-react';
 import { RsyncJob, RsyncRepository, RsyncServer } from '../../types';
 import { api } from '../../services/api';
@@ -57,6 +58,7 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
   const [bandwidthLimitKb, setBandwidthLimitKb] = useState<number | ''>('');
   const [excludePatterns, setExcludePatterns] = useState<string>('.git\nnode_modules\n*.tmp\n.DS_Store');
   const [customArgs, setCustomArgs] = useState('');
+  const [customCommand, setCustomCommand] = useState('');
   const [commandMode, setCommandMode] = useState<'SYSTEM' | 'USER'>('SYSTEM');
   const [showCommandBox, setShowCommandBox] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -87,7 +89,10 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
       setBandwidthLimitKb(job.bandwidthLimitKb || '');
       setExcludePatterns(job.excludePatterns ? job.excludePatterns.join('\n') : '');
       setCustomArgs(job.customArgs || '');
-      setCommandMode(job.commandMode || (job.customArgs?.trim() ? 'USER' : 'SYSTEM'));
+      const initialCustomCmd = job.customCommand || job.customArgs || '';
+      setCustomCommand(initialCustomCmd);
+      const initialMode = job.commandMode || (initialCustomCmd.trim() ? 'USER' : 'SYSTEM');
+      setCommandMode(initialMode);
       setShowCommandBox(false);
       setPreservePermissions(job.preservePermissions ?? true);
       setPreserveOwner(job.preserveOwner ?? true);
@@ -110,6 +115,7 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
       setBandwidthLimitKb('');
       setExcludePatterns('.git\nnode_modules\n*.tmp\n.DS_Store');
       setCustomArgs('');
+      setCustomCommand('');
       setCommandMode('SYSTEM');
       setShowCommandBox(false);
       setPreservePermissions(true);
@@ -152,23 +158,7 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
     { flag: '--prune-empty-dirs', label: 'Prune Empty (-m)', desc: 'Prune empty directory chains from file-list' },
   ];
 
-  const handleTogglePreset = (flag: string) => {
-    if (commandMode !== 'USER') {
-      setCommandMode('USER');
-    }
-    const current = customArgs.trim();
-    if (current.includes(flag)) {
-      const updated = current
-        .split(/\s+/)
-        .filter((f) => f !== flag)
-        .join(' ');
-      setCustomArgs(updated);
-    } else {
-      setCustomArgs(current ? `${current} ${flag}` : flag);
-    }
-  };
-
-  const generateCommandPreview = () => {
+  const generateSystemCommand = () => {
     const isSourceRemote = !!(
       sourceServerObj &&
       sourceServerObj.authType !== 'LOCAL' &&
@@ -214,11 +204,6 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
       .filter((p) => p.length > 0);
     for (const pat of patterns) {
       args.push(`--exclude='${pat}'`);
-    }
-
-    // In USER mode, append custom arguments
-    if (commandMode === 'USER' && customArgs.trim()) {
-      args.push(customArgs.trim());
     }
 
     let strategyNote = '';
@@ -273,8 +258,34 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
     return `rsync ${args.join(' ')} ${sshFlag}${srcEp} ${dstEp}${strategyNote}`.trim();
   };
 
+  const handleSelectMode = (mode: 'SYSTEM' | 'USER') => {
+    setCommandMode(mode);
+    if (mode === 'USER' && !customCommand.trim()) {
+      // Prefill with the system generated command as the base for the user to edit
+      setCustomCommand(generateSystemCommand());
+    }
+  };
+
+  const handleTogglePreset = (flag: string) => {
+    if (commandMode !== 'USER') {
+      setCommandMode('USER');
+    }
+    const current = customCommand.trim() ? customCommand : generateSystemCommand();
+    if (current.includes(flag)) {
+      const updated = current.replace(new RegExp(`\\s*${flag}\\b`, 'g'), '');
+      setCustomCommand(updated);
+    } else {
+      if (current.includes('rsync ')) {
+        const updated = current.replace(/rsync\s+/, `rsync ${flag} `);
+        setCustomCommand(updated);
+      } else {
+        setCustomCommand(`${current} ${flag}`);
+      }
+    }
+  };
+
   const handleCopyCommand = () => {
-    const cmd = generateCommandPreview();
+    const cmd = commandMode === 'USER' && customCommand.trim() ? customCommand : generateSystemCommand();
     navigator.clipboard.writeText(cmd);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -303,6 +314,8 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
         .map((p) => p.trim())
         .filter((p) => p.length > 0);
 
+      const effectiveCustomCmd = commandMode === 'USER' && customCommand.trim() ? customCommand.trim() : null;
+
       const payload: Partial<RsyncJob> = {
         name: name.trim(),
         sourceRepoId,
@@ -315,7 +328,8 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
         cronSchedule: cronSchedule.trim() || null,
         bandwidthLimitKb: bandwidthLimitKb !== '' ? Number(bandwidthLimitKb) : null,
         excludePatterns: patterns,
-        customArgs: commandMode === 'USER' && customArgs.trim() ? customArgs.trim() : null,
+        customCommand: effectiveCustomCmd,
+        customArgs: effectiveCustomCmd,
         commandMode,
         preservePermissions,
         preserveOwner,
@@ -715,7 +729,7 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
           </div>
 
           {/* ========================================================================= */}
-          {/* RSYNC COMMAND BEHIND THE SCENES - INSPECTOR & CUSTOMIZER */}
+          {/* RSYNC COMMAND BEHIND THE SCENES - FULL COMMAND INSPECTOR & EXPERT EDITOR */}
           {/* ========================================================================= */}
           <div className="pt-2 border-t border-slate-800 space-y-3">
             {/* The Trigger Bar */}
@@ -734,7 +748,7 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
                     {commandMode === 'USER' ? (
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center space-x-1">
                         <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
-                        <span>User Managed</span>
+                        <span>User Managed (Custom Full Command)</span>
                       </span>
                     ) : (
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-medium bg-slate-900 text-slate-300 border border-slate-800 flex items-center space-x-1">
@@ -745,7 +759,7 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
                   </div>
                   <p className="text-[11px] text-slate-400 mt-0.5">
                     {commandMode === 'USER'
-                      ? 'Custom Linux parameters and flags are actively overriding default execution'
+                      ? 'Full custom rsync command line active — will be executed exactly as entered below'
                       : 'Automatically computed behind the scenes based on your configuration'}
                   </p>
                 </div>
@@ -773,12 +787,12 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
                 <div>
                   <div className="text-[11px] font-semibold text-slate-300 mb-2 flex items-center justify-between">
                     <span>Command Management Mode:</span>
-                    <span className="text-[10px] text-slate-500">Choose between automated construction or manual expert overrides</span>
+                    <span className="text-[10px] text-slate-500">Choose between automated construction or full command edit freedom</span>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {/* System Managed Option */}
                     <div
-                      onClick={() => setCommandMode('SYSTEM')}
+                      onClick={() => handleSelectMode('SYSTEM')}
                       className={`p-3 rounded-xl border cursor-pointer transition-all ${
                         commandMode === 'SYSTEM'
                           ? 'bg-cyan-950/40 border-cyan-500 text-white shadow-md'
@@ -797,13 +811,13 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
                         )}
                       </div>
                       <p className="text-[11px] text-slate-400 leading-snug">
-                        BackupPulse automatically generates and computes optimal flags, security wrappers, and topology bridges.
+                        BackupPulse automatically generates and computes optimal flags, security wrappers, and topology bridges from form options.
                       </p>
                     </div>
 
                     {/* User Managed Option */}
                     <div
-                      onClick={() => setCommandMode('USER')}
+                      onClick={() => handleSelectMode('USER')}
                       className={`p-3 rounded-xl border cursor-pointer transition-all ${
                         commandMode === 'USER'
                           ? 'bg-amber-500/15 border-amber-500 text-white shadow-md'
@@ -817,89 +831,94 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
                         </div>
                         {commandMode === 'USER' && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono">
-                            Active
+                            Editable
                           </span>
                         )}
                       </div>
                       <p className="text-[11px] text-slate-400 leading-snug">
-                        Linux expert freedom. Specify custom parameters, tuning arguments, and overrides directly. Flagged as User Managed.
+                        Full Linux expert freedom. Directly edit the entire command line, add custom flags, override arguments, and execute it as written.
                       </p>
                     </div>
                   </div>
                 </div>
 
-                {/* Command Preview Terminal */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="text-slate-400 font-mono flex items-center space-x-1.5">
-                      <Terminal className="h-3.5 w-3.5 text-amber-400" />
-                      <span>Live Rsync Execution Shell</span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleCopyCommand}
-                      className="flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-[10px] font-semibold transition-colors cursor-pointer"
-                    >
-                      {copied ? (
-                        <>
-                          <Check className="h-3 w-3 text-emerald-400" />
-                          <span className="text-emerald-400">Copied!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="h-3 w-3 text-slate-400" />
-                          <span>Copy Command</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-
-                  <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800/80 font-mono text-[11px] text-slate-300 leading-relaxed overflow-x-auto shadow-inner whitespace-pre-wrap select-all selection:bg-amber-500/30 selection:text-white">
-                    <span className="text-emerald-400 font-bold">$ </span>
-                    {generateCommandPreview()}
-                  </div>
-                </div>
-
-                {/* User Managed Parameters Editor */}
-                {commandMode === 'USER' && (
-                  <div className="space-y-3 pt-3 border-t border-slate-800/80 animate-fadeIn">
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="text-xs font-semibold text-amber-300 flex items-center space-x-1.5">
-                          <Sliders className="h-3.5 w-3.5" />
-                          <span>Custom Linux Rsync Parameters:</span>
-                        </label>
-                        {customArgs.trim() && (
-                          <button
-                            type="button"
-                            onClick={() => setCustomArgs('')}
-                            className="text-[10px] text-slate-400 hover:text-rose-400 flex items-center space-x-1 transition-colors"
-                          >
-                            <RotateCcw className="h-3 w-3" />
-                            <span>Clear Custom Args</span>
-                          </button>
-                        )}
+                {/* ================================================================= */}
+                {/* 1. USER MANAGED: FULL EDITABLE RSYNC COMMAND TERMINAL */}
+                {/* ================================================================= */}
+                {commandMode === 'USER' ? (
+                  <div className="space-y-3 pt-2 border-t border-slate-800/80 animate-fadeIn">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-[11px]">
+                      <div className="flex items-center space-x-2">
+                        <div className="p-1 rounded bg-amber-500/20 text-amber-300">
+                          <Edit3 className="h-3.5 w-3.5" />
+                        </div>
+                        <span className="text-amber-300 font-bold font-mono">
+                          Editable Full Rsync Command
+                        </span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono">
+                          Direct Shell Execution
+                        </span>
                       </div>
-                      <input
-                        type="text"
-                        placeholder="e.g. --partial --inplace --sparse --numeric-ids --hard-links --timeout=60"
-                        value={customArgs}
-                        onChange={(e) => setCustomArgs(e.target.value)}
-                        className="w-full px-3 py-2 bg-slate-900 border border-amber-500/40 rounded-xl text-xs font-mono text-amber-200 focus:outline-none focus:border-amber-400 shadow-inner"
+
+                      <div className="flex items-center space-x-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setCustomCommand(generateSystemCommand())}
+                          className="flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 text-[10px] font-semibold transition-colors cursor-pointer"
+                          title="Reset command to system-generated defaults"
+                        >
+                          <RotateCcw className="h-3 w-3 text-slate-400" />
+                          <span>Reset to Default</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCopyCommand}
+                          className="flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-[10px] font-semibold transition-colors cursor-pointer"
+                        >
+                          {copied ? (
+                            <>
+                              <Check className="h-3 w-3 text-emerald-400" />
+                              <span className="text-emerald-400">Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="h-3 w-3 text-slate-400" />
+                              <span>Copy Command</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* The Full Command Monospace Editor */}
+                    <div className="relative rounded-xl border-2 border-amber-500/50 bg-slate-950 overflow-hidden shadow-2xl focus-within:border-amber-400 transition-all">
+                      <div className="flex items-center justify-between px-3.5 py-1.5 bg-slate-900/90 border-b border-amber-500/30 text-[10px] font-mono text-slate-400">
+                        <div className="flex items-center space-x-2">
+                          <span className="inline-block h-2 w-2 rounded-full bg-rose-500/80" />
+                          <span className="inline-block h-2 w-2 rounded-full bg-amber-500/80" />
+                          <span className="inline-block h-2 w-2 rounded-full bg-emerald-500/80" />
+                          <span className="ml-2 text-slate-300 font-semibold">rsync-command-editor.sh</span>
+                        </div>
+                        <span className="text-amber-400 font-mono">Expert Mode Active</span>
+                      </div>
+                      <textarea
+                        rows={6}
+                        value={customCommand}
+                        onChange={(e) => setCustomCommand(e.target.value)}
+                        placeholder="e.g. rsync -av --stats --partial --inplace /source/path/ user@192.168.192.205:/dest/path/"
+                        className="w-full p-3.5 bg-transparent font-mono text-xs text-amber-200 placeholder-slate-600 focus:outline-none selection:bg-amber-500/30 selection:text-white leading-relaxed resize-y"
                       />
-                      <span className="text-[10px] text-slate-500 mt-1 block">
-                        These arguments will be appended directly to the rsync command during sync and dry runs.
-                      </span>
                     </div>
 
                     {/* Quick Linux Expert Preset Chips */}
                     <div>
-                      <span className="text-[11px] font-semibold text-slate-400 block mb-1.5">
-                        Quick Preset Flags (Click to toggle):
+                      <span className="text-[11px] font-semibold text-slate-300 block mb-1.5 flex items-center justify-between">
+                        <span>Insert Quick Preset Linux Flags (Click to insert or remove):</span>
+                        <span className="text-[10px] text-slate-500 font-normal">Click chip to inject into command</span>
                       </span>
                       <div className="flex flex-wrap gap-1.5">
                         {EXPERT_PRESETS.map((preset) => {
-                          const isApplied = customArgs.split(/\s+/).includes(preset.flag);
+                          const isApplied = customCommand.includes(preset.flag);
                           return (
                             <button
                               key={preset.flag}
@@ -920,20 +939,51 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
                       </div>
                     </div>
 
-                    {/* Reset Button */}
-                    <div className="flex justify-end pt-1">
+                    <div className="p-2.5 rounded-lg bg-amber-950/20 border border-amber-500/30 text-[11px] text-amber-200/90 flex items-start space-x-2">
+                      <Sparkles className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                      <span>
+                        <strong>Expert Freedom:</strong> You can edit any parameter, switch rsync flags, change remote paths or SSH wrappers, or write multi-stage pipelines above. BackupPulse will save and execute this exact command when this job runs.
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  /* ================================================================= */
+                  /* 2. SYSTEM MANAGED: DYNAMIC LIVE TERMINAL PREVIEW */
+                  /* ================================================================= */
+                  <div className="space-y-2 pt-2 border-t border-slate-800/80">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400 font-mono flex items-center space-x-1.5">
+                        <Terminal className="h-3.5 w-3.5 text-cyan-400" />
+                        <span>Live Rsync Execution Shell (Automated Dynamic Preview)</span>
+                      </span>
                       <button
                         type="button"
-                        onClick={() => {
-                          setCommandMode('SYSTEM');
-                          setCustomArgs('');
-                        }}
-                        className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 text-[11px] font-semibold transition-colors flex items-center space-x-1.5 cursor-pointer"
+                        onClick={handleCopyCommand}
+                        className="flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-[10px] font-semibold transition-colors cursor-pointer"
                       >
-                        <RotateCcw className="h-3 w-3" />
-                        <span>Revert to System Managed Default</span>
+                        {copied ? (
+                          <>
+                            <Check className="h-3 w-3 text-emerald-400" />
+                            <span className="text-emerald-400">Copied!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="h-3 w-3 text-slate-400" />
+                            <span>Copy Command</span>
+                          </>
+                        )}
                       </button>
                     </div>
+
+                    <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-300 leading-relaxed overflow-x-auto shadow-inner whitespace-pre-wrap select-all selection:bg-cyan-500/30 selection:text-white">
+                      <span className="text-emerald-400 font-bold">$ </span>
+                      {generateSystemCommand()}
+                    </div>
+
+                    <p className="text-[10px] text-slate-500 flex items-center space-x-1">
+                      <HelpCircle className="h-3 w-3" />
+                      <span>This command updates live as you modify options above. To manually edit every part of the command, switch to <strong>User Managed (Linux Expert)</strong>.</span>
+                    </p>
                   </div>
                 )}
               </div>

@@ -239,6 +239,7 @@ model RsyncJob {
   bandwidthLimitKb    Int?              @map("bandwidth_limit_kb")
   excludePatterns     String[]          @default([]) @map("exclude_patterns")
   customArgs          String?           @map("custom_args")
+  customCommand       String?           @map("custom_command") @db.Text
   commandMode         String            @default("SYSTEM") @map("command_mode")
   preservePermissions Boolean           @default(true) @map("preserve_permissions")
   preserveOwner       Boolean           @default(true) @map("preserve_owner")

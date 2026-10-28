@@ -678,9 +678,58 @@ export class RsyncService {
     const startTime = Date.now();
 
     // ------------------------------------------------------------------------
-    // CASE 1: Cross-Server Sync between Two Different Remote Hosts (Bridge)
+    // CASE 0: User-Managed Custom Full Command (Linux Expert Full Control)
     // ------------------------------------------------------------------------
-    if (isCrossRemoteNodes) {
+    const userManagedCommand =
+      job.commandMode === 'USER' && ((job as any).customCommand || job.customArgs)
+        ? ((job as any).customCommand || job.customArgs)!.trim()
+        : null;
+
+    const isFullCustomCommand = !!(
+      userManagedCommand &&
+      (userManagedCommand.startsWith('rsync') ||
+       userManagedCommand.startsWith('ssh') ||
+       userManagedCommand.startsWith('#') ||
+       userManagedCommand.includes('\n') ||
+       userManagedCommand.includes(';') ||
+       userManagedCommand.includes('&&'))
+    );
+
+    let childCmd = '';
+    let childArgs: string[] = [];
+    let envExtra: NodeJS.ProcessEnv = { ...process.env };
+    let tempKeyFile: string | null = null;
+    let baseDestForSymlink: string | null = null;
+    let sshInfoForRemote: { cmd: string; env: NodeJS.ProcessEnv; tempKeyFile?: string } | null = null;
+
+    if (isFullCustomCommand) {
+      // Set up SSHPASS if remote server uses password
+      if (destServer && destServer.authType === 'PASSWORD' && destServer.password) {
+        envExtra.SSHPASS = destServer.password;
+      } else if (sourceServer && sourceServer.authType === 'PASSWORD' && sourceServer.password) {
+        envExtra.SSHPASS = sourceServer.password;
+      }
+
+      // Set up SSH Private Key if remote server uses key auth
+      const keyServer = (destServer && destServer.authType === 'SSH_KEY' && destServer.sshPrivateKey) ? destServer :
+                        (sourceServer && sourceServer.authType === 'SSH_KEY' && sourceServer.sshPrivateKey) ? sourceServer : null;
+      if (keyServer && keyServer.sshPrivateKey) {
+        tempKeyFile = path.join(os.tmpdir(), `rsync_user_${Date.now()}.key`);
+        fs.writeFileSync(tempKeyFile, keyServer.sshPrivateKey, { mode: 0o600 });
+      }
+
+      let finalCmd = userManagedCommand!;
+      if (runType === 'DRY_RUN' && !finalCmd.includes('-n') && !finalCmd.includes('--dry-run')) {
+        finalCmd = finalCmd.replace(/\brsync\b/g, 'rsync -n');
+      }
+
+      childCmd = finalCmd;
+      childArgs = [];
+      console.log(`[RSYNC USER-MANAGED FULL COMMAND] Executing:\n${childCmd}`);
+    } else if (isCrossRemoteNodes) {
+      // ------------------------------------------------------------------------
+      // CASE 1: Cross-Server Sync between Two Different Remote Hosts (Bridge)
+      // ------------------------------------------------------------------------
       return this.executeTwoStageBridge(
         job,
         sourceServer!,
@@ -694,19 +743,10 @@ export class RsyncService {
         startTime,
         triggeredBy
       );
-    }
-
-    // ------------------------------------------------------------------------
-    // CASE 2 & 3: Same-Remote Host OR Standard (Local/Remote, Remote/Local, Local/Local)
-    // ------------------------------------------------------------------------
-    let childCmd = '';
-    let childArgs: string[] = [];
-    let envExtra: NodeJS.ProcessEnv = { ...process.env };
-    let tempKeyFile: string | null = null;
-    let baseDestForSymlink: string | null = null;
-    let sshInfoForRemote: { cmd: string; env: NodeJS.ProcessEnv; tempKeyFile?: string } | null = null;
-
-    if (isSameRemoteNode) {
+    } else if (isSameRemoteNode) {
+      // ------------------------------------------------------------------------
+      // CASE 2: Same-Remote Host Direct Native Execution via SSH Tunnel
+      // ------------------------------------------------------------------------
       // Both folders are on the SAME remote machine!
       // Rsync runs natively on that machine via SSH tunnel at direct drive speed.
       let targetDest = destRaw;

@@ -665,7 +665,8 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
 
       const mappedItems = items.map((job) => ({
         ...job,
-        commandMode: (job as any).commandMode || (job.customArgs && job.customArgs.trim() ? 'USER' : 'SYSTEM'),
+        commandMode: (job as any).commandMode || ((job as any).customCommand || (job.customArgs && job.customArgs.trim()) ? 'USER' : 'SYSTEM'),
+        customCommand: (job as any).customCommand || job.customArgs || null,
       }));
 
       return reply.send(
@@ -724,8 +725,9 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
           cronSchedule: body.cronSchedule?.trim() || null,
           bandwidthLimitKb: body.bandwidthLimitKb ? parseInt(body.bandwidthLimitKb, 10) : null,
           excludePatterns: Array.isArray(body.excludePatterns) ? body.excludePatterns : [],
-          customArgs: body.customArgs?.trim() || null,
-          commandMode: body.commandMode || (body.customArgs?.trim() ? 'USER' : 'SYSTEM'),
+          customArgs: body.customArgs?.trim() || body.customCommand?.trim() || null,
+          customCommand: body.customCommand?.trim() || body.customArgs?.trim() || null,
+          commandMode: body.commandMode || (body.customCommand?.trim() || body.customArgs?.trim() ? 'USER' : 'SYSTEM'),
           preservePermissions: body.preservePermissions ?? true,
           preserveOwner: body.preserveOwner ?? true,
           preserveTimes: body.preserveTimes ?? true,
@@ -787,8 +789,9 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
           cronSchedule: body.cronSchedule !== undefined ? (body.cronSchedule?.trim() || null) : undefined,
           bandwidthLimitKb: body.bandwidthLimitKb !== undefined ? (body.bandwidthLimitKb ? parseInt(body.bandwidthLimitKb, 10) : null) : undefined,
           excludePatterns: Array.isArray(body.excludePatterns) ? body.excludePatterns : undefined,
-          customArgs: body.customArgs !== undefined ? (body.customArgs?.trim() || null) : undefined,
-          commandMode: body.commandMode !== undefined ? body.commandMode : (body.customArgs !== undefined ? (body.customArgs?.trim() ? 'USER' : 'SYSTEM') : undefined),
+          customArgs: body.customArgs !== undefined ? (body.customArgs?.trim() || null) : (body.customCommand !== undefined ? (body.customCommand?.trim() || null) : undefined),
+          customCommand: body.customCommand !== undefined ? (body.customCommand?.trim() || null) : (body.customArgs !== undefined ? (body.customArgs?.trim() || null) : undefined),
+          commandMode: body.commandMode !== undefined ? body.commandMode : (body.customCommand !== undefined ? (body.customCommand?.trim() ? 'USER' : 'SYSTEM') : (body.customArgs !== undefined ? (body.customArgs?.trim() ? 'USER' : 'SYSTEM') : undefined)),
           preservePermissions: body.preservePermissions,
           preserveOwner: body.preserveOwner,
           preserveTimes: body.preserveTimes,
