@@ -36,6 +36,8 @@ import {
   ArrowUpRight,
   TrendingUp,
   Cpu,
+  Info,
+  HelpCircle,
 } from 'lucide-react';
 import {
   User,
@@ -54,6 +56,7 @@ import { RsyncRepoModal } from './RsyncRepoModal';
 import { RsyncRunDetailModal } from './RsyncRunDetailModal';
 import { RsyncConfirmModal, RsyncConfirmModalConfig } from './RsyncConfirmModal';
 import { RsyncActivityDetailModal } from './RsyncActivityDetailModal';
+import { RsyncGuideModal } from './RsyncGuideModal';
 
 interface RsyncViewProps {
   currentUser: User | null;
@@ -108,6 +111,7 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
 
   const [selectedRunReport, setSelectedRunReport] = useState<RsyncRun | null>(null);
   const [confirmModal, setConfirmModal] = useState<RsyncConfirmModalConfig | null>(null);
+  const [showGuideModal, setShowGuideModal] = useState<boolean>(false);
 
   // Activity Log states (Filters, Resizing & Expansion)
   const [activityActionFilter, setActivityActionFilter] = useState('ALL');
@@ -739,12 +743,21 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
             </div>
           </div>
 
-          {/* Refresh Action */}
+          {/* Header Action Buttons: Guide & Refresh */}
           <div className="flex items-center space-x-2 self-start md:self-center">
+            <button
+              onClick={() => setShowGuideModal(true)}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:border-amber-500/50 transition-colors shadow-sm cursor-pointer"
+              title="Step-by-step guide: How rsync operations work"
+            >
+              <Info className="h-3.5 w-3.5 text-amber-400" />
+              <span>How It Works</span>
+            </button>
+
             <button
               onClick={refreshCurrentTab}
               disabled={loading}
-              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors"
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors cursor-pointer"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin text-amber-400' : ''}`} />
               <span>Refresh</span>
@@ -2809,6 +2822,25 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
         log={selectedActivityLog}
         isOpen={!!selectedActivityLog}
         onClose={() => setSelectedActivityLog(null)}
+      />
+
+      {/* Rsync Operations Step-by-Step Guide Modal */}
+      <RsyncGuideModal
+        isOpen={showGuideModal}
+        onClose={() => setShowGuideModal(false)}
+        onNavigateTab={handleTabChange}
+        onOpenAddServer={() => {
+          setEditingServer(null);
+          setShowServerModal(true);
+        }}
+        onOpenAddRepo={() => {
+          setEditingRepo(null);
+          setShowRepoModal(true);
+        }}
+        onOpenAddJob={() => {
+          setEditingJob(null);
+          setShowJobModal(true);
+        }}
       />
     </div>
   );
