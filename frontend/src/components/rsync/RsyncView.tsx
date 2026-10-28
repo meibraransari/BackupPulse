@@ -21,10 +21,17 @@ import {
   SlidersHorizontal,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Eye,
   ArrowRight,
   Wifi,
   ExternalLink,
+  Copy,
+  Check,
+  Maximize2,
+  Filter,
+  WrapText,
 } from 'lucide-react';
 import {
   User,
@@ -42,6 +49,7 @@ import { RsyncServerModal } from './RsyncServerModal';
 import { RsyncRepoModal } from './RsyncRepoModal';
 import { RsyncRunDetailModal } from './RsyncRunDetailModal';
 import { RsyncConfirmModal, RsyncConfirmModalConfig } from './RsyncConfirmModal';
+import { RsyncActivityDetailModal } from './RsyncActivityDetailModal';
 
 interface RsyncViewProps {
   currentUser: User | null;
@@ -97,10 +105,65 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
   const [selectedRunReport, setSelectedRunReport] = useState<RsyncRun | null>(null);
   const [confirmModal, setConfirmModal] = useState<RsyncConfirmModalConfig | null>(null);
 
+  // Activity Log states (Filters, Resizing & Expansion)
+  const [activityActionFilter, setActivityActionFilter] = useState('ALL');
+  const [activityEntityFilter, setActivityEntityFilter] = useState('ALL');
+  const [activityColWidths, setActivityColWidths] = useState<{ [key: string]: number }>({
+    timestamp: 170,
+    action: 160,
+    entity: 100,
+    username: 120,
+    details: 520,
+    actions: 90,
+  });
+  const [resizingCol, setResizingCol] = useState<{
+    colKey: string;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
+  const [expandedLogIds, setExpandedLogIds] = useState<Set<string>>(new Set());
+  const [wrapDetails, setWrapDetails] = useState<boolean>(false);
+  const [selectedActivityLog, setSelectedActivityLog] = useState<RsyncActivityLog | null>(null);
+  const [copiedLogId, setCopiedLogId] = useState<string | null>(null);
+
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4500);
   };
+
+  // Column Resizing Mouse Listeners
+  useEffect(() => {
+    if (!resizingCol) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const deltaX = e.clientX - resizingCol.startX;
+      const minWidthMap: { [k: string]: number } = {
+        timestamp: 120,
+        action: 110,
+        entity: 80,
+        username: 90,
+        details: 240,
+        actions: 70,
+      };
+      const minW = minWidthMap[resizingCol.colKey] || 70;
+      const newWidth = Math.max(minW, resizingCol.startWidth + deltaX);
+      setActivityColWidths((prev) => ({
+        ...prev,
+        [resizingCol.colKey]: newWidth,
+      }));
+    };
+
+    const handleMouseUp = () => {
+      setResizingCol(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [resizingCol]);
 
   // ============================================================================
   // Data Fetching
@@ -165,13 +228,19 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
 
   const loadActivityLogs = useCallback(async () => {
     try {
-      const res = await api.getRsyncActivityLogs({ page, limit });
+      const res = await api.getRsyncActivityLogs({
+        page,
+        limit,
+        search: searchTerm,
+        action: activityActionFilter,
+        entityType: activityEntityFilter,
+      });
       setActivityLogs(res.data);
       setPagination(res.pagination);
     } catch (err: any) {
       console.error('Error loading rsync activity logs:', err);
     }
-  }, [page, limit]);
+  }, [page, limit, searchTerm, activityActionFilter, activityEntityFilter]);
 
   const refreshCurrentTab = useCallback(async () => {
     setLoading(true);
@@ -208,7 +277,107 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
     setSelectedRunIds([]);
     setSearchTerm('');
     setStatusFilter('ALL');
+    setActivityActionFilter('ALL');
+    setActivityEntityFilter('ALL');
   };
+
+  // Activity Log Helpers (Resizing, Expanding & Filtering)
+  const totalActivityTableWidth = useMemo(() => {
+    return 40 + Object.values(activityColWidths).reduce((sum, w) => sum + w, 0);
+  }, [activityColWidths]);
+
+  const handleResizeStart = (e: React.MouseEvent, colKey: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setResizingCol({
+      colKey,
+      startX: e.clientX,
+      startWidth: activityColWidths[colKey] || 150,
+    });
+  };
+
+  const resetActivityColWidths = () => {
+    setActivityColWidths({
+      timestamp: 170,
+      action: 160,
+      entity: 100,
+      username: 120,
+      details: 520,
+      actions: 90,
+    });
+    showToast('Column widths reset to default.');
+  };
+
+  const toggleExpandLog = (id: string) => {
+    setExpandedLogIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleExpandAllLogs = () => {
+    if (expandedLogIds.size > 0) {
+      setExpandedLogIds(new Set());
+    } else {
+      setExpandedLogIds(new Set(activityLogs.map((l) => l.id)));
+    }
+  };
+
+  const handleCopyLogJson = (log: RsyncActivityLog, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!log.details) return;
+    navigator.clipboard.writeText(JSON.stringify(log.details, null, 2));
+    setCopiedLogId(log.id);
+    setTimeout(() => setCopiedLogId(null), 2000);
+    showToast('Log payload copied to clipboard.');
+  };
+
+  const availableActivityActions = useMemo(() => {
+    const common = [
+      'JOB_STARTED',
+      'JOB_COMPLETED',
+      'JOB_FAILED',
+      'DRY_RUN_TRIGGERED',
+      'SERVER_TESTED',
+      'SERVER_UPDATED',
+      'RSYNC_SERVER_CREATED',
+      'JOB_CREATED',
+      'JOB_UPDATED',
+      'JOB_DELETED',
+      'REPO_CREATED',
+    ];
+    const fromLogs = activityLogs.map((l) => l.action);
+    return Array.from(new Set([...common, ...fromLogs])).sort();
+  }, [activityLogs]);
+
+  const availableActivityEntities = useMemo(() => {
+    const common = ['RUN', 'SERVER', 'REPOSITORY', 'JOB'];
+    const fromLogs = activityLogs.map((l) => l.entityType);
+    return Array.from(new Set([...common, ...fromLogs])).sort();
+  }, [activityLogs]);
+
+  const filteredActivityLogs = useMemo(() => {
+    let list = activityLogs;
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase().trim();
+      list = list.filter((log) => {
+        if (log.action.toLowerCase().includes(term)) return true;
+        if (log.entityType.toLowerCase().includes(term)) return true;
+        if (log.username.toLowerCase().includes(term)) return true;
+        if (log.details && JSON.stringify(log.details).toLowerCase().includes(term)) return true;
+        return false;
+      });
+    }
+    if (activityActionFilter !== 'ALL') {
+      list = list.filter((log) => log.action === activityActionFilter);
+    }
+    if (activityEntityFilter !== 'ALL') {
+      list = list.filter((log) => log.entityType === activityEntityFilter);
+    }
+    return list;
+  }, [activityLogs, searchTerm, activityActionFilter, activityEntityFilter]);
 
   // ============================================================================
   // Actions: Jobs
@@ -1604,53 +1773,523 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
       {/* 6. Activity & Governance Audit Log */}
       {/* ==================================================================== */}
       {activeSubTab === 'activity' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-          <div className="p-4 border-b border-slate-800 bg-slate-950/40">
-            <h3 className="text-sm font-bold text-white">Rsync Operations & Change Audit Trail</h3>
-            <p className="text-xs text-slate-400">
-              Tamper-evident logs of job creations, executions, dry-runs, and deletions
-            </p>
+        <div className="space-y-4">
+          {/* Audit Controls & Filter Toolbar */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-xl">
+            <div>
+              <div className="flex items-center space-x-2">
+                <h3 className="text-sm font-bold text-white">Rsync Operations & Change Audit Trail</h3>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-amber-300">
+                  {pagination.total} Total
+                </span>
+                {filteredActivityLogs.length !== activityLogs.length && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300">
+                    {filteredActivityLogs.length} Filtered
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Tamper-evident logs of job creations, executions, dry-runs, and deletions
+              </p>
+            </div>
+
+            {/* Quick View Controls */}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={toggleExpandAllLogs}
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors"
+                title={expandedLogIds.size > 0 ? 'Collapse all log details' : 'Expand all log details'}
+              >
+                {expandedLogIds.size > 0 ? (
+                  <>
+                    <ChevronUp className="h-3.5 w-3.5 text-amber-400" />
+                    <span>Collapse All</span>
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="h-3.5 w-3.5" />
+                    <span>Expand All Logs</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                onClick={() => setWrapDetails(!wrapDetails)}
+                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors ${
+                  wrapDetails
+                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                }`}
+                title="Toggle text wrapping in Details column"
+              >
+                <WrapText className="h-3.5 w-3.5" />
+                <span>{wrapDetails ? 'Wrap: ON' : 'Wrap: OFF'}</span>
+              </button>
+
+              <button
+                onClick={resetActivityColWidths}
+                className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700 transition-colors"
+                title="Reset column widths to default"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+              </button>
+            </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead className="bg-slate-950/70 text-slate-400 font-semibold border-b border-slate-800">
-                <tr>
-                  <th className="p-3.5 min-w-[160px]">Timestamp</th>
-                  <th className="p-3.5 min-w-[140px]">Action</th>
-                  <th className="p-3.5 min-w-[120px]">Entity</th>
-                  <th className="p-3.5 min-w-[120px]">Triggered By</th>
-                  <th className="p-3.5 min-w-[250px]">Details</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {activityLogs.length === 0 ? (
+          {/* Search & Filters Bar */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col md:flex-row items-stretch md:items-center gap-3">
+            {/* Search Input */}
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search by action, user, entity, or JSON details..."
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setPage(1);
+                }}
+                className="w-full pl-9 pr-8 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 transition-colors"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-2.5 top-2.5 text-slate-500 hover:text-white"
+                  title="Clear search"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Action Filter */}
+            <div className="flex items-center space-x-2">
+              <span className="text-xs text-slate-400 shrink-0 font-medium">Action:</span>
+              <select
+                value={activityActionFilter}
+                onChange={(e) => {
+                  setActivityActionFilter(e.target.value);
+                  setPage(1);
+                }}
+                className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+              >
+                <option value="ALL">All Actions ({activityLogs.length})</option>
+                {availableActivityActions.map((act) => (
+                  <option key={act} value={act}>
+                    {act}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Entity Filter */}
+            <div className="flex items-center space-x-2">
+              <span className="text-xs text-slate-400 shrink-0 font-medium">Entity:</span>
+              <select
+                value={activityEntityFilter}
+                onChange={(e) => {
+                  setActivityEntityFilter(e.target.value);
+                  setPage(1);
+                }}
+                className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+              >
+                <option value="ALL">All Entities</option>
+                {availableActivityEntities.map((ent) => (
+                  <option key={ent} value={ent}>
+                    {ent}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Clear All Filters button */}
+            {(searchTerm || activityActionFilter !== 'ALL' || activityEntityFilter !== 'ALL') && (
+              <button
+                onClick={() => {
+                  setSearchTerm('');
+                  setActivityActionFilter('ALL');
+                  setActivityEntityFilter('ALL');
+                  setPage(1);
+                }}
+                className="px-3 py-2 rounded-xl text-xs font-semibold text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 transition-colors whitespace-nowrap"
+              >
+                Clear Filters
+              </button>
+            )}
+          </div>
+
+          {/* Activity Logs Table Card with Horizontal Scrollbar & Resizable Columns */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+            <div
+              className={`overflow-x-auto ${resizingCol ? 'select-none' : ''}`}
+              style={{ scrollbarWidth: 'thin' }}
+            >
+              <table
+                className="text-left text-xs border-collapse w-full"
+                style={{
+                  minWidth: `${Math.max(1050, totalActivityTableWidth)}px`,
+                  tableLayout: 'fixed',
+                }}
+              >
+                <colgroup>
+                  <col style={{ width: '40px' }} />
+                  <col style={{ width: `${activityColWidths.timestamp}px` }} />
+                  <col style={{ width: `${activityColWidths.action}px` }} />
+                  <col style={{ width: `${activityColWidths.entity}px` }} />
+                  <col style={{ width: `${activityColWidths.username}px` }} />
+                  <col style={{ width: `${activityColWidths.details}px` }} />
+                  <col style={{ width: `${activityColWidths.actions}px` }} />
+                </colgroup>
+                <thead className="bg-slate-950/70 text-slate-400 font-semibold border-b border-slate-800">
                   <tr>
-                    <td colSpan={5} className="p-8 text-center text-slate-500 italic">
-                      No activity logs recorded.
-                    </td>
+                    <th className="p-3.5 w-10 text-center select-none">
+                      <span className="sr-only">Expand</span>
+                    </th>
+
+                    {/* Timestamp Header */}
+                    <th
+                      style={{ width: `${activityColWidths.timestamp}px` }}
+                      className="relative p-3.5 select-none overflow-hidden"
+                    >
+                      <span className="truncate block pr-2">Timestamp</span>
+                      <div
+                        onMouseDown={(e) => handleResizeStart(e, 'timestamp')}
+                        className="absolute right-0 top-0 bottom-0 w-3 cursor-col-resize hover:bg-amber-500/30 active:bg-amber-500/50 flex items-center justify-center group z-10"
+                        title="Drag to resize Timestamp column"
+                      >
+                        <div className="w-[1.5px] h-4 bg-slate-700 group-hover:bg-amber-400 group-hover:h-full transition-all" />
+                      </div>
+                    </th>
+
+                    {/* Action Header */}
+                    <th
+                      style={{ width: `${activityColWidths.action}px` }}
+                      className="relative p-3.5 select-none overflow-hidden"
+                    >
+                      <span className="truncate block pr-2">Action</span>
+                      <div
+                        onMouseDown={(e) => handleResizeStart(e, 'action')}
+                        className="absolute right-0 top-0 bottom-0 w-3 cursor-col-resize hover:bg-amber-500/30 active:bg-amber-500/50 flex items-center justify-center group z-10"
+                        title="Drag to resize Action column"
+                      >
+                        <div className="w-[1.5px] h-4 bg-slate-700 group-hover:bg-amber-400 group-hover:h-full transition-all" />
+                      </div>
+                    </th>
+
+                    {/* Entity Header */}
+                    <th
+                      style={{ width: `${activityColWidths.entity}px` }}
+                      className="relative p-3.5 select-none overflow-hidden"
+                    >
+                      <span className="truncate block pr-2">Entity</span>
+                      <div
+                        onMouseDown={(e) => handleResizeStart(e, 'entity')}
+                        className="absolute right-0 top-0 bottom-0 w-3 cursor-col-resize hover:bg-amber-500/30 active:bg-amber-500/50 flex items-center justify-center group z-10"
+                        title="Drag to resize Entity column"
+                      >
+                        <div className="w-[1.5px] h-4 bg-slate-700 group-hover:bg-amber-400 group-hover:h-full transition-all" />
+                      </div>
+                    </th>
+
+                    {/* Triggered By Header */}
+                    <th
+                      style={{ width: `${activityColWidths.username}px` }}
+                      className="relative p-3.5 select-none overflow-hidden"
+                    >
+                      <span className="truncate block pr-2">Triggered By</span>
+                      <div
+                        onMouseDown={(e) => handleResizeStart(e, 'username')}
+                        className="absolute right-0 top-0 bottom-0 w-3 cursor-col-resize hover:bg-amber-500/30 active:bg-amber-500/50 flex items-center justify-center group z-10"
+                        title="Drag to resize Triggered By column"
+                      >
+                        <div className="w-[1.5px] h-4 bg-slate-700 group-hover:bg-amber-400 group-hover:h-full transition-all" />
+                      </div>
+                    </th>
+
+                    {/* Details Header */}
+                    <th
+                      style={{ width: `${activityColWidths.details}px` }}
+                      className="relative p-3.5 select-none overflow-hidden"
+                    >
+                      <div className="flex items-center space-x-1.5 truncate pr-2">
+                        <span>Details & Log Payload</span>
+                        <span className="text-[10px] text-slate-500 font-mono">(Resizable)</span>
+                      </div>
+                      <div
+                        onMouseDown={(e) => handleResizeStart(e, 'details')}
+                        className="absolute right-0 top-0 bottom-0 w-3 cursor-col-resize hover:bg-amber-500/30 active:bg-amber-500/50 flex items-center justify-center group z-10"
+                        title="Drag to resize Details column"
+                      >
+                        <div className="w-[1.5px] h-4 bg-slate-700 group-hover:bg-amber-400 group-hover:h-full transition-all" />
+                      </div>
+                    </th>
+
+                    {/* Actions Header */}
+                    <th
+                      style={{ width: `${activityColWidths.actions}px` }}
+                      className="p-3.5 text-right select-none font-semibold text-slate-400"
+                    >
+                      Actions
+                    </th>
                   </tr>
-                ) : (
-                  activityLogs.map((log) => (
-                    <tr key={log.id} className="hover:bg-slate-950/40 transition-colors">
-                      <td className="p-3.5 text-slate-400 font-mono text-[11px]">
-                        {formatTimestamp(log.createdAt)}
-                      </td>
-                      <td className="p-3.5">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-slate-950 border border-slate-800 text-amber-300">
-                          {log.action}
-                        </span>
-                      </td>
-                      <td className="p-3.5 text-slate-300">{log.entityType}</td>
-                      <td className="p-3.5 font-bold text-white">{log.username}</td>
-                      <td className="p-3.5 text-slate-400 font-mono text-[11px] truncate max-w-md">
-                        {log.details ? JSON.stringify(log.details) : '—'}
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {filteredActivityLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="p-10 text-center text-slate-500 italic">
+                        No activity audit logs matching current criteria.
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    filteredActivityLogs.map((log) => {
+                      const isExpanded = expandedLogIds.has(log.id);
+                      const isFailed =
+                        log.action.includes('FAIL') ||
+                        log.details?.status === 'FAILED' ||
+                        Boolean(log.details?.error || log.details?.errorMessage);
+                      const isSuccess =
+                        log.action.includes('COMPLETED') ||
+                        log.action.includes('SUCCESS') ||
+                        log.details?.status === 'SUCCESS' ||
+                        log.details?.status === 'ONLINE';
+
+                      return (
+                        <React.Fragment key={log.id}>
+                          <tr
+                            className={`hover:bg-slate-950/60 transition-colors ${
+                              isExpanded ? 'bg-slate-950/40' : ''
+                            }`}
+                          >
+                            {/* Expand Row Toggle Button */}
+                            <td className="p-3.5 text-center">
+                              <button
+                                onClick={() => toggleExpandLog(log.id)}
+                                className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                                title={isExpanded ? 'Collapse log details' : 'Expand log details'}
+                              >
+                                {isExpanded ? (
+                                  <ChevronDown className="h-3.5 w-3.5 text-amber-400" />
+                                ) : (
+                                  <ChevronRight className="h-3.5 w-3.5" />
+                                )}
+                              </button>
+                            </td>
+
+                            {/* Timestamp */}
+                            <td className="p-3.5 text-slate-400 font-mono text-[11px] truncate">
+                              {formatTimestamp(log.createdAt)}
+                            </td>
+
+                            {/* Action Badge */}
+                            <td className="p-3.5">
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold font-mono border inline-block truncate max-w-full ${
+                                  isFailed
+                                    ? 'bg-rose-950/60 text-rose-300 border-rose-800/60'
+                                    : isSuccess
+                                    ? 'bg-emerald-950/60 text-emerald-300 border-emerald-800/60'
+                                    : log.action.includes('STARTED') || log.action.includes('TESTED')
+                                    ? 'bg-amber-950/60 text-amber-300 border-amber-800/60'
+                                    : 'bg-indigo-950/60 text-indigo-300 border-indigo-800/60'
+                                }`}
+                              >
+                                {log.action}
+                              </span>
+                            </td>
+
+                            {/* Entity */}
+                            <td className="p-3.5 text-slate-300 font-mono text-[11px] truncate">
+                              <span className="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-400">
+                                {log.entityType}
+                              </span>
+                            </td>
+
+                            {/* Triggered By */}
+                            <td className="p-3.5 font-bold text-white truncate">{log.username}</td>
+
+                            {/* Details Payload Cell */}
+                            <td
+                              onClick={() => toggleExpandLog(log.id)}
+                              className={`p-3.5 text-slate-400 font-mono text-[11px] cursor-pointer hover:text-slate-200 transition-colors ${
+                                wrapDetails ? 'whitespace-pre-wrap break-all leading-relaxed' : 'truncate'
+                              }`}
+                              title="Click to expand log details"
+                            >
+                              {log.details ? JSON.stringify(log.details) : '—'}
+                            </td>
+
+                            {/* Actions Column */}
+                            <td className="p-3.5 text-right space-x-1 whitespace-nowrap">
+                              <button
+                                onClick={(e) => handleCopyLogJson(log, e)}
+                                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                                title="Copy JSON Payload"
+                              >
+                                {copiedLogId === log.id ? (
+                                  <Check className="h-3.5 w-3.5 text-emerald-400" />
+                                ) : (
+                                  <Copy className="h-3.5 w-3.5" />
+                                )}
+                              </button>
+                              <button
+                                onClick={() => setSelectedActivityLog(log)}
+                                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-amber-400 transition-colors"
+                                title="Inspect Full Audit Record"
+                              >
+                                <Maximize2 className="h-3.5 w-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+
+                          {/* Accordion Expanded Log Row */}
+                          {isExpanded && (
+                            <tr className="bg-slate-950/80 border-b border-slate-800/80 animate-in fade-in duration-150">
+                              <td colSpan={7} className="p-4 pl-12 space-y-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                                      Payload Details:
+                                    </span>
+                                    {log.details?.jobName && (
+                                      <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-900 border border-slate-800 text-white font-semibold">
+                                        Job: {log.details.jobName}
+                                      </span>
+                                    )}
+                                    {log.details?.status && (
+                                      <span
+                                        className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
+                                          log.details.status === 'SUCCESS' || log.details.status === 'ONLINE'
+                                            ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800/60'
+                                            : log.details.status === 'FAILED' || log.details.status === 'OFFLINE'
+                                            ? 'bg-rose-950/80 text-rose-300 border-rose-800/60'
+                                            : 'bg-amber-950/80 text-amber-300 border-amber-800/60'
+                                        }`}
+                                      >
+                                        Status: {log.details.status}
+                                      </span>
+                                    )}
+                                    {log.details?.latencyMs !== undefined && (
+                                      <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-900 border border-slate-800 text-amber-300">
+                                        Latency: {log.details.latencyMs}ms
+                                      </span>
+                                    )}
+                                    {log.details?.jobId && (
+                                      <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-900 border border-slate-800 text-slate-400">
+                                        Job ID: {log.details.jobId.slice(0, 8)}...
+                                      </span>
+                                    )}
+                                    {log.details?.serverName && (
+                                      <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-900 border border-slate-800 text-indigo-300">
+                                        Node: {log.details.serverName}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="flex items-center space-x-2">
+                                    <button
+                                      onClick={(e) => handleCopyLogJson(log, e)}
+                                      className="flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-[11px] font-semibold transition-colors"
+                                    >
+                                      {copiedLogId === log.id ? (
+                                        <>
+                                          <Check className="h-3 w-3 text-emerald-400" />
+                                          <span className="text-emerald-400">Copied</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Copy className="h-3 w-3" />
+                                          <span>Copy JSON</span>
+                                        </>
+                                      )}
+                                    </button>
+                                    <button
+                                      onClick={() => setSelectedActivityLog(log)}
+                                      className="flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-amber-300 border border-slate-800 text-[11px] font-semibold transition-colors"
+                                    >
+                                      <Maximize2 className="h-3 w-3" />
+                                      <span>Inspect</span>
+                                    </button>
+                                    <button
+                                      onClick={() => toggleExpandLog(log.id)}
+                                      className="px-2 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 text-[11px] border border-slate-800 transition-colors"
+                                    >
+                                      Collapse
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* Banner for Message or Error */}
+                                {log.details?.message && (
+                                  <div className="bg-slate-900/90 border border-slate-800 rounded-lg p-2.5 text-slate-300 text-xs font-mono">
+                                    <span className="text-slate-500 font-sans text-[10px] block uppercase font-bold">
+                                      Message:
+                                    </span>
+                                    {log.details.message}
+                                  </div>
+                                )}
+                                {log.details?.error && (
+                                  <div className="bg-rose-950/50 border border-rose-800/70 rounded-lg p-2.5 text-rose-200 text-xs font-mono">
+                                    <span className="text-rose-400 font-sans text-[10px] block uppercase font-bold">
+                                      Error Details:
+                                    </span>
+                                    {log.details.error}
+                                  </div>
+                                )}
+
+                                {/* Formatted JSON Payload */}
+                                <pre className="bg-slate-950/90 border border-slate-800/90 rounded-xl p-3.5 text-[11px] font-mono text-emerald-300/90 overflow-x-auto custom-scrollbar max-h-72 leading-relaxed whitespace-pre-wrap break-all select-text">
+                                  {log.details ? JSON.stringify(log.details, null, 2) : 'No details payload recorded.'}
+                                </pre>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination Controls */}
+            <div className="px-4 py-3 bg-slate-950/50 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
+              <div className="flex items-center space-x-2">
+                <span>Show</span>
+                <select
+                  value={limit}
+                  onChange={(e) => {
+                    setLimit(parseInt(e.target.value, 10));
+                    setPage(1);
+                  }}
+                  className="px-2 py-1 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 focus:outline-none focus:border-amber-500"
+                >
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+                <span>per page • Total: {pagination.total} records</span>
+              </div>
+
+              <div className="flex items-center space-x-1.5">
+                <button
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </button>
+                <span className="px-2">
+                  Page {page} of {pagination.totalPages || 1}
+                </span>
+                <button
+                  disabled={page >= pagination.totalPages}
+                  onClick={() => setPage((p) => p + 1)}
+                  className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 disabled:opacity-40"
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -1712,6 +2351,13 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
         config={confirmModal}
         isOpen={!!confirmModal}
         onClose={() => setConfirmModal(null)}
+      />
+
+      {/* Activity Log Full Inspection Modal */}
+      <RsyncActivityDetailModal
+        log={selectedActivityLog}
+        isOpen={!!selectedActivityLog}
+        onClose={() => setSelectedActivityLog(null)}
       />
     </div>
   );

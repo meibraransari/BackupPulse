@@ -711,13 +711,22 @@ export const api = {
     });
   },
 
-  async getRsyncActivityLogs(params: { page?: number; limit?: number } = {}): Promise<{
+  async getRsyncActivityLogs(params: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    action?: string;
+    entityType?: string;
+  } = {}): Promise<{
     data: RsyncActivityLog[];
     pagination: { page: number; limit: number; total: number; totalPages: number };
   }> {
     const q = new URLSearchParams();
     if (params.page) q.append('page', String(params.page));
     if (params.limit) q.append('limit', String(params.limit));
+    if (params.search) q.append('search', params.search);
+    if (params.action && params.action !== 'ALL') q.append('action', params.action);
+    if (params.entityType && params.entityType !== 'ALL') q.append('entityType', params.entityType);
     return request<{
       data: RsyncActivityLog[];
       pagination: { page: number; limit: number; total: number; totalPages: number };

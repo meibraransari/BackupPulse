@@ -1001,14 +1001,31 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (request: any, reply: FastifyReply) => {
-      const { page = '1', limit = '50' } = request.query || {};
+      const { page = '1', limit = '50', search, action, entityType } = request.query || {};
       const pageNum = Math.max(1, parseInt(page, 10) || 1);
       const limitNum = Math.max(1, parseInt(limit, 10) || 50);
       const skip = (pageNum - 1) * limitNum;
 
+      const where: any = {};
+      if (action && action !== 'ALL') {
+        where.action = action;
+      }
+      if (entityType && entityType !== 'ALL') {
+        where.entityType = entityType;
+      }
+      if (search && typeof search === 'string' && search.trim()) {
+        const term = search.trim();
+        where.OR = [
+          { action: { contains: term, mode: 'insensitive' } },
+          { entityType: { contains: term, mode: 'insensitive' } },
+          { username: { contains: term, mode: 'insensitive' } },
+        ];
+      }
+
       const [total, logs] = await Promise.all([
-        prisma.rsyncActivityLog.count(),
+        prisma.rsyncActivityLog.count({ where }),
         prisma.rsyncActivityLog.findMany({
+          where,
           skip,
           take: limitNum,
           orderBy: { createdAt: 'desc' },
