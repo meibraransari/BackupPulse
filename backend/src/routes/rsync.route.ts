@@ -19,6 +19,49 @@ function formatBytes(bytes: bigint | number): string {
   return parseFloat((b / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
+interface LogRsyncActivityOptions {
+  action: string;
+  entityType: 'JOB' | 'SERVER' | 'REPOSITORY' | 'RUN';
+  entityId?: string | null;
+  username: string;
+  details?: Record<string, any>;
+  request?: any;
+  governanceAction?: string;
+  targetResource?: string;
+}
+
+async function logRsyncActivity(options: LogRsyncActivityOptions): Promise<void> {
+  try {
+    // 1. Log to dedicated Rsync Activity Audit Trail (RsyncActivityLog)
+    await prisma.rsyncActivityLog.create({
+      data: {
+        action: options.action,
+        entityType: options.entityType,
+        entityId: options.entityId || null,
+        username: options.username,
+        details: options.details ? serializeBigInt(options.details) : undefined,
+      },
+    });
+
+    // 2. Also record in central Governance Audit Trail (AdminAuditLog) if request/user exists
+    if (options.request?.user) {
+      const govAction = options.governanceAction || `RSYNC_${options.action}`;
+      await recordAuditLog({
+        ...getRequestMetadata(options.request),
+        userId: options.request.user.id,
+        username: options.request.user.username || options.username,
+        userRole: options.request.user.role,
+        action: govAction,
+        category: 'SYSTEM',
+        targetResource: options.targetResource || options.entityId || options.action,
+        details: options.details ? serializeBigInt(options.details) : undefined,
+      }).catch((err) => console.error('Governance audit log error:', err));
+    }
+  } catch (err) {
+    console.error('Failed to log rsync activity:', err);
+  }
+}
+
 export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
   const authPreValidation = [(fastify as any).authenticate];
 
@@ -234,15 +277,22 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
         },
       });
 
-      await recordAuditLog({
-        ...getRequestMetadata(request),
-        userId: request.user.id,
-        username: request.user.username,
-        userRole: request.user.role,
-        action: 'RSYNC_SERVER_CREATED',
-        category: 'SETTINGS',
+      await logRsyncActivity({
+        action: 'SERVER_CREATED',
+        entityType: 'SERVER',
+        entityId: server.id,
+        username: request.user?.username || 'admin',
+        request,
+        governanceAction: 'RSYNC_SERVER_CREATED',
         targetResource: server.name,
-        details: { serverId: server.id, host: server.host },
+        details: {
+          serverId: server.id,
+          name: server.name,
+          host: server.host,
+          port: server.port,
+          username: server.username,
+          authType: server.authType,
+        },
       });
 
       return reply.status(201).send(serializeBigInt(server));
@@ -288,19 +338,21 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
       });
 
       // Audit log
-      await prisma.rsyncActivityLog.create({
-        data: {
-          action: 'SERVER_UPDATED',
-          entityId: id,
-          entityType: 'SERVER',
-          username: request.user?.username || 'SYSTEM',
-          details: {
-            name: updated.name,
-            host: updated.host,
-            username: updated.username,
-            port: updated.port,
-            authType: updated.authType,
-          },
+      await logRsyncActivity({
+        action: 'SERVER_UPDATED',
+        entityType: 'SERVER',
+        entityId: id,
+        username: request.user?.username || 'admin',
+        request,
+        governanceAction: 'RSYNC_SERVER_UPDATED',
+        targetResource: updated.name,
+        details: {
+          serverId: id,
+          name: updated.name,
+          host: updated.host,
+          username: updated.username,
+          port: updated.port,
+          authType: updated.authType,
         },
       });
 
@@ -330,7 +382,26 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
       }
 
       const { id } = request.params;
+      const existing = await prisma.rsyncServer.findUnique({ where: { id } });
       await prisma.rsyncServer.delete({ where: { id } });
+
+      await logRsyncActivity({
+        action: 'SERVER_DELETED',
+        entityType: 'SERVER',
+        entityId: id,
+        username: request.user?.username || 'admin',
+        request,
+        governanceAction: 'RSYNC_SERVER_DELETED',
+        targetResource: existing?.name || id,
+        details: {
+          serverId: id,
+          name: existing?.name || id,
+          host: existing?.host,
+          port: existing?.port,
+          username: existing?.username,
+        },
+      });
+
       return reply.send({ success: true, message: 'Server deleted successfully' });
     }
   );
@@ -355,8 +426,28 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
         return reply.status(400).send({ error: 'ids array is required' });
       }
 
+      const existingServers = await prisma.rsyncServer.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, name: true, host: true, username: true },
+      });
+
       const deleted = await prisma.rsyncServer.deleteMany({
         where: { id: { in: ids } },
+      });
+
+      await logRsyncActivity({
+        action: 'SERVER_BULK_DELETED',
+        entityType: 'SERVER',
+        entityId: null,
+        username: request.user?.username || 'admin',
+        request,
+        governanceAction: 'RSYNC_SERVER_BULK_DELETED',
+        targetResource: `${deleted.count} Remote Server(s)`,
+        details: {
+          count: deleted.count,
+          serverIds: ids,
+          deletedServers: existingServers.map((s) => ({ id: s.id, name: s.name, host: s.host })),
+        },
       });
 
       return reply.send({ success: true, count: deleted.count });
@@ -414,6 +505,27 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
           .catch(() => {});
       }
 
+      // Record test connection in audit trail
+      await logRsyncActivity({
+        action: 'SERVER_TESTED',
+        entityType: 'SERVER',
+        entityId: body.serverId || null,
+        username: request.user?.username || 'admin',
+        request,
+        governanceAction: 'RSYNC_SERVER_TESTED',
+        targetResource: body.host || body.serverId,
+        details: {
+          serverId: body.serverId || null,
+          host: body.host,
+          port: body.port ? parseInt(body.port, 10) : 22,
+          authType: body.authType,
+          status: result.status,
+          latencyMs: result.latencyMs,
+          metrics: result.metrics,
+          message: result.message,
+        },
+      });
+
       return reply.send(result);
     }
   );
@@ -435,7 +547,11 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
 
       const { id } = request.params;
       const logLevel = request.body?.logLevel || (request.query as any)?.logLevel || 'info';
-      const result = await rsyncService.testServerConnection(id, logLevel);
+      const result = await rsyncService.testServerConnection(
+        id,
+        logLevel,
+        request.user?.username || 'admin'
+      );
       return reply.send(result);
     }
   );
@@ -509,6 +625,23 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
         },
       });
 
+      await logRsyncActivity({
+        action: 'REPOSITORY_CREATED',
+        entityType: 'REPOSITORY',
+        entityId: repo.id,
+        username: request.user?.username || 'admin',
+        request,
+        governanceAction: 'RSYNC_REPO_CREATED',
+        targetResource: repo.name,
+        details: {
+          repositoryId: repo.id,
+          name: repo.name,
+          type: repo.type,
+          path: repo.path,
+          serverId: repo.serverId,
+        },
+      });
+
       // Automatically probe disk space
       rsyncService.probeRepositoryDiskSpace(repo.id).catch(() => {});
 
@@ -545,6 +678,23 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
         },
       });
 
+      await logRsyncActivity({
+        action: 'REPOSITORY_UPDATED',
+        entityType: 'REPOSITORY',
+        entityId: id,
+        username: request.user?.username || 'admin',
+        request,
+        governanceAction: 'RSYNC_REPO_UPDATED',
+        targetResource: updated.name,
+        details: {
+          repositoryId: updated.id,
+          name: updated.name,
+          type: updated.type,
+          path: updated.path,
+          serverId: updated.serverId,
+        },
+      });
+
       rsyncService.probeRepositoryDiskSpace(updated.id).catch(() => {});
 
       return reply.send(serializeBigInt(updated));
@@ -567,7 +717,25 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
       }
 
       const { id } = request.params;
+      const existing = await prisma.rsyncRepository.findUnique({ where: { id } });
       await prisma.rsyncRepository.delete({ where: { id } });
+
+      await logRsyncActivity({
+        action: 'REPOSITORY_DELETED',
+        entityType: 'REPOSITORY',
+        entityId: id,
+        username: request.user?.username || 'admin',
+        request,
+        governanceAction: 'RSYNC_REPO_DELETED',
+        targetResource: existing?.name || id,
+        details: {
+          repositoryId: id,
+          name: existing?.name || id,
+          path: existing?.path,
+          type: existing?.type,
+        },
+      });
+
       return reply.send({ success: true, message: 'Repository deleted successfully' });
     }
   );
@@ -592,8 +760,28 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
         return reply.status(400).send({ error: 'ids array is required' });
       }
 
+      const existingRepos = await prisma.rsyncRepository.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, name: true, path: true, type: true },
+      });
+
       const deleted = await prisma.rsyncRepository.deleteMany({
         where: { id: { in: ids } },
+      });
+
+      await logRsyncActivity({
+        action: 'REPOSITORY_BULK_DELETED',
+        entityType: 'REPOSITORY',
+        entityId: null,
+        username: request.user?.username || 'admin',
+        request,
+        governanceAction: 'RSYNC_REPO_BULK_DELETED',
+        targetResource: `${deleted.count} Repositories`,
+        details: {
+          count: deleted.count,
+          repositoryIds: ids,
+          deletedRepositories: existingRepos.map((r) => ({ id: r.id, name: r.name, path: r.path })),
+        },
       });
 
       return reply.send({ success: true, count: deleted.count });
@@ -616,7 +804,33 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
       }
 
       const { id } = request.params;
+      const repo = await prisma.rsyncRepository.findUnique({
+        where: { id },
+        select: { name: true, path: true },
+      });
       const space = await rsyncService.probeRepositoryDiskSpace(id);
+
+      await logRsyncActivity({
+        action: 'REPOSITORY_SPACE_REFRESHED',
+        entityType: 'REPOSITORY',
+        entityId: id,
+        username: request.user?.username || 'admin',
+        request,
+        governanceAction: 'RSYNC_REPO_SPACE_REFRESHED',
+        targetResource: repo?.name || id,
+        details: {
+          repositoryId: id,
+          name: repo?.name,
+          path: repo?.path,
+          totalBytes: space.totalBytes ? Number(space.totalBytes) : 0,
+          usedBytes: space.usedBytes ? Number(space.usedBytes) : 0,
+          availableBytes: space.availableBytes ? Number(space.availableBytes) : 0,
+          percentUsed:
+            space.totalBytes && Number(space.totalBytes) > 0
+              ? Math.round((Number(space.usedBytes) / Number(space.totalBytes)) * 100)
+              : 0,
+        },
+      });
       return reply.send(
         serializeBigInt({
           ...space,
@@ -764,6 +978,30 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
         },
       });
 
+      await logRsyncActivity({
+        action: 'JOB_CREATED',
+        entityType: 'JOB',
+        entityId: job.id,
+        username: request.user?.username || 'admin',
+        request,
+        governanceAction: 'RSYNC_JOB_CREATED',
+        targetResource: job.name,
+        details: {
+          jobId: job.id,
+          name: job.name,
+          sourceRepoId: job.sourceRepoId,
+          destRepoId: job.destRepoId,
+          syncStrategy: job.syncStrategy,
+          cronSchedule: job.cronSchedule,
+          commandMode: job.commandMode,
+          customCommand: job.customCommand,
+          recordTelemetry: job.recordTelemetry,
+          notifyPolicy: job.notifyPolicy,
+          preHookEnabled: job.preHookEnabled,
+          postHookEnabled: job.postHookEnabled,
+        },
+      });
+
       // If active with cronSchedule, schedule immediately (Zero-Restart)
       if (job.isActive && job.cronSchedule) {
         rsyncSchedulerService.scheduleJob(job.id, job.cronSchedule, job.name);
@@ -836,6 +1074,29 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
         },
       });
 
+      await logRsyncActivity({
+        action: 'JOB_UPDATED',
+        entityType: 'JOB',
+        entityId: id,
+        username: request.user?.username || 'admin',
+        request,
+        governanceAction: 'RSYNC_JOB_UPDATED',
+        targetResource: updated.name,
+        details: {
+          jobId: updated.id,
+          name: updated.name,
+          syncStrategy: updated.syncStrategy,
+          cronSchedule: updated.cronSchedule,
+          commandMode: updated.commandMode,
+          customCommand: updated.customCommand,
+          isActive: updated.isActive,
+          recordTelemetry: updated.recordTelemetry,
+          notifyPolicy: updated.notifyPolicy,
+          preHookEnabled: updated.preHookEnabled,
+          postHookEnabled: updated.postHookEnabled,
+        },
+      });
+
       // Update scheduler
       if (updated.isActive && updated.cronSchedule) {
         rsyncSchedulerService.scheduleJob(updated.id, updated.cronSchedule, updated.name);
@@ -863,8 +1124,28 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
       }
 
       const { id } = request.params;
+      const existing = await prisma.rsyncJob.findUnique({
+        where: { id },
+        select: { id: true, name: true, syncStrategy: true },
+      });
       rsyncSchedulerService.unscheduleJob(id);
       await prisma.rsyncJob.delete({ where: { id } });
+
+      await logRsyncActivity({
+        action: 'JOB_DELETED',
+        entityType: 'JOB',
+        entityId: id,
+        username: request.user?.username || 'admin',
+        request,
+        governanceAction: 'RSYNC_JOB_DELETED',
+        targetResource: existing?.name || id,
+        details: {
+          jobId: id,
+          name: existing?.name || id,
+          syncStrategy: existing?.syncStrategy,
+        },
+      });
+
       return reply.send({ success: true, message: 'Job deleted successfully' });
     }
   );
@@ -893,8 +1174,28 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
         rsyncSchedulerService.unscheduleJob(id);
       }
 
+      const existingJobs = await prisma.rsyncJob.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, name: true, syncStrategy: true },
+      });
+
       const deleted = await prisma.rsyncJob.deleteMany({
         where: { id: { in: ids } },
+      });
+
+      await logRsyncActivity({
+        action: 'JOB_BULK_DELETED',
+        entityType: 'JOB',
+        entityId: null,
+        username: request.user?.username || 'admin',
+        request,
+        governanceAction: 'RSYNC_JOB_BULK_DELETED',
+        targetResource: `${deleted.count} Sync Jobs`,
+        details: {
+          count: deleted.count,
+          jobIds: ids,
+          deletedJobs: existingJobs.map((j) => ({ id: j.id, name: j.name })),
+        },
       });
 
       return reply.send({ success: true, count: deleted.count });
@@ -1072,7 +1373,31 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
       }
 
       const { id } = request.params;
+      const existing = await prisma.rsyncRun.findUnique({
+        where: { id },
+        include: { job: { select: { id: true, name: true } } },
+      });
+
       await prisma.rsyncRun.delete({ where: { id } });
+
+      await logRsyncActivity({
+        action: 'RUN_DELETED',
+        entityType: 'RUN',
+        entityId: id,
+        username: request.user?.username || 'admin',
+        request,
+        governanceAction: 'RSYNC_RUN_DELETED',
+        targetResource: `Run log for ${existing?.job?.name || id}`,
+        details: {
+          runId: id,
+          jobId: existing?.jobId,
+          jobName: existing?.job?.name,
+          status: existing?.status,
+          runType: existing?.runType,
+          startedAt: existing?.startedAt,
+        },
+      });
+
       return reply.send({ success: true, message: 'Run log deleted' });
     }
   );
@@ -1099,6 +1424,20 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
 
       const deleted = await prisma.rsyncRun.deleteMany({
         where: { id: { in: ids } },
+      });
+
+      await logRsyncActivity({
+        action: 'RUN_BULK_DELETED',
+        entityType: 'RUN',
+        entityId: null,
+        username: request.user?.username || 'admin',
+        request,
+        governanceAction: 'RSYNC_RUN_BULK_DELETED',
+        targetResource: `${deleted.count} Execution Run(s)`,
+        details: {
+          count: deleted.count,
+          runIds: ids,
+        },
       });
 
       return reply.send({ success: true, count: deleted.count });

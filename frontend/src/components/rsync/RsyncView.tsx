@@ -346,17 +346,27 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
 
   const availableActivityActions = useMemo(() => {
     const common = [
+      'JOB_CREATED',
+      'JOB_UPDATED',
+      'JOB_DELETED',
+      'JOB_BULK_DELETED',
       'JOB_STARTED',
       'JOB_COMPLETED',
       'JOB_FAILED',
       'DRY_RUN_TRIGGERED',
-      'SERVER_TESTED',
+      'DRY_RUN_COMPLETED',
+      'SERVER_CREATED',
       'SERVER_UPDATED',
-      'RSYNC_SERVER_CREATED',
-      'JOB_CREATED',
-      'JOB_UPDATED',
-      'JOB_DELETED',
-      'REPO_CREATED',
+      'SERVER_DELETED',
+      'SERVER_BULK_DELETED',
+      'SERVER_TESTED',
+      'REPOSITORY_CREATED',
+      'REPOSITORY_UPDATED',
+      'REPOSITORY_DELETED',
+      'REPOSITORY_BULK_DELETED',
+      'REPOSITORY_SPACE_REFRESHED',
+      'RUN_DELETED',
+      'RUN_BULK_DELETED',
     ];
     const fromLogs = activityLogs.map((l) => l.action);
     return Array.from(new Set([...common, ...fromLogs])).sort();
@@ -2695,11 +2705,17 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
                         log.action.includes('FAIL') ||
                         log.details?.status === 'FAILED' ||
                         Boolean(log.details?.error || log.details?.errorMessage);
+                      const isDeleted =
+                        log.action.includes('DELETED') || log.action.includes('DELETE');
                       const isSuccess =
                         log.action.includes('COMPLETED') ||
                         log.action.includes('SUCCESS') ||
                         log.details?.status === 'SUCCESS' ||
                         log.details?.status === 'ONLINE';
+                      const isCreated = log.action.includes('CREATED');
+                      const isUpdated = log.action.includes('UPDATED') || log.action.includes('REFRESHED');
+                      const isTested = log.action.includes('TESTED') || log.action.includes('DRY_RUN');
+                      const isStarted = log.action.includes('STARTED');
 
                       return (
                         <React.Fragment key={log.id}>
@@ -2733,11 +2749,19 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
                               <span
                                 className={`px-2 py-0.5 rounded-full text-[10px] font-bold font-mono border inline-block truncate max-w-full ${
                                   isFailed
-                                    ? 'bg-rose-950/60 text-rose-300 border-rose-800/60'
+                                    ? 'bg-red-950/80 text-red-300 border-red-700/80'
+                                    : isDeleted
+                                    ? 'bg-rose-950/70 text-rose-300 border-rose-800/70'
                                     : isSuccess
                                     ? 'bg-emerald-950/60 text-emerald-300 border-emerald-800/60'
-                                    : log.action.includes('STARTED') || log.action.includes('TESTED')
+                                    : isCreated
+                                    ? 'bg-cyan-950/60 text-cyan-300 border-cyan-800/60'
+                                    : isUpdated
+                                    ? 'bg-blue-950/60 text-blue-300 border-blue-800/60'
+                                    : isStarted
                                     ? 'bg-amber-950/60 text-amber-300 border-amber-800/60'
+                                    : isTested
+                                    ? 'bg-purple-950/60 text-purple-300 border-purple-800/60'
                                     : 'bg-indigo-950/60 text-indigo-300 border-indigo-800/60'
                                 }`}
                               >
@@ -2747,7 +2771,17 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
 
                             {/* Entity */}
                             <td className="p-3.5 text-slate-300 font-mono text-[11px] truncate">
-                              <span className="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-400">
+                              <span
+                                className={`px-1.5 py-0.5 rounded border text-[10px] font-semibold ${
+                                  log.entityType === 'JOB'
+                                    ? 'bg-purple-950/50 border-purple-800/60 text-purple-300'
+                                    : log.entityType === 'SERVER'
+                                    ? 'bg-blue-950/50 border-blue-800/60 text-blue-300'
+                                    : log.entityType === 'REPOSITORY'
+                                    ? 'bg-amber-950/50 border-amber-800/60 text-amber-300'
+                                    : 'bg-emerald-950/50 border-emerald-800/60 text-emerald-300'
+                                }`}
+                              >
                                 {log.entityType}
                               </span>
                             </td>

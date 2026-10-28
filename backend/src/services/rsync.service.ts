@@ -574,7 +574,8 @@ awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8;i=$5;if(t>0)printf "BP_CPU:%.1f\\n",(1-(i/t)
    */
   async testServerConnection(
     serverId: string,
-    logLevel: 'info' | 'debug' = 'info'
+    logLevel: 'info' | 'debug' = 'info',
+    username?: string
   ): Promise<SshTestResult> {
     const server = await prisma.rsyncServer.findUnique({ where: { id: serverId } });
     if (!server) throw new Error(`Server not found: ${serverId}`);
@@ -602,8 +603,16 @@ awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8;i=$5;if(t>0)printf "BP_CPU:%.1f\\n",(1-(i/t)
         action: 'SERVER_TESTED',
         entityId: serverId,
         entityType: 'SERVER',
-        username: 'SYSTEM',
-        details: { status: result.status, latencyMs: result.latencyMs, message: result.message },
+        username: username || 'SYSTEM',
+        details: {
+          serverName: server.name,
+          host: server.host,
+          port: server.port,
+          status: result.status,
+          latencyMs: result.latencyMs,
+          message: result.message,
+          metrics: result.metrics ? ({ ...result.metrics } as any) : null,
+        } as any,
       },
     });
 
@@ -1014,6 +1023,24 @@ awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8;i=$5;if(t>0)printf "BP_CPU:%.1f\\n",(1-(i/t)
             errorMessage: failedErrMsg,
           }).catch(() => {});
         }
+
+        await prisma.rsyncActivityLog.create({
+          data: {
+            action: 'JOB_FAILED',
+            entityId: run.id,
+            entityType: 'RUN',
+            username: triggeredBy,
+            details: {
+              jobId: job.id,
+              jobName: job.name,
+              status: 'FAILED',
+              exitCode: preResult.exitCode,
+              error: failedErrMsg,
+              preHookFailed: true,
+              durationSeconds,
+            },
+          },
+        });
 
         return failedRun;
       }
@@ -1556,7 +1583,7 @@ awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8;i=$5;if(t>0)printf "BP_CPU:%.1f\\n",(1-(i/t)
 
         await prisma.rsyncActivityLog.create({
           data: {
-            action: 'DRY_RUN_TRIGGERED',
+            action: 'DRY_RUN_COMPLETED',
             entityId: run.id,
             entityType: 'RUN',
             username: triggeredBy,

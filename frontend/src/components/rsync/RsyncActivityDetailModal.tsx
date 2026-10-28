@@ -12,6 +12,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   Info,
+  Trash2,
+  PlusCircle,
 } from 'lucide-react';
 import { RsyncActivityLog } from '../../types';
 import { useTimezone } from '../../context/TimezoneContext';
@@ -44,11 +46,16 @@ export const RsyncActivityDetailModal: React.FC<RsyncActivityDetailModalProps> =
     log.details?.status === 'FAILED' ||
     Boolean(log.details?.error || log.details?.errorMessage);
 
+  const isDeleted =
+    log.action.includes('DELETED') || log.action.includes('DELETE');
+
   const isSuccess =
     log.action.includes('COMPLETED') ||
     log.action.includes('SUCCESS') ||
     log.details?.status === 'SUCCESS' ||
     log.details?.status === 'ONLINE';
+
+  const isCreated = log.action.includes('CREATED');
 
   return (
     <div
@@ -66,12 +73,26 @@ export const RsyncActivityDetailModal: React.FC<RsyncActivityDetailModalProps> =
               className={`p-2 rounded-xl border ${
                 isFailed
                   ? 'bg-rose-500/20 text-rose-400 border-rose-500/30'
+                  : isDeleted
+                  ? 'bg-red-500/20 text-red-400 border-red-500/30'
                   : isSuccess
                   ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                  : isCreated
+                  ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30'
                   : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
               }`}
             >
-              <Activity className="h-5 w-5" />
+              {isFailed ? (
+                <ShieldAlert className="h-5 w-5 text-rose-400" />
+              ) : isDeleted ? (
+                <Trash2 className="h-5 w-5 text-red-400" />
+              ) : isSuccess ? (
+                <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+              ) : isCreated ? (
+                <PlusCircle className="h-5 w-5 text-cyan-400" />
+              ) : (
+                <Activity className="h-5 w-5 text-amber-400" />
+              )}
             </div>
             <div>
               <div className="flex items-center space-x-2">
@@ -83,8 +104,12 @@ export const RsyncActivityDetailModal: React.FC<RsyncActivityDetailModalProps> =
                   className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${
                     isFailed
                       ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                      : isDeleted
+                      ? 'bg-red-500/20 text-red-300 border-red-500/40'
                       : isSuccess
                       ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      : isCreated
+                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
                       : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
                   }`}
                 >
