@@ -41,6 +41,7 @@ import { RsyncJobModal } from './RsyncJobModal';
 import { RsyncServerModal } from './RsyncServerModal';
 import { RsyncRepoModal } from './RsyncRepoModal';
 import { RsyncRunDetailModal } from './RsyncRunDetailModal';
+import { RsyncConfirmModal, RsyncConfirmModalConfig } from './RsyncConfirmModal';
 
 interface RsyncViewProps {
   currentUser: User | null;
@@ -58,7 +59,7 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
   // Loading & Data states
   const [loading, setLoading] = useState<boolean>(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   const [dashboardStats, setDashboardStats] = useState<RsyncDashboardStats | null>(null);
   const [jobs, setJobs] = useState<RsyncJob[]>([]);
@@ -94,10 +95,11 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
   const [showRepoModal, setShowRepoModal] = useState(false);
 
   const [selectedRunReport, setSelectedRunReport] = useState<RsyncRun | null>(null);
+  const [confirmModal, setConfirmModal] = useState<RsyncConfirmModalConfig | null>(null);
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 4000);
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4500);
   };
 
   // ============================================================================
@@ -220,7 +222,7 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
       showToast(`Execution finished with status: ${run.status}`);
       await refreshCurrentTab();
     } catch (err: any) {
-      alert(`Run failed: ${err.message}`);
+      showToast(`Run failed: ${err.message}`, 'error');
     } finally {
       setActionLoading(null);
     }
@@ -236,35 +238,72 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
       showToast(`Dry-run simulation completed.`);
       await refreshCurrentTab();
     } catch (err: any) {
-      alert(`Dry run simulation failed: ${err.message}`);
+      showToast(`Dry run simulation failed: ${err.message}`, 'error');
     } finally {
       setActionLoading(null);
     }
   };
 
-  const handleDeleteJob = async (id: string, name: string) => {
+  const handleDeleteJob = (job: RsyncJob) => {
     if (!isAdmin) return;
-    if (!confirm(`Are you sure you want to permanently delete job "${name}"?`)) return;
-    try {
-      await api.deleteRsyncJob(id);
-      showToast(`Job "${name}" deleted.`);
-      await refreshCurrentTab();
-    } catch (err: any) {
-      alert(`Delete failed: ${err.message}`);
-    }
+    setConfirmModal({
+      title: 'Delete Sync Job',
+      subtitle: `Job ID: ${job.id.slice(0, 8)}...`,
+      description: `Are you sure you want to permanently delete sync job "${job.name}"? All scheduled synchronization triggers and parameters for this job will be removed.`,
+      confirmText: 'Delete Job',
+      isDestructive: true,
+      itemDetails: [
+        { label: 'Job Name', value: job.name },
+        { label: 'Strategy', value: job.strategy },
+        { label: 'Source', value: job.sourceRepository?.name || 'Custom Path' },
+        { label: 'Destination', value: job.destRepository?.name || 'Custom Path' },
+        { label: 'Schedule', value: job.cronSchedule || 'Manual Run Only' },
+      ],
+      onConfirm: async () => {
+        try {
+          await api.deleteRsyncJob(job.id);
+          showToast(`Job "${job.name}" deleted successfully.`);
+          await refreshCurrentTab();
+        } catch (err: any) {
+          showToast(`Delete failed: ${err.message}`, 'error');
+          throw err;
+        }
+      },
+    });
   };
 
-  const handleBulkDeleteJobs = async () => {
+  const handleBulkDeleteJobs = () => {
     if (!isAdmin || selectedJobIds.length === 0) return;
-    if (!confirm(`Permanently delete ${selectedJobIds.length} selected job(s)?`)) return;
-    try {
-      await api.bulkDeleteRsyncJobs(selectedJobIds);
-      setSelectedJobIds([]);
-      showToast('Selected jobs deleted successfully.');
-      await refreshCurrentTab();
-    } catch (err: any) {
-      alert(`Bulk delete failed: ${err.message}`);
-    }
+    const count = selectedJobIds.length;
+    const selectedNames = jobs
+      .filter((j) => selectedJobIds.includes(j.id))
+      .map((j) => j.name);
+    const previewText =
+      selectedNames.slice(0, 3).join(', ') +
+      (selectedNames.length > 3 ? ` and ${selectedNames.length - 3} more` : '');
+
+    setConfirmModal({
+      title: 'Delete Selected Sync Jobs',
+      subtitle: `Bulk Action: ${count} job(s) selected`,
+      description: `Are you sure you want to permanently delete these ${count} selected sync jobs? All associated schedules and configuration settings will be lost.`,
+      confirmText: `Delete ${count} Jobs`,
+      isDestructive: true,
+      itemDetails: [
+        { label: 'Total Selected', value: `${count} jobs` },
+        { label: 'Jobs Included', value: previewText || `${count} selected` },
+      ],
+      onConfirm: async () => {
+        try {
+          await api.bulkDeleteRsyncJobs(selectedJobIds);
+          setSelectedJobIds([]);
+          showToast(`${count} sync jobs deleted successfully.`);
+          await refreshCurrentTab();
+        } catch (err: any) {
+          showToast(`Bulk delete failed: ${err.message}`, 'error');
+          throw err;
+        }
+      },
+    });
   };
 
   // ============================================================================
@@ -275,38 +314,78 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
     setActionLoading(`test-${id}`);
     try {
       const res = await api.testRsyncServer(id);
-      showToast(`Server "${name}" is ${res.status} (${res.latencyMs}ms): ${res.message}`);
+      if (res.status === 'ONLINE') {
+        showToast(`Server "${name}" is ONLINE (${res.latencyMs}ms): ${res.message}`);
+      } else {
+        showToast(`Server "${name}" status: ${res.status}. ${res.message}`, 'error');
+      }
       await loadServers();
     } catch (err: any) {
-      alert(`Connection test failed: ${err.message}`);
+      showToast(`Connection test failed: ${err.message}`, 'error');
     } finally {
       setActionLoading(null);
     }
   };
 
-  const handleDeleteServer = async (id: string, name: string) => {
+  const handleDeleteServer = (server: RsyncServer) => {
     if (!isAdmin) return;
-    if (!confirm(`Delete server "${name}"?`)) return;
-    try {
-      await api.deleteRsyncServer(id);
-      showToast(`Server "${name}" deleted.`);
-      await loadServers();
-    } catch (err: any) {
-      alert(`Delete failed: ${err.message}`);
-    }
+    setConfirmModal({
+      title: 'Delete Remote Rsync Node',
+      subtitle: `Node: ${server.host}:${server.port}`,
+      description: `Are you sure you want to delete remote server "${server.name}"? Repositories and sync jobs pointing to this node may no longer be able to establish SSH connections.`,
+      confirmText: 'Delete Server',
+      isDestructive: true,
+      itemDetails: [
+        { label: 'Server Name', value: server.name },
+        { label: 'Host & Port', value: `${server.username}@${server.host}:${server.port}` },
+        { label: 'Auth Method', value: server.authType },
+        { label: 'Linked Repos', value: `${server._count?.repositories ?? 0} repositories` },
+      ],
+      onConfirm: async () => {
+        try {
+          await api.deleteRsyncServer(server.id);
+          showToast(`Server "${server.name}" deleted successfully.`);
+          await loadServers();
+        } catch (err: any) {
+          showToast(`Delete failed: ${err.message}`, 'error');
+          throw err;
+        }
+      },
+    });
   };
 
-  const handleBulkDeleteServers = async () => {
+  const handleBulkDeleteServers = () => {
     if (!isAdmin || selectedServerIds.length === 0) return;
-    if (!confirm(`Permanently delete ${selectedServerIds.length} server(s)?`)) return;
-    try {
-      await api.bulkDeleteRsyncServers(selectedServerIds);
-      setSelectedServerIds([]);
-      showToast('Selected servers deleted.');
-      await loadServers();
-    } catch (err: any) {
-      alert(`Bulk delete failed: ${err.message}`);
-    }
+    const count = selectedServerIds.length;
+    const selectedNames = servers
+      .filter((s) => selectedServerIds.includes(s.id))
+      .map((s) => s.name);
+    const previewText =
+      selectedNames.slice(0, 3).join(', ') +
+      (selectedNames.length > 3 ? ` and ${selectedNames.length - 3} more` : '');
+
+    setConfirmModal({
+      title: 'Delete Selected Remote Servers',
+      subtitle: `Bulk Action: ${count} server(s) selected`,
+      description: `Are you sure you want to permanently delete these ${count} remote server connection profiles?`,
+      confirmText: `Delete ${count} Servers`,
+      isDestructive: true,
+      itemDetails: [
+        { label: 'Total Selected', value: `${count} servers` },
+        { label: 'Servers Included', value: previewText || `${count} selected` },
+      ],
+      onConfirm: async () => {
+        try {
+          await api.bulkDeleteRsyncServers(selectedServerIds);
+          setSelectedServerIds([]);
+          showToast(`${count} remote servers deleted successfully.`);
+          await loadServers();
+        } catch (err: any) {
+          showToast(`Bulk delete failed: ${err.message}`, 'error');
+          throw err;
+        }
+      },
+    });
   };
 
   // ============================================================================
@@ -320,71 +399,148 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
       showToast('Disk space refreshed.');
       await loadRepositories();
     } catch (err: any) {
-      alert(`Failed to refresh disk space: ${err.message}`);
+      showToast(`Failed to refresh disk space: ${err.message}`, 'error');
     } finally {
       setActionLoading(null);
     }
   };
 
-  const handleDeleteRepo = async (id: string, name: string) => {
+  const handleDeleteRepo = (repo: RsyncRepository) => {
     if (!isAdmin) return;
-    if (!confirm(`Delete repository "${name}"?`)) return;
-    try {
-      await api.deleteRsyncRepository(id);
-      showToast(`Repository "${name}" deleted.`);
-      await loadRepositories();
-    } catch (err: any) {
-      alert(`Delete failed: ${err.message}`);
-    }
+    setConfirmModal({
+      title: 'Delete Storage Repository',
+      subtitle: `Repository: ${repo.name}`,
+      description: `Are you sure you want to remove repository "${repo.name}" from the inventory? Physical files on the target disk will not be deleted, but sync jobs linked to this repository will be disrupted.`,
+      confirmText: 'Delete Repository',
+      isDestructive: true,
+      itemDetails: [
+        { label: 'Repository Name', value: repo.name },
+        { label: 'Storage Node', value: repo.server ? `${repo.server.name} (${repo.server.host})` : 'Local Host / BackupPulse Server' },
+        { label: 'Path', value: repo.path },
+        { label: 'Capacity', value: repo.totalSpaceHuman || 'Unknown' },
+      ],
+      onConfirm: async () => {
+        try {
+          await api.deleteRsyncRepository(repo.id);
+          showToast(`Repository "${repo.name}" deleted successfully.`);
+          await loadRepositories();
+        } catch (err: any) {
+          showToast(`Delete failed: ${err.message}`, 'error');
+          throw err;
+        }
+      },
+    });
   };
 
-  const handleBulkDeleteRepos = async () => {
+  const handleBulkDeleteRepos = () => {
     if (!isAdmin || selectedRepoIds.length === 0) return;
-    if (!confirm(`Permanently delete ${selectedRepoIds.length} repository(ies)?`)) return;
-    try {
-      await api.bulkDeleteRsyncRepositories(selectedRepoIds);
-      setSelectedRepoIds([]);
-      showToast('Selected repositories deleted.');
-      await loadRepositories();
-    } catch (err: any) {
-      alert(`Bulk delete failed: ${err.message}`);
-    }
+    const count = selectedRepoIds.length;
+    const selectedNames = repositories
+      .filter((r) => selectedRepoIds.includes(r.id))
+      .map((r) => r.name);
+    const previewText =
+      selectedNames.slice(0, 3).join(', ') +
+      (selectedNames.length > 3 ? ` and ${selectedNames.length - 3} more` : '');
+
+    setConfirmModal({
+      title: 'Delete Selected Storage Repositories',
+      subtitle: `Bulk Action: ${count} repository(ies) selected`,
+      description: `Are you sure you want to remove these ${count} repositories from the inventory? Physical disk data will remain untouched.`,
+      confirmText: `Delete ${count} Repositories`,
+      isDestructive: true,
+      itemDetails: [
+        { label: 'Total Selected', value: `${count} repositories` },
+        { label: 'Repositories Included', value: previewText || `${count} selected` },
+      ],
+      onConfirm: async () => {
+        try {
+          await api.bulkDeleteRsyncRepositories(selectedRepoIds);
+          setSelectedRepoIds([]);
+          showToast(`${count} repositories deleted successfully.`);
+          await loadRepositories();
+        } catch (err: any) {
+          showToast(`Bulk delete failed: ${err.message}`, 'error');
+          throw err;
+        }
+      },
+    });
   };
 
   // ============================================================================
   // Actions: Runs & Logs
   // ============================================================================
-  const handleDeleteRun = async (id: string) => {
+  const handleDeleteRun = (run: RsyncRun) => {
     if (!isAdmin) return;
-    try {
-      await api.deleteRsyncRun(id);
-      showToast('Run log deleted.');
-      await loadRuns();
-    } catch (err: any) {
-      alert(`Failed to delete run: ${err.message}`);
-    }
+    setConfirmModal({
+      title: 'Delete Execution Run Log',
+      subtitle: `Run ID: ${run.id.slice(0, 8)}...`,
+      description: `Are you sure you want to permanently delete this execution run record and its captured rsync terminal logs? This operation cannot be undone.`,
+      confirmText: 'Delete Run Record',
+      isDestructive: true,
+      itemDetails: [
+        { label: 'Sync Job', value: run.job?.name || 'Manual / Ad-hoc Sync' },
+        { label: 'Status', value: run.status },
+        { label: 'Execution Type', value: run.runType },
+        { label: 'Started At', value: formatTimestamp(run.startedAt) },
+        { label: 'Transferred', value: `${run.bytesTransferredHuman || '0 B'} (${run.transferredFiles.toLocaleString()} files)` },
+      ],
+      onConfirm: async () => {
+        try {
+          await api.deleteRsyncRun(run.id);
+          showToast('Execution run record deleted successfully.');
+          await loadRuns();
+        } catch (err: any) {
+          showToast(`Failed to delete run: ${err.message}`, 'error');
+          throw err;
+        }
+      },
+    });
   };
 
-  const handleBulkDeleteRuns = async () => {
+  const handleBulkDeleteRuns = () => {
     if (!isAdmin || selectedRunIds.length === 0) return;
-    if (!confirm(`Permanently delete ${selectedRunIds.length} execution run(s)?`)) return;
-    try {
-      await api.bulkDeleteRsyncRuns(selectedRunIds);
-      setSelectedRunIds([]);
-      showToast('Selected run logs deleted.');
-      await loadRuns();
-    } catch (err: any) {
-      alert(`Bulk delete failed: ${err.message}`);
-    }
+    const count = selectedRunIds.length;
+
+    setConfirmModal({
+      title: 'Purge Selected Execution Run Logs',
+      subtitle: `Bulk Action: ${count} run record(s) selected`,
+      description: `Are you sure you want to permanently purge these ${count} execution run records and their associated rsync output logs? This operation is irreversible.`,
+      confirmText: `Purge ${count} Run Logs`,
+      isDestructive: true,
+      itemDetails: [
+        { label: 'Total Selected', value: `${count} run records` },
+      ],
+      onConfirm: async () => {
+        try {
+          await api.bulkDeleteRsyncRuns(selectedRunIds);
+          setSelectedRunIds([]);
+          showToast(`${count} execution run logs purged successfully.`);
+          await loadRuns();
+        } catch (err: any) {
+          showToast(`Bulk delete failed: ${err.message}`, 'error');
+          throw err;
+        }
+      },
+    });
   };
 
   return (
     <div className="space-y-6 animate-fadeIn">
       {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-2xl flex items-center space-x-2 text-xs font-bold animate-bounce">
-          <CheckCircle2 className="h-4 w-4" />
-          <span>{toastMessage}</span>
+      {toast && (
+        <div
+          className={`fixed bottom-6 right-6 z-50 px-4 py-2.5 rounded-xl shadow-2xl flex items-center space-x-2.5 text-xs font-bold border transition-all animate-in fade-in slide-in-from-bottom-2 ${
+            toast.type === 'error'
+              ? 'bg-rose-950/95 border-rose-800 text-rose-200 shadow-rose-950/50'
+              : 'bg-emerald-950/95 border-emerald-800 text-emerald-200 shadow-emerald-950/50'
+          }`}
+        >
+          {toast.type === 'error' ? (
+            <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0" />
+          ) : (
+            <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+          )}
+          <span className="max-w-md break-words">{toast.message}</span>
         </div>
       )}
 
@@ -883,7 +1039,7 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
                                 <Edit2 className="h-3.5 w-3.5" />
                               </button>
                               <button
-                                onClick={() => handleDeleteJob(j.id, j.name)}
+                                onClick={() => handleDeleteJob(j)}
                                 className="p-1 rounded-lg hover:bg-rose-950/60 text-slate-400 hover:text-rose-400"
                                 title="Delete Job"
                               >
@@ -958,9 +1114,10 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
               {isAdmin && selectedServerIds.length > 0 && (
                 <button
                   onClick={handleBulkDeleteServers}
-                  className="px-3 py-1.5 rounded-xl text-xs font-bold text-rose-300 bg-rose-950/60 hover:bg-rose-900 border border-rose-800/60"
+                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-rose-300 bg-rose-950/60 hover:bg-rose-900 border border-rose-800/60 transition-colors"
                 >
-                  Delete Selected ({selectedServerIds.length})
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>Delete Selected ({selectedServerIds.length})</span>
                 </button>
               )}
               {isAdmin && (
@@ -1075,7 +1232,7 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
                                 <Edit2 className="h-3.5 w-3.5" />
                               </button>
                               <button
-                                onClick={() => handleDeleteServer(s.id, s.name)}
+                                onClick={() => handleDeleteServer(s)}
                                 className="p-1 rounded-lg hover:bg-rose-950/60 text-slate-400 hover:text-rose-400"
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
@@ -1109,9 +1266,10 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
               {isAdmin && selectedRepoIds.length > 0 && (
                 <button
                   onClick={handleBulkDeleteRepos}
-                  className="px-3 py-1.5 rounded-xl text-xs font-bold text-rose-300 bg-rose-950/60 hover:bg-rose-900 border border-rose-800/60"
+                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-rose-300 bg-rose-950/60 hover:bg-rose-900 border border-rose-800/60 transition-colors"
                 >
-                  Delete Selected ({selectedRepoIds.length})
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>Delete Selected ({selectedRepoIds.length})</span>
                 </button>
               )}
               {isAdmin && (
@@ -1222,7 +1380,7 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
                                 <Edit2 className="h-3.5 w-3.5" />
                               </button>
                               <button
-                                onClick={() => handleDeleteRepo(r.id, r.name)}
+                                onClick={() => handleDeleteRepo(r)}
                                 className="p-1 rounded-lg hover:bg-rose-950/60 text-slate-400 hover:text-rose-400"
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
@@ -1276,9 +1434,10 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
               {isAdmin && selectedRunIds.length > 0 && (
                 <button
                   onClick={handleBulkDeleteRuns}
-                  className="px-3 py-2 rounded-xl text-xs font-bold text-rose-300 bg-rose-950/60 hover:bg-rose-900 border border-rose-800/60"
+                  className="flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-bold text-rose-300 bg-rose-950/60 hover:bg-rose-900 border border-rose-800/60 transition-colors"
                 >
-                  Delete Selected ({selectedRunIds.length})
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>Delete Selected ({selectedRunIds.length})</span>
                 </button>
               )}
             </div>
@@ -1383,8 +1542,9 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
                           </button>
                           {isAdmin && (
                             <button
-                              onClick={() => handleDeleteRun(r.id)}
+                              onClick={() => handleDeleteRun(r)}
                               className="p-1 rounded-lg hover:bg-rose-950/60 text-slate-400 hover:text-rose-400"
+                              title="Delete Execution Run"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
@@ -1545,6 +1705,13 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
         run={selectedRunReport}
         isOpen={!!selectedRunReport}
         onClose={() => setSelectedRunReport(null)}
+      />
+
+      {/* Confirmation Modal */}
+      <RsyncConfirmModal
+        config={confirmModal}
+        isOpen={!!confirmModal}
+        onClose={() => setConfirmModal(null)}
       />
     </div>
   );
