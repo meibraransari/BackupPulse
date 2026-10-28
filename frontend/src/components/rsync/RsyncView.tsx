@@ -1712,6 +1712,19 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
                                 Telemetry
                               </span>
                             )}
+                            {j.preHookEnabled && j.postHookEnabled ? (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-semibold bg-indigo-950/80 text-indigo-300 border border-indigo-800/50" title={`Pre-hook: ${j.preHookCommand || ''}\nPost-hook: ${j.postHookCommand || ''}`}>
+                                Pre+Post Hooks
+                              </span>
+                            ) : j.preHookEnabled ? (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-semibold bg-cyan-950/80 text-cyan-300 border border-cyan-800/50" title={`Pre-hook: ${j.preHookCommand || ''}`}>
+                                Pre-hook
+                              </span>
+                            ) : j.postHookEnabled ? (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-semibold bg-purple-950/80 text-purple-300 border border-purple-800/50" title={`Post-hook: ${j.postHookCommand || ''}`}>
+                                Post-hook
+                              </span>
+                            ) : null}
                             {j.notifyPolicy === 'ALWAYS' ? (
                               <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-800/50" title="Sends alerts on both success & failure">
                                 Notify: All

@@ -408,6 +408,12 @@ export interface RsyncJob {
   commandMode?: 'SYSTEM' | 'USER';
   recordTelemetry?: boolean;
   notifyPolicy?: 'NONE' | 'FAILURE_ONLY' | 'ALWAYS';
+  preHookEnabled?: boolean;
+  preHookCommand?: string | null;
+  preHookArgs?: string | null;
+  postHookEnabled?: boolean;
+  postHookCommand?: string | null;
+  postHookArgs?: string | null;
   preservePermissions: boolean;
   preserveOwner: boolean;
   preserveTimes: boolean;

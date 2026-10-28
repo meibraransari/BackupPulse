@@ -111,6 +111,51 @@ export interface SshTestResult {
   metrics?: SshMetrics;
 }
 
+export interface HookContext {
+  jobId: string;
+  jobName: string;
+  trigger: string;
+  jobSequence: number;
+  sourceId: string;
+  sourceName: string;
+  destinationId: string;
+  destinationName: string;
+  startedAt: string;
+  userId: string;
+  userName: string;
+  completedAt?: string;
+  duration?: string;
+  status?: string;
+  error?: string;
+}
+
+/**
+ * Substitutes dynamic template variables in hook arguments:
+ * - {job_id}, {job_name}, {trigger}, {job_sequence}
+ * - {source_id}, {source_name}, {destination_id}, {destination_name}
+ * - {started_at}, {user_id}, {user_name}
+ * - {completed_at}, {duration}, {status}, {error}
+ */
+export function substituteHookVariables(template: string, ctx: HookContext): string {
+  if (!template) return '';
+  return template
+    .replace(/\{job_id\}/g, ctx.jobId || '')
+    .replace(/\{job_name\}/g, ctx.jobName || '')
+    .replace(/\{trigger\}/g, ctx.trigger || '')
+    .replace(/\{job_sequence\}/g, String(ctx.jobSequence || 1))
+    .replace(/\{source_id\}/g, ctx.sourceId || '')
+    .replace(/\{source_name\}/g, ctx.sourceName || '')
+    .replace(/\{destination_id\}/g, ctx.destinationId || '')
+    .replace(/\{destination_name\}/g, ctx.destinationName || '')
+    .replace(/\{started_at\}/g, ctx.startedAt || '')
+    .replace(/\{user_id\}/g, ctx.userId || '')
+    .replace(/\{user_name\}/g, ctx.userName || '')
+    .replace(/\{completed_at\}/g, ctx.completedAt || '')
+    .replace(/\{duration\}/g, ctx.duration || '')
+    .replace(/\{status\}/g, ctx.status || '')
+    .replace(/\{error\}/g, ctx.error || '');
+}
+
 export class RsyncService {
   /**
    * Probes disk capacity (total, used, free) for a repository
@@ -640,6 +685,77 @@ awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8;i=$5;if(t>0)printf "BP_CPU:%.1f\\n",(1-(i/t)
   }
 
   /**
+   * Executes a lifecycle hook (PRE-HOOK or POST-HOOK) command with argument substitutions
+   */
+  async executeHook(
+    hookType: 'PRE-HOOK' | 'POST-HOOK',
+    command: string,
+    argsTemplate: string | null | undefined,
+    ctx: HookContext
+  ): Promise<{
+    success: boolean;
+    exitCode: number;
+    stdout: string;
+    stderr: string;
+    durationMs: number;
+    error?: string;
+  }> {
+    const rawCmd = (command || '').trim();
+    if (!rawCmd) {
+      return { success: true, exitCode: 0, stdout: '', stderr: '', durationMs: 0 };
+    }
+
+    const substitutedArgs = argsTemplate ? substituteHookVariables(argsTemplate.trim(), ctx) : '';
+    const fullCommandLine = substitutedArgs ? `${rawCmd} ${substitutedArgs}` : rawCmd;
+
+    console.log(`[BACKUPPULSE ${hookType}] Executing:\n${fullCommandLine}`);
+
+    const hookStart = Date.now();
+    try {
+      const { stdout, stderr } = await execAsync(fullCommandLine, {
+        timeout: 120000,
+        env: {
+          ...process.env,
+          BP_JOB_ID: ctx.jobId,
+          BP_JOB_NAME: ctx.jobName,
+          BP_TRIGGER: ctx.trigger,
+          BP_JOB_SEQUENCE: String(ctx.jobSequence),
+          BP_SOURCE_ID: ctx.sourceId,
+          BP_SOURCE_NAME: ctx.sourceName,
+          BP_DESTINATION_ID: ctx.destinationId,
+          BP_DESTINATION_NAME: ctx.destinationName,
+          BP_STARTED_AT: ctx.startedAt,
+          BP_USER_ID: ctx.userId,
+          BP_USER_NAME: ctx.userName,
+          BP_COMPLETED_AT: ctx.completedAt || '',
+          BP_DURATION: ctx.duration || '',
+          BP_STATUS: ctx.status || '',
+          BP_ERROR: ctx.error || '',
+        },
+      });
+
+      const durationMs = Date.now() - hookStart;
+      return {
+        success: true,
+        exitCode: 0,
+        stdout: stdout ? stdout.trim() : '',
+        stderr: stderr ? stderr.trim() : '',
+        durationMs,
+      };
+    } catch (err: any) {
+      const durationMs = Date.now() - hookStart;
+      return {
+        success: false,
+        exitCode: typeof err.code === 'number' ? err.code : 1,
+        stdout: err.stdout ? String(err.stdout).trim() : '',
+        stderr: err.stderr ? String(err.stderr).trim() : (err.message || ''),
+        durationMs,
+        error: err.message || `${hookType} execution failed`,
+      };
+    }
+  }
+
+  /**
    * Executes an rsync job (Manual, Scheduled, or Dry-Run)
    */
   /**
@@ -781,6 +897,129 @@ awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8;i=$5;if(t>0)printf "BP_CPU:%.1f\\n",(1-(i/t)
     const startTime = Date.now();
 
     // ------------------------------------------------------------------------
+    // LIFECYCLE HOOKS: PRE-HOOK EXECUTION
+    // ------------------------------------------------------------------------
+    const jobSequence = await prisma.rsyncRun.count({ where: { jobId: job.id } });
+    const hookContext: HookContext = {
+      jobId: job.id,
+      jobName: job.name,
+      trigger: runType,
+      jobSequence,
+      sourceId: job.sourceRepoId,
+      sourceName: job.sourceRepo?.name || 'Source',
+      destinationId: job.destRepoId,
+      destinationName: job.destRepo?.name || 'Destination',
+      startedAt: now.toISOString(),
+      userId: triggeredBy,
+      userName: triggeredBy,
+      status: 'IN_PROGRESS',
+    };
+
+    let preHookOutput = '';
+    if ((job as any).preHookEnabled && (job as any).preHookCommand && (job as any).preHookCommand.trim()) {
+      const preResult = await this.executeHook(
+        'PRE-HOOK',
+        (job as any).preHookCommand,
+        (job as any).preHookArgs,
+        hookContext
+      );
+
+      const preArgsSub = (job as any).preHookArgs ? substituteHookVariables((job as any).preHookArgs, hookContext) : '';
+      const preLogHeader = `[BACKUPPULSE PRE-HOOK] Executing: ${(job as any).preHookCommand}${preArgsSub ? ' ' + preArgsSub : ''}\n`;
+      const preLogBody = `Exit Code: ${preResult.exitCode} (${preResult.durationMs}ms)\n${preResult.stdout ? `STDOUT:\n${preResult.stdout}\n` : ''}${preResult.stderr ? `STDERR:\n${preResult.stderr}\n` : ''}`;
+      preHookOutput = `${preLogHeader}${preLogBody}\n----------------------------------------\n`;
+
+      if (!preResult.success) {
+        console.error(`[BACKUPPULSE PRE-HOOK] Aborting sync for ${job.name} due to non-zero exit code ${preResult.exitCode}`);
+        const durationSeconds = (Date.now() - startTime) / 1000;
+        const failedErrMsg = `Pre-hook aborted sync (Exit code ${preResult.exitCode}): ${preResult.error || preResult.stderr || 'Pre-hook script failed'}`;
+
+        let postHookLog = '';
+        if ((job as any).postHookEnabled && (job as any).postHookCommand && (job as any).postHookCommand.trim()) {
+          hookContext.completedAt = new Date().toISOString();
+          hookContext.duration = `${durationSeconds.toFixed(1)}s`;
+          hookContext.status = 'FAILED';
+          hookContext.error = failedErrMsg;
+
+          const postResult = await this.executeHook(
+            'POST-HOOK',
+            (job as any).postHookCommand,
+            (job as any).postHookArgs,
+            hookContext
+          );
+
+          const postArgsSub = (job as any).postHookArgs ? substituteHookVariables((job as any).postHookArgs, hookContext) : '';
+          postHookLog = `\n----------------------------------------\n[BACKUPPULSE POST-HOOK] Executing: ${(job as any).postHookCommand}${postArgsSub ? ' ' + postArgsSub : ''}\nExit Code: ${postResult.exitCode} (${postResult.durationMs}ms)\n${postResult.stdout ? `STDOUT:\n${postResult.stdout}\n` : ''}${postResult.stderr ? `STDERR:\n${postResult.stderr}\n` : ''}`;
+        }
+
+        const failedRun = await prisma.rsyncRun.update({
+          where: { id: run.id },
+          data: {
+            status: 'FAILED',
+            exitCode: preResult.exitCode,
+            durationSeconds,
+            errorMessage: failedErrMsg,
+            stdoutLog: preHookOutput + postHookLog,
+            stderrLog: preResult.stderr || failedErrMsg,
+            completedAt: new Date(),
+          },
+        });
+
+        await prisma.rsyncJob.update({
+          where: { id: job.id },
+          data: { lastRunStatus: 'FAILED' },
+        });
+
+        if ((job as any).recordTelemetry) {
+          try {
+            await prisma.backupReport.create({
+              data: {
+                serverId: destServer?.name || sourceServer?.name || 'Local Host',
+                hostname: destServer?.host || sourceServer?.host || os.hostname(),
+                serverIp: destServer?.host || sourceServer?.host || '127.0.0.1',
+                projectName: `Rsync: ${job.name}`,
+                environment: 'production',
+                backupType: 'rsync_mirror',
+                status: 'FAILED',
+                startTime: new Date(startTime),
+                endTime: new Date(),
+                durationSeconds: Math.max(1, Math.round(durationSeconds)),
+                backupSizeBytes: BigInt(0),
+                backupSizeHuman: '0 B',
+                zipFilename: `${job.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_mirror`,
+                exitCode: preResult.exitCode,
+                errorMessage: failedErrMsg,
+                stdoutLog: (preHookOutput + postHookLog).slice(-50000),
+                stderrLog: (preResult.stderr || failedErrMsg).slice(-50000),
+                metadata: {
+                  jobId: job.id,
+                  runId: run.id,
+                  preHookFailed: true,
+                },
+              },
+            });
+          } catch (_) {}
+        }
+
+        const notifyPolicy = (job as any).notifyPolicy || 'FAILURE_ONLY';
+        if (notifyPolicy !== 'NONE') {
+          dispatchInstantFailureAlert({
+            projectName: `Rsync: ${job.name}`,
+            serverId: destServer?.name || 'Local Host',
+            hostname: os.hostname(),
+            backupType: 'rsync_mirror',
+            status: 'FAILED',
+            durationSeconds: Math.round(durationSeconds),
+            backupSizeBytes: 0,
+            errorMessage: failedErrMsg,
+          }).catch(() => {});
+        }
+
+        return failedRun;
+      }
+    }
+
+    // ------------------------------------------------------------------------
     // CASE 0: User-Managed Custom Full Command (Linux Expert Full Control)
     // ------------------------------------------------------------------------
     const userManagedCommand =
@@ -844,7 +1083,9 @@ awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8;i=$5;if(t>0)printf "BP_CPU:%.1f\\n",(1-(i/t)
         timestampStr,
         run,
         startTime,
-        triggeredBy
+        triggeredBy,
+        hookContext,
+        preHookOutput
       );
     } else if (isSameRemoteNode) {
       // ------------------------------------------------------------------------
@@ -938,6 +1179,24 @@ awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8;i=$5;if(t>0)printf "BP_CPU:%.1f\\n",(1-(i/t)
           try { fs.unlinkSync(tempKeyFile); } catch (_) {}
         }
 
+        let postHookLog = '';
+        if ((job as any).postHookEnabled && (job as any).postHookCommand && (job as any).postHookCommand.trim()) {
+          hookContext.completedAt = new Date().toISOString();
+          hookContext.duration = `${durationSeconds.toFixed(1)}s`;
+          hookContext.status = 'FAILED';
+          hookContext.error = err.message;
+
+          const postResult = await this.executeHook(
+            'POST-HOOK',
+            (job as any).postHookCommand,
+            (job as any).postHookArgs,
+            hookContext
+          );
+
+          const postArgsSub = (job as any).postHookArgs ? substituteHookVariables((job as any).postHookArgs, hookContext) : '';
+          postHookLog = `\n----------------------------------------\n[BACKUPPULSE POST-HOOK] Executing: ${(job as any).postHookCommand}${postArgsSub ? ' ' + postArgsSub : ''}\nExit Code: ${postResult.exitCode} (${postResult.durationMs}ms)\n${postResult.stdout ? `STDOUT:\n${postResult.stdout}\n` : ''}${postResult.stderr ? `STDERR:\n${postResult.stderr}\n` : ''}`;
+        }
+
         const failedRun = await prisma.rsyncRun.update({
           where: { id: run.id },
           data: {
@@ -945,6 +1204,7 @@ awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8;i=$5;if(t>0)printf "BP_CPU:%.1f\\n",(1-(i/t)
             exitCode: 1,
             durationSeconds,
             errorMessage: err.message,
+            stdoutLog: (preHookOutput || '') + stdoutBuffer + postHookLog,
             stderrLog: stderrBuffer + '\n' + err.message,
             completedAt: new Date(),
           },
@@ -1031,13 +1291,31 @@ awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8;i=$5;if(t>0)printf "BP_CPU:%.1f\\n",(1-(i/t)
         // Parse rsync transfer statistics
         const parsedStats = parseRsyncStats(stdoutBuffer);
 
+        let postHookLog = '';
+        if ((job as any).postHookEnabled && (job as any).postHookCommand && (job as any).postHookCommand.trim()) {
+          hookContext.completedAt = new Date().toISOString();
+          hookContext.duration = `${durationSeconds.toFixed(1)}s`;
+          hookContext.status = isSuccess ? 'SUCCESS' : 'FAILED';
+          hookContext.error = isSuccess ? '' : (stderrBuffer.trim() || `Rsync exited with code ${exitCode}`);
+
+          const postResult = await this.executeHook(
+            'POST-HOOK',
+            (job as any).postHookCommand,
+            (job as any).postHookArgs,
+            hookContext
+          );
+
+          const postArgsSub = (job as any).postHookArgs ? substituteHookVariables((job as any).postHookArgs, hookContext) : '';
+          postHookLog = `\n----------------------------------------\n[BACKUPPULSE POST-HOOK] Executing: ${(job as any).postHookCommand}${postArgsSub ? ' ' + postArgsSub : ''}\nExit Code: ${postResult.exitCode} (${postResult.durationMs}ms)\n${postResult.stdout ? `STDOUT:\n${postResult.stdout}\n` : ''}${postResult.stderr ? `STDERR:\n${postResult.stderr}\n` : ''}`;
+        }
+
         const updatedRun = await prisma.rsyncRun.update({
           where: { id: run.id },
           data: {
             status: isSuccess ? 'SUCCESS' : 'FAILED',
             exitCode,
             durationSeconds,
-            stdoutLog: stdoutBuffer,
+            stdoutLog: (preHookOutput || '') + stdoutBuffer + postHookLog,
             stderrLog: stderrBuffer,
             errorMessage: isSuccess ? null : (stderrBuffer.trim() || `Rsync exited with code ${exitCode}`),
             totalFiles: parsedStats.totalFiles,
@@ -1159,7 +1437,9 @@ awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8;i=$5;if(t>0)printf "BP_CPU:%.1f\\n",(1-(i/t)
     timestampStr: string,
     run: any,
     startTime: number,
-    triggeredBy: string
+    triggeredBy: string,
+    hookContext?: HookContext,
+    preHookOutput?: string
   ): Promise<any> {
     const transitDir = path.join(os.tmpdir(), 'backuppulse_transit', job.id);
     fs.mkdirSync(transitDir, { recursive: true });
@@ -1229,13 +1509,31 @@ awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8;i=$5;if(t>0)printf "BP_CPU:%.1f\\n",(1-(i/t)
         const durationSeconds = (Date.now() - startTime) / 1000;
         const parsedStats = parseRsyncStats(pullRes.stdout);
 
+        let postHookLog = '';
+        if (hookContext && (job as any).postHookEnabled && (job as any).postHookCommand && (job as any).postHookCommand.trim()) {
+          hookContext.completedAt = new Date().toISOString();
+          hookContext.duration = `${durationSeconds.toFixed(1)}s`;
+          hookContext.status = 'SUCCESS';
+          hookContext.error = '';
+
+          const postResult = await this.executeHook(
+            'POST-HOOK',
+            (job as any).postHookCommand,
+            (job as any).postHookArgs,
+            hookContext
+          );
+
+          const postArgsSub = (job as any).postHookArgs ? substituteHookVariables((job as any).postHookArgs, hookContext) : '';
+          postHookLog = `\n----------------------------------------\n[BACKUPPULSE POST-HOOK] Executing: ${(job as any).postHookCommand}${postArgsSub ? ' ' + postArgsSub : ''}\nExit Code: ${postResult.exitCode} (${postResult.durationMs}ms)\n${postResult.stdout ? `STDOUT:\n${postResult.stdout}\n` : ''}${postResult.stderr ? `STDERR:\n${postResult.stderr}\n` : ''}`;
+        }
+
         const updatedRun = await prisma.rsyncRun.update({
           where: { id: run.id },
           data: {
             status: 'SUCCESS',
             exitCode: 0,
             durationSeconds,
-            stdoutLog: stdoutBuffer,
+            stdoutLog: (preHookOutput || '') + stdoutBuffer + postHookLog,
             stderrLog: stderrBuffer,
             errorMessage: null,
             totalFiles: parsedStats.totalFiles,
@@ -1380,13 +1678,31 @@ awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8;i=$5;if(t>0)printf "BP_CPU:%.1f\\n",(1-(i/t)
 
       const parsedStats = parseRsyncStats(pushRes.stdout || pullRes.stdout);
 
+      let postHookLog = '';
+      if (hookContext && (job as any).postHookEnabled && (job as any).postHookCommand && (job as any).postHookCommand.trim()) {
+        hookContext.completedAt = new Date().toISOString();
+        hookContext.duration = `${durationSeconds.toFixed(1)}s`;
+        hookContext.status = isSuccess ? 'SUCCESS' : 'FAILED';
+        hookContext.error = isSuccess ? '' : (friendlyErrorMessage || '');
+
+        const postResult = await this.executeHook(
+          'POST-HOOK',
+          (job as any).postHookCommand,
+          (job as any).postHookArgs,
+          hookContext
+        );
+
+        const postArgsSub = (job as any).postHookArgs ? substituteHookVariables((job as any).postHookArgs, hookContext) : '';
+        postHookLog = `\n----------------------------------------\n[BACKUPPULSE POST-HOOK] Executing: ${(job as any).postHookCommand}${postArgsSub ? ' ' + postArgsSub : ''}\nExit Code: ${postResult.exitCode} (${postResult.durationMs}ms)\n${postResult.stdout ? `STDOUT:\n${postResult.stdout}\n` : ''}${postResult.stderr ? `STDERR:\n${postResult.stderr}\n` : ''}`;
+      }
+
       const updatedRun = await prisma.rsyncRun.update({
         where: { id: run.id },
         data: {
           status: isSuccess ? 'SUCCESS' : 'FAILED',
           exitCode: pushRes.exitCode,
           durationSeconds,
-          stdoutLog: stdoutBuffer,
+          stdoutLog: (preHookOutput || '') + stdoutBuffer + postHookLog,
           stderrLog: stderrBuffer,
           errorMessage: friendlyErrorMessage,
           totalFiles: parsedStats.totalFiles,
@@ -1485,6 +1801,25 @@ awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8;i=$5;if(t>0)printf "BP_CPU:%.1f\\n",(1-(i/t)
       return updatedRun;
     } catch (err: any) {
       const durationSeconds = (Date.now() - startTime) / 1000;
+
+      let postHookLog = '';
+      if (hookContext && (job as any).postHookEnabled && (job as any).postHookCommand && (job as any).postHookCommand.trim()) {
+        hookContext.completedAt = new Date().toISOString();
+        hookContext.duration = `${durationSeconds.toFixed(1)}s`;
+        hookContext.status = 'FAILED';
+        hookContext.error = err.message;
+
+        const postResult = await this.executeHook(
+          'POST-HOOK',
+          (job as any).postHookCommand,
+          (job as any).postHookArgs,
+          hookContext
+        );
+
+        const postArgsSub = (job as any).postHookArgs ? substituteHookVariables((job as any).postHookArgs, hookContext) : '';
+        postHookLog = `\n----------------------------------------\n[BACKUPPULSE POST-HOOK] Executing: ${(job as any).postHookCommand}${postArgsSub ? ' ' + postArgsSub : ''}\nExit Code: ${postResult.exitCode} (${postResult.durationMs}ms)\n${postResult.stdout ? `STDOUT:\n${postResult.stdout}\n` : ''}${postResult.stderr ? `STDERR:\n${postResult.stderr}\n` : ''}`;
+      }
+
       const failedRun = await prisma.rsyncRun.update({
         where: { id: run.id },
         data: {
@@ -1492,7 +1827,7 @@ awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8;i=$5;if(t>0)printf "BP_CPU:%.1f\\n",(1-(i/t)
           exitCode: 1,
           durationSeconds,
           errorMessage: err.message,
-          stdoutLog: stdoutBuffer,
+          stdoutLog: (preHookOutput || '') + stdoutBuffer + postHookLog,
           stderrLog: stderrBuffer + '\n' + err.message,
           completedAt: new Date(),
         },

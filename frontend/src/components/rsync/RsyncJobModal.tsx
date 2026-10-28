@@ -67,6 +67,16 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
   const [showCommandBox, setShowCommandBox] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // Lifecycle Hooks: Pre-hook & Post-hook
+  const [preHookEnabled, setPreHookEnabled] = useState(false);
+  const [preHookCommand, setPreHookCommand] = useState('');
+  const [preHookArgs, setPreHookArgs] = useState('');
+  const [postHookEnabled, setPostHookEnabled] = useState(false);
+  const [postHookCommand, setPostHookCommand] = useState('');
+  const [postHookArgs, setPostHookArgs] = useState('');
+  const [showHooksSection, setShowHooksSection] = useState(false);
+  const [lastFocusedHookArg, setLastFocusedHookArg] = useState<'pre' | 'post'>('post');
+
   const [recordTelemetry, setRecordTelemetry] = useState(false);
   const [notifyPolicy, setNotifyPolicy] = useState<'NONE' | 'FAILURE_ONLY' | 'ALWAYS'>('FAILURE_ONLY');
 
@@ -102,6 +112,13 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
       setCommandMode(initialMode);
       setRecordTelemetry(job.recordTelemetry ?? false);
       setNotifyPolicy(job.notifyPolicy || 'FAILURE_ONLY');
+      setPreHookEnabled(job.preHookEnabled ?? false);
+      setPreHookCommand(job.preHookCommand || '');
+      setPreHookArgs(job.preHookArgs || '');
+      setPostHookEnabled(job.postHookEnabled ?? false);
+      setPostHookCommand(job.postHookCommand || '');
+      setPostHookArgs(job.postHookArgs || '');
+      setShowHooksSection(!!(job.preHookEnabled || job.postHookEnabled));
       setShowCommandBox(false);
       setPreservePermissions(job.preservePermissions ?? true);
       setPreserveOwner(job.preserveOwner ?? true);
@@ -128,6 +145,13 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
       setCommandMode('SYSTEM');
       setRecordTelemetry(false);
       setNotifyPolicy('FAILURE_ONLY');
+      setPreHookEnabled(false);
+      setPreHookCommand('');
+      setPreHookArgs('');
+      setPostHookEnabled(false);
+      setPostHookCommand('');
+      setPostHookArgs('');
+      setShowHooksSection(false);
       setShowCommandBox(false);
       setPreservePermissions(true);
       setPreserveOwner(true);
@@ -302,6 +326,14 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleInsertVariable = (varName: string) => {
+    if (lastFocusedHookArg === 'pre') {
+      setPreHookArgs((prev) => (prev ? `${prev} ${varName}` : varName));
+    } else {
+      setPostHookArgs((prev) => (prev ? `${prev} ${varName}` : varName));
+    }
+  };
+
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -344,6 +376,12 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
         commandMode,
         recordTelemetry,
         notifyPolicy,
+        preHookEnabled,
+        preHookCommand: preHookCommand.trim() || null,
+        preHookArgs: preHookArgs.trim() || null,
+        postHookEnabled,
+        postHookCommand: postHookCommand.trim() || null,
+        postHookArgs: postHookArgs.trim() || null,
         preservePermissions,
         preserveOwner,
         preserveTimes,
@@ -800,6 +838,247 @@ export const RsyncJobModal: React.FC<RsyncJobModalProps> = ({
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* ========================================================================= */}
+          {/* LIFECYCLE HOOKS: PRE-HOOK & POST-HOOK (PROFESSIONAL DESIGN) */}
+          {/* ========================================================================= */}
+          <div className="pt-2 border-t border-slate-800 space-y-3">
+            {/* The Trigger Accordion Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 gap-3">
+              <div className="flex items-center space-x-3">
+                <div
+                  className={`p-2 rounded-xl border flex items-center justify-center shrink-0 ${
+                    preHookEnabled || postHookEnabled
+                      ? 'bg-indigo-500/15 border-indigo-500/30 text-indigo-400'
+                      : 'bg-slate-900 border-slate-800 text-slate-400'
+                  }`}
+                >
+                  <Sliders className="h-4 w-4" />
+                </div>
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs font-bold text-white">Hooks</span>
+                    {preHookEnabled && postHookEnabled ? (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center space-x-1">
+                        <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-pulse" />
+                        <span>Pre & Post Hooks Enabled</span>
+                      </span>
+                    ) : preHookEnabled ? (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 flex items-center space-x-1">
+                        <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
+                        <span>Pre-hook Active</span>
+                      </span>
+                    ) : postHookEnabled ? (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center space-x-1">
+                        <span className="h-1.5 w-1.5 rounded-full bg-purple-400" />
+                        <span>Post-hook Active</span>
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-medium bg-slate-900 text-slate-500 border border-slate-800">
+                        Optional
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Execute custom scripts, backups, or webhooks before and after rsync execution
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowHooksSection(!showHooksSection)}
+                className={`flex items-center justify-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm shrink-0 cursor-pointer ${
+                  showHooksSection
+                    ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
+                    : 'bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700'
+                }`}
+              >
+                <span>{showHooksSection ? 'Hide Hooks' : 'Configure Hooks'}</span>
+                {showHooksSection ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              </button>
+            </div>
+
+            {/* Expanded Hooks Configuration Panel */}
+            {showHooksSection && (
+              <div className="p-4 rounded-xl bg-slate-950/90 border border-slate-800 space-y-4 animate-fadeIn">
+                {/* Variable Substitution Reference Guide */}
+                <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/80 space-y-2.5 text-xs text-slate-300">
+                  <div className="text-[11px] text-slate-400 leading-relaxed">
+                    The following variables will be substituted in the hook arguments:
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      '{job_id}',
+                      '{job_name}',
+                      '{trigger}',
+                      '{job_sequence}',
+                      '{source_id}',
+                      '{source_name}',
+                      '{destination_id}',
+                      '{destination_name}',
+                      '{started_at}',
+                      '{user_id}',
+                      '{user_name}',
+                    ].map((v) => (
+                      <span
+                        key={v}
+                        onClick={() => handleInsertVariable(v)}
+                        title={`Click to insert ${v} into argument input`}
+                        className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-slate-950 border border-slate-800 text-indigo-300 hover:border-indigo-500 hover:text-white cursor-pointer transition-colors"
+                      >
+                        {v}
+                      </span>
+                    ))}
+                  </div>
+
+                  <div className="text-[11px] text-slate-400 pt-1.5 border-t border-slate-800/60">
+                    Post/success/failure hooks also have:
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {['{completed_at}', '{duration}', '{status}', '{error}'].map((v) => (
+                      <span
+                        key={v}
+                        onClick={() => handleInsertVariable(v)}
+                        title={`Click to insert ${v} into argument input`}
+                        className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-slate-950 border border-slate-800 text-purple-300 hover:border-purple-500 hover:text-white cursor-pointer transition-colors"
+                      >
+                        {v}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Pre-hook Card */}
+                <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <div className="p-1.5 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-400">
+                        <Terminal className="h-3.5 w-3.5" />
+                      </div>
+                      <div>
+                        <span className="text-xs font-bold text-white block">Pre-hook</span>
+                        <span className="text-[10px] text-slate-400">Runs before sync. Aborts rsync if exit code ≠ 0</span>
+                      </div>
+                    </div>
+
+                    {/* Modern Toggle Switch */}
+                    <div className="flex items-center space-x-2">
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={preHookEnabled}
+                        onClick={() => setPreHookEnabled(!preHookEnabled)}
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                          preHookEnabled ? 'bg-cyan-500' : 'bg-slate-700'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                            preHookEnabled ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                      <span className="text-xs font-semibold text-slate-300">Enabled</span>
+                    </div>
+                  </div>
+
+                  <div className={`space-y-3 pt-1 transition-opacity duration-200 ${preHookEnabled ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        Command
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="/usr/local/bin/pre_sync.sh"
+                        value={preHookCommand}
+                        onChange={(e) => setPreHookCommand(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono text-slate-200 focus:outline-none focus:border-cyan-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        Arguments
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="--job {job_name} --trigger {trigger}"
+                        value={preHookArgs}
+                        onFocus={() => setLastFocusedHookArg('pre')}
+                        onChange={(e) => setPreHookArgs(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono text-slate-200 focus:outline-none focus:border-cyan-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Post-hook Card */}
+                <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <div className="p-1.5 rounded-lg bg-purple-500/15 border border-purple-500/30 text-purple-400">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                      </div>
+                      <div>
+                        <span className="text-xs font-bold text-white block">Post-hook</span>
+                        <span className="text-[10px] text-slate-400">Runs after rsync completes with final status & metrics</span>
+                      </div>
+                    </div>
+
+                    {/* Modern Toggle Switch */}
+                    <div className="flex items-center space-x-2">
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={postHookEnabled}
+                        onClick={() => setPostHookEnabled(!postHookEnabled)}
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                          postHookEnabled ? 'bg-purple-500' : 'bg-slate-700'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                            postHookEnabled ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                      <span className="text-xs font-semibold text-slate-300">Enabled</span>
+                    </div>
+                  </div>
+
+                  <div className={`space-y-3 pt-1 transition-opacity duration-200 ${postHookEnabled ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        Command
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="/usr/local/bin/post_sync.sh"
+                        value={postHookCommand}
+                        onChange={(e) => setPostHookCommand(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        Arguments
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="--job {job_name} --status {status} --duration {duration}"
+                        value={postHookArgs}
+                        onFocus={() => setLastFocusedHookArg('post')}
+                        onChange={(e) => setPostHookArgs(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ========================================================================= */}
