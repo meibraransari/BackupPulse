@@ -37,23 +37,55 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (_request: FastifyRequest, reply: FastifyReply) => {
       try {
-        const [totalJobs, activeJobs, totalRuns, successfulRuns, failedRuns, repos, recentRuns] =
-          await Promise.all([
-            prisma.rsyncJob.count(),
-            prisma.rsyncJob.count({ where: { isActive: true } }),
-            prisma.rsyncRun.count(),
-            prisma.rsyncRun.count({ where: { status: 'SUCCESS' } }),
-            prisma.rsyncRun.count({ where: { status: 'FAILED' } }),
-            prisma.rsyncRepository.findMany({
-              include: { server: { select: { name: true, host: true } } },
-              orderBy: { createdAt: 'desc' },
-            }),
-            prisma.rsyncRun.findMany({
-              take: 5,
-              orderBy: { startedAt: 'desc' },
-              include: { job: { select: { name: true, syncStrategy: true } } },
-            }),
-          ]);
+        const [
+          totalJobs,
+          activeJobs,
+          totalRuns,
+          successfulRuns,
+          failedRuns,
+          repos,
+          recentRuns,
+          servers,
+          recentActivity,
+          strategyGroup,
+        ] = await Promise.all([
+          prisma.rsyncJob.count(),
+          prisma.rsyncJob.count({ where: { isActive: true } }),
+          prisma.rsyncRun.count(),
+          prisma.rsyncRun.count({ where: { status: 'SUCCESS' } }),
+          prisma.rsyncRun.count({ where: { status: 'FAILED' } }),
+          prisma.rsyncRepository.findMany({
+            include: { server: { select: { id: true, name: true, host: true } } },
+            orderBy: { createdAt: 'desc' },
+          }),
+          prisma.rsyncRun.findMany({
+            take: 5,
+            orderBy: { startedAt: 'desc' },
+            include: { job: { select: { id: true, name: true, syncStrategy: true } } },
+          }),
+          prisma.rsyncServer.findMany({
+            select: {
+              id: true,
+              name: true,
+              host: true,
+              port: true,
+              username: true,
+              authType: true,
+              status: true,
+              lastCheckedAt: true,
+              _count: { select: { repositories: true } },
+            },
+            orderBy: { createdAt: 'desc' },
+          }),
+          prisma.rsyncActivityLog.findMany({
+            take: 5,
+            orderBy: { createdAt: 'desc' },
+          }),
+          prisma.rsyncJob.groupBy({
+            by: ['syncStrategy'],
+            _count: { id: true },
+          }),
+        ]);
 
         // Calculate total transferred bytes
         const sumResult = await prisma.rsyncRun.aggregate({
@@ -65,6 +97,29 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
 
         const successRate = totalRuns > 0 ? Math.round((successfulRuns / totalRuns) * 100) : 100;
 
+        // Calculate aggregate storage across all storage pools
+        let aggTotalBytes = BigInt(0);
+        let aggUsedBytes = BigInt(0);
+        let aggAvailBytes = BigInt(0);
+        for (const r of repos) {
+          if (r.totalBytes) aggTotalBytes += BigInt(r.totalBytes);
+          if (r.usedBytes) aggUsedBytes += BigInt(r.usedBytes);
+          if (r.availableBytes) aggAvailBytes += BigInt(r.availableBytes);
+        }
+        const storagePercentUsed =
+          aggTotalBytes > BigInt(0)
+            ? Math.round(Number((aggUsedBytes * BigInt(100)) / aggTotalBytes))
+            : 0;
+
+        // Map strategy breakdown
+        const strategyBreakdown: Record<string, number> = {};
+        for (const sg of strategyGroup) {
+          strategyBreakdown[sg.syncStrategy] = sg._count.id;
+        }
+
+        const onlineServers = servers.filter((s) => s.status === 'ONLINE').length;
+        const offlineServers = servers.filter((s) => s.status === 'OFFLINE').length;
+
         return reply.send(
           serializeBigInt({
             totalJobs,
@@ -75,6 +130,21 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
             successRate,
             totalSyncedBytes: totalBytes,
             totalSyncedBytesHuman: formatBytes(totalBytes),
+            totalServers: servers.length,
+            onlineServers,
+            offlineServers,
+            servers,
+            recentActivity,
+            strategyBreakdown,
+            storageSummary: {
+              totalBytes: aggTotalBytes,
+              usedBytes: aggUsedBytes,
+              availableBytes: aggAvailBytes,
+              totalHuman: formatBytes(aggTotalBytes),
+              usedHuman: formatBytes(aggUsedBytes),
+              availableHuman: formatBytes(aggAvailBytes),
+              percentUsed: storagePercentUsed,
+            },
             repositories: repos.map((r) => {
               const total = r.totalBytes ? Number(r.totalBytes) : 0;
               const used = r.usedBytes ? Number(r.usedBytes) : 0;

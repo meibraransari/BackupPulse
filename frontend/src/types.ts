@@ -464,6 +464,32 @@ export interface RsyncDashboardStats {
   totalSyncedBytesHuman: string;
   repositories: RsyncRepository[];
   recentRuns: RsyncRun[];
+  totalServers?: number;
+  onlineServers?: number;
+  offlineServers?: number;
+  servers?: Array<{
+    id: string;
+    name: string;
+    host: string;
+    port: number;
+    username: string;
+    authType: string;
+    status: string;
+    latencyMs?: number | null;
+    lastTestedAt?: string | null;
+    _count?: { repositories: number };
+  }>;
+  strategyBreakdown?: Record<string, number>;
+  recentActivity?: RsyncActivityLog[];
+  storageSummary?: {
+    totalBytes: string | number;
+    usedBytes: string | number;
+    availableBytes: string | number;
+    totalHuman: string;
+    usedHuman: string;
+    availableHuman: string;
+    percentUsed: number;
+  };
 }
 
 

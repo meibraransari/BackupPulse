@@ -32,6 +32,10 @@ import {
   Maximize2,
   Filter,
   WrapText,
+  Database,
+  ArrowUpRight,
+  TrendingUp,
+  Cpu,
 } from 'lucide-react';
 import {
   User,
@@ -246,7 +250,7 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
     setLoading(true);
     try {
       if (activeSubTab === 'dashboard') {
-        await Promise.all([loadDashboard(), loadRepositories()]);
+        await Promise.all([loadDashboard(), loadRepositories(), loadServers(), loadJobs()]);
       } else if (activeSubTab === 'jobs') {
         await Promise.all([loadJobs(), loadRepositories(), loadServers()]);
       } else if (activeSubTab === 'servers') {
@@ -840,104 +844,305 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
       </div>
 
       {/* ==================================================================== */}
-      {/* 1. Dashboard Sub-Tab */}
+      {/* 1. Dashboard Sub-Tab (High-Density, Comprehensive & Fully Clickable) */}
       {/* ==================================================================== */}
       {activeSubTab === 'dashboard' && dashboardStats && (
         <div className="space-y-6">
-          {/* 4 KPI Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
-              <span className="text-xs font-semibold text-slate-400">Total Sync Jobs</span>
-              <div className="mt-2 flex items-baseline space-x-2">
-                <span className="text-3xl font-black text-white">{dashboardStats.totalJobs}</span>
-                <span className="text-xs text-emerald-400 font-semibold">
+          {/* Top 5 Interactive KPI Cards (All Clickable) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            {/* Total Sync Jobs */}
+            <div
+              onClick={() => handleTabChange('jobs')}
+              className="bg-slate-900 border border-slate-800 hover:border-amber-500/50 rounded-2xl p-4 sm:p-5 shadow-lg transition-all duration-200 cursor-pointer group hover:bg-slate-900/90 relative overflow-hidden flex flex-col justify-between"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-400 group-hover:text-slate-300 transition-colors">
+                  Total Sync Jobs
+                </span>
+                <div className="p-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 group-hover:scale-110 transition-transform">
+                  <Zap className="h-4 w-4" />
+                </div>
+              </div>
+              <div className="mt-3 flex items-baseline space-x-2">
+                <span className="text-2xl sm:text-3xl font-black text-white">{dashboardStats.totalJobs}</span>
+                <span className="text-xs text-emerald-400 font-semibold font-mono">
                   ({dashboardStats.activeJobs} active)
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500 mt-1">Configured disk mirrors</p>
+              <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-500 group-hover:text-amber-300 transition-colors">
+                <span>Manage Sync Jobs</span>
+                <ArrowRight className="h-3 w-3 group-hover:translate-x-1 transition-transform" />
+              </div>
             </div>
 
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
-              <span className="text-xs font-semibold text-slate-400">Total Transferred Data</span>
-              <div className="mt-2 flex items-baseline space-x-2">
-                <span className="text-3xl font-black text-amber-400">
+            {/* Remote SSH Nodes */}
+            <div
+              onClick={() => handleTabChange('servers')}
+              className="bg-slate-900 border border-slate-800 hover:border-indigo-500/50 rounded-2xl p-4 sm:p-5 shadow-lg transition-all duration-200 cursor-pointer group hover:bg-slate-900/90 relative overflow-hidden flex flex-col justify-between"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-400 group-hover:text-slate-300 transition-colors">
+                  Remote SSH Nodes
+                </span>
+                <div className="p-1.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 group-hover:scale-110 transition-transform">
+                  <Server className="h-4 w-4" />
+                </div>
+              </div>
+              <div className="mt-3 flex items-baseline space-x-2">
+                <span className="text-2xl sm:text-3xl font-black text-indigo-400">
+                  {dashboardStats.totalServers ?? servers.length}
+                </span>
+                <span className="text-[11px] text-emerald-400 font-semibold font-mono">
+                  {dashboardStats.onlineServers ?? servers.filter((s) => s.status === 'ONLINE').length} Online
+                </span>
+              </div>
+              <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-500 group-hover:text-indigo-300 transition-colors">
+                <span>Manage SSH Nodes</span>
+                <ArrowRight className="h-3 w-3 group-hover:translate-x-1 transition-transform" />
+              </div>
+            </div>
+
+            {/* Storage Repositories & Disks */}
+            <div
+              onClick={() => handleTabChange('repositories')}
+              className="bg-slate-900 border border-slate-800 hover:border-emerald-500/50 rounded-2xl p-4 sm:p-5 shadow-lg transition-all duration-200 cursor-pointer group hover:bg-slate-900/90 relative overflow-hidden flex flex-col justify-between"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-400 group-hover:text-slate-300 transition-colors">
+                  Storage Pools
+                </span>
+                <div className="p-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 group-hover:scale-110 transition-transform">
+                  <HardDrive className="h-4 w-4" />
+                </div>
+              </div>
+              <div className="mt-3 flex items-baseline space-x-2">
+                <span className="text-2xl sm:text-3xl font-black text-emerald-400">
+                  {dashboardStats.repositories.length}
+                </span>
+                <span className="text-[11px] text-slate-400 font-mono">
+                  {dashboardStats.storageSummary?.percentUsed ?? 0}% Fleet Used
+                </span>
+              </div>
+              <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-500 group-hover:text-emerald-300 transition-colors">
+                <span>Inspect Disk Mounts</span>
+                <ArrowRight className="h-3 w-3 group-hover:translate-x-1 transition-transform" />
+              </div>
+            </div>
+
+            {/* Success Rate */}
+            <div
+              onClick={() => handleTabChange('history')}
+              className="bg-slate-900 border border-slate-800 hover:border-emerald-500/50 rounded-2xl p-4 sm:p-5 shadow-lg transition-all duration-200 cursor-pointer group hover:bg-slate-900/90 relative overflow-hidden flex flex-col justify-between"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-400 group-hover:text-slate-300 transition-colors">
+                  Success Rate
+                </span>
+                <div className="p-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 group-hover:scale-110 transition-transform">
+                  <CheckCircle2 className="h-4 w-4" />
+                </div>
+              </div>
+              <div className="mt-3 flex items-baseline space-x-2">
+                <span className="text-2xl sm:text-3xl font-black text-emerald-400">
+                  {dashboardStats.successRate}%
+                </span>
+                <span className="text-xs text-slate-400 font-mono">
+                  ({dashboardStats.successfulRuns}/{dashboardStats.totalRuns})
+                </span>
+              </div>
+              <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-500 group-hover:text-emerald-300 transition-colors">
+                <span>View Run History</span>
+                <ArrowRight className="h-3 w-3 group-hover:translate-x-1 transition-transform" />
+              </div>
+            </div>
+
+            {/* Total Transferred Bandwidth */}
+            <div
+              onClick={() => handleTabChange('history')}
+              className="bg-slate-900 border border-slate-800 hover:border-amber-500/50 rounded-2xl p-4 sm:p-5 shadow-lg transition-all duration-200 cursor-pointer group hover:bg-slate-900/90 relative overflow-hidden flex flex-col justify-between"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-400 group-hover:text-slate-300 transition-colors">
+                  Transferred Data
+                </span>
+                <div className="p-1.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 group-hover:scale-110 transition-transform">
+                  <Activity className="h-4 w-4" />
+                </div>
+              </div>
+              <div className="mt-3 flex items-baseline space-x-2">
+                <span className="text-2xl sm:text-3xl font-black text-amber-400 truncate">
                   {dashboardStats.totalSyncedBytesHuman}
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500 mt-1">Cumulative literal bytes synced</p>
-            </div>
-
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
-              <span className="text-xs font-semibold text-slate-400">Success Rate</span>
-              <div className="mt-2 flex items-baseline space-x-2">
-                <span className="text-3xl font-black text-emerald-400">
-                  {dashboardStats.successRate}%
-                </span>
-                <span className="text-xs text-slate-400">
-                  ({dashboardStats.successfulRuns} / {dashboardStats.totalRuns})
-                </span>
+              <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-500 group-hover:text-amber-300 transition-colors">
+                <span>Bandwidth History</span>
+                <ArrowRight className="h-3 w-3 group-hover:translate-x-1 transition-transform" />
               </div>
-              <p className="text-[11px] text-slate-500 mt-1">Based on exit code 0</p>
-            </div>
-
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
-              <span className="text-xs font-semibold text-slate-400">Active Repositories</span>
-              <div className="mt-2 flex items-baseline space-x-2">
-                <span className="text-3xl font-black text-indigo-400">
-                  {dashboardStats.repositories.length}
-                </span>
-                <span className="text-xs text-slate-400">Disks</span>
-              </div>
-              <p className="text-[11px] text-slate-500 mt-1">Local and remote targets</p>
             </div>
           </div>
 
-          {/* Physical Disks & Storage Utilization */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-            <div className="flex items-center justify-between">
+          {/* Remote SSH Infrastructure & Connection Fleet Card */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <h3 className="text-sm font-bold text-white tracking-tight">
-                  Physical Disks & Storage Pools Utilization
-                </h3>
+                <div className="flex items-center space-x-2">
+                  <Server className="h-4 w-4 text-indigo-400" />
+                  <h3 className="text-sm font-bold text-white tracking-tight">
+                    Remote SSH Nodes & Connection Tunnels
+                  </h3>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-950 border border-slate-800 text-slate-300">
+                    {(dashboardStats.servers || servers).length} Nodes Connected
+                  </span>
+                </div>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Probed directly from filesystem via df -B1
+                  Live connectivity state, SSH key tunnels, and cross-server endpoints
                 </p>
               </div>
-              {isAdmin && (
+
+              <div className="flex items-center space-x-2">
+                {isAdmin && (
+                  <button
+                    onClick={() => {
+                      setEditingServer(null);
+                      setShowServerModal(true);
+                    }}
+                    className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 transition-colors shadow-md shadow-indigo-950/40"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>Add Remote Node</span>
+                  </button>
+                )}
                 <button
-                  onClick={() => {
-                    setEditingRepo(null);
-                    setShowRepoModal(true);
-                  }}
-                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 transition-colors"
+                  onClick={() => handleTabChange('servers')}
+                  className="flex items-center space-x-1 text-xs font-semibold text-indigo-400 hover:text-indigo-300 px-3 py-1.5 rounded-xl hover:bg-slate-800/60 transition-colors"
                 >
-                  <Plus className="h-3.5 w-3.5" />
-                  <span>Mount New Disk</span>
+                  <span>View All Servers</span>
+                  <ArrowRight className="h-3.5 w-3.5" />
                 </button>
-              )}
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+            {/* Servers Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-1">
+              {(dashboardStats.servers || servers).length === 0 ? (
+                <div className="col-span-full py-8 text-center text-xs text-slate-500 italic bg-slate-950/40 rounded-xl border border-slate-800/60">
+                  No remote SSH nodes configured yet. Connect remote nodes for cross-server rsync mirroring.
+                </div>
+              ) : (
+                (dashboardStats.servers || servers).map((s) => (
+                  <div
+                    key={s.id}
+                    onClick={() => handleTabChange('servers')}
+                    className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/80 hover:border-indigo-500/50 transition-all cursor-pointer group flex flex-col justify-between space-y-2.5"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <span className="font-bold text-white text-xs group-hover:text-indigo-300 transition-colors truncate max-w-[170px]" title={s.name}>
+                            {s.name}
+                          </span>
+                          <span
+                            className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold font-mono border ${
+                              s.status === 'ONLINE'
+                                ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800/70'
+                                : 'bg-rose-950/80 text-rose-300 border-rose-800/70'
+                            }`}
+                          >
+                            {s.status}
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-mono text-slate-400 block truncate mt-0.5" title={`${s.username}@${s.host}:${s.port}`}>
+                          {s.username}@{s.host}:{s.port}
+                        </span>
+                      </div>
+
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400">
+                        {s.authType}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-900">
+                      <span>{s.latencyMs !== null && s.latencyMs !== undefined ? `${s.latencyMs}ms latency` : 'Tunnel ready'}</span>
+                      <span className="text-indigo-400 group-hover:underline flex items-center space-x-0.5">
+                        <span>Details</span>
+                        <ArrowUpRight className="h-3 w-3" />
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Physical Disks & Storage Pools Utilization Card */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center space-x-2">
+                  <HardDrive className="h-4 w-4 text-emerald-400" />
+                  <h3 className="text-sm font-bold text-white tracking-tight">
+                    Physical Disks & Storage Pools Utilization
+                  </h3>
+                  {dashboardStats.storageSummary && (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-950 border border-slate-800 text-emerald-300">
+                      {dashboardStats.storageSummary.usedHuman} / {dashboardStats.storageSummary.totalHuman} (
+                      {dashboardStats.storageSummary.percentUsed}%)
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Probed directly from filesystem via df -B1 across local mount points and remote hosts
+                </p>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                {isAdmin && (
+                  <button
+                    onClick={() => {
+                      setEditingRepo(null);
+                      setShowRepoModal(true);
+                    }}
+                    className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 transition-colors shadow-md shadow-emerald-950/40"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>Mount New Disk</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => handleTabChange('repositories')}
+                  className="flex items-center space-x-1 text-xs font-semibold text-emerald-400 hover:text-emerald-300 px-3 py-1.5 rounded-xl hover:bg-slate-800/60 transition-colors"
+                >
+                  <span>View All Disks</span>
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Repositories Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-1">
               {dashboardStats.repositories.length === 0 ? (
-                <div className="col-span-2 text-center py-8 text-xs text-slate-500 italic">
-                  No physical disks or storage repositories registered yet.
+                <div className="col-span-full py-8 text-center text-xs text-slate-500 italic bg-slate-950/40 rounded-xl border border-slate-800/60">
+                  No storage repositories mounted yet. Register local paths or remote disk mounts.
                 </div>
               ) : (
                 dashboardStats.repositories.map((repo) => (
                   <div
                     key={repo.id}
-                    className="p-4 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-3"
+                    onClick={() => handleTabChange('repositories')}
+                    className="p-4 rounded-xl bg-slate-950/70 border border-slate-800/80 hover:border-emerald-500/50 transition-all cursor-pointer group space-y-3"
                   >
                     <div className="flex items-center justify-between text-xs">
-                      <div className="flex items-center space-x-2">
-                        <HardDrive className="h-4 w-4 text-emerald-400" />
-                        <span className="font-bold text-white">{repo.name}</span>
-                        <span className="text-[10px] px-1.5 py-0.2 rounded font-mono bg-slate-900 text-slate-400 border border-slate-800">
-                          {repo.type === 'LOCAL_DISK' ? 'Local Mount' : repo.server?.name || 'Remote'}
+                      <div className="flex items-center space-x-2 truncate pr-2">
+                        <HardDrive className="h-4 w-4 text-emerald-400 shrink-0" />
+                        <span className="font-bold text-white group-hover:text-emerald-300 transition-colors truncate" title={repo.name}>
+                          {repo.name}
+                        </span>
+                        <span className="text-[10px] px-1.5 py-0.2 rounded font-mono bg-slate-900 text-slate-400 border border-slate-800 shrink-0">
+                          {repo.type === 'LOCAL_DISK' ? 'Local' : repo.server?.name || 'Remote'}
                         </span>
                       </div>
-                      <span className="text-xs font-mono font-bold text-slate-300">
-                        {repo.usedHuman} / {repo.totalHuman} ({repo.percentUsed || 0}%)
+                      <span className="text-xs font-mono font-bold text-slate-300 shrink-0">
+                        {repo.percentUsed || 0}%
                       </span>
                     </div>
 
@@ -956,8 +1161,10 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
                     </div>
 
                     <div className="flex items-center justify-between text-[11px] text-slate-400">
-                      <code className="font-mono text-slate-300 text-[10px]">{repo.path}</code>
-                      <span>Free: {repo.availableHuman}</span>
+                      <code className="font-mono text-slate-300 text-[10px] truncate max-w-[180px]" title={repo.path}>
+                        {repo.path}
+                      </code>
+                      <span className="font-mono text-[10px] text-slate-400">Free: {repo.availableHuman}</span>
                     </div>
                   </div>
                 ))
@@ -965,58 +1172,302 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
             </div>
           </div>
 
-          {/* Recent Sync Runs */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+          {/* Sync Strategies (Left) & Operations Command Center (Right) */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Left Column: Sync Strategy Architecture (Clickable) */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <Layers className="h-4 w-4 text-amber-400" />
+                    <h3 className="text-sm font-bold text-white tracking-tight">Sync Strategy Distribution</h3>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">Click any strategy to view filtered sync jobs</p>
+                </div>
+                <button
+                  onClick={() => handleTabChange('jobs')}
+                  className="text-xs font-semibold text-amber-400 hover:text-amber-300 flex items-center space-x-1"
+                >
+                  <span>All Jobs</span>
+                  <ArrowRight className="h-3 w-3" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                {/* 1:1 Mirror */}
+                <div
+                  onClick={() => {
+                    handleTabChange('jobs');
+                    setStrategyFilter('EXACT_MIRROR');
+                  }}
+                  className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/80 hover:border-amber-500/50 transition-all cursor-pointer group space-y-1.5"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white group-hover:text-amber-300 transition-colors">
+                      Exact 1:1 Mirror
+                    </span>
+                    <span className="text-xs font-mono font-bold text-amber-400">
+                      {dashboardStats.strategyBreakdown?.['EXACT_MIRROR'] ?? 0}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                    Deletes unreferenced targets to maintain identical replicas.
+                  </p>
+                </div>
+
+                {/* Hardlink Snapshot */}
+                <div
+                  onClick={() => {
+                    handleTabChange('jobs');
+                    setStrategyFilter('HARDLINK_SNAPSHOT');
+                  }}
+                  className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/80 hover:border-indigo-500/50 transition-all cursor-pointer group space-y-1.5"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white group-hover:text-indigo-300 transition-colors">
+                      Hard-Link Snapshots
+                    </span>
+                    <span className="text-xs font-mono font-bold text-indigo-400">
+                      {dashboardStats.strategyBreakdown?.['HARDLINK_SNAPSHOT'] ?? 0}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                    Zero-overhead incremental snapshots using filesystem inodes.
+                  </p>
+                </div>
+
+                {/* Backup Dir */}
+                <div
+                  onClick={() => {
+                    handleTabChange('jobs');
+                    setStrategyFilter('BACKUP_DIR');
+                  }}
+                  className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/80 hover:border-emerald-500/50 transition-all cursor-pointer group space-y-1.5"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white group-hover:text-emerald-300 transition-colors">
+                      Incremental Delta
+                    </span>
+                    <span className="text-xs font-mono font-bold text-emerald-400">
+                      {dashboardStats.strategyBreakdown?.['BACKUP_DIR'] ?? 0}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                    Moves modified / deleted files into dated differential folders.
+                  </p>
+                </div>
+
+                {/* Two Way Sync */}
+                <div
+                  onClick={() => {
+                    handleTabChange('jobs');
+                    setStrategyFilter('TWO_WAY_SYNC');
+                  }}
+                  className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/80 hover:border-purple-500/50 transition-all cursor-pointer group space-y-1.5"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white group-hover:text-purple-300 transition-colors">
+                      Two-Way Sync
+                    </span>
+                    <span className="text-xs font-mono font-bold text-purple-400">
+                      {dashboardStats.strategyBreakdown?.['TWO_WAY_SYNC'] ?? 0}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                    Bi-directional sync updates across distributed nodes.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column: Operations Command Hub (Clickable Actions) */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl space-y-4">
+              <div>
+                <div className="flex items-center space-x-2">
+                  <Zap className="h-4 w-4 text-emerald-400" />
+                  <h3 className="text-sm font-bold text-white tracking-tight">Operations Command Hub</h3>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">Quick triggers for rsync infrastructure management</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                {/* Create Sync Job Action */}
+                <div
+                  onClick={() => {
+                    setEditingJob(null);
+                    setShowJobModal(true);
+                  }}
+                  className="p-3.5 rounded-xl bg-gradient-to-br from-amber-950/30 via-slate-950 to-slate-950 border border-amber-900/30 hover:border-amber-500/60 transition-all cursor-pointer group flex flex-col justify-between space-y-2"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white group-hover:text-amber-300 transition-colors">
+                      Create Sync Job
+                    </span>
+                    <Plus className="h-4 w-4 text-amber-400 group-hover:scale-125 transition-transform" />
+                  </div>
+                  <p className="text-[10px] text-slate-400">
+                    Configure scheduled 1:1 mirroring, snapshot triggers, and schedules.
+                  </p>
+                </div>
+
+                {/* Add Remote Server Action */}
+                <div
+                  onClick={() => {
+                    setEditingServer(null);
+                    setShowServerModal(true);
+                  }}
+                  className="p-3.5 rounded-xl bg-gradient-to-br from-indigo-950/30 via-slate-950 to-slate-950 border border-indigo-900/30 hover:border-indigo-500/60 transition-all cursor-pointer group flex flex-col justify-between space-y-2"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white group-hover:text-indigo-300 transition-colors">
+                      Add Remote Node
+                    </span>
+                    <Server className="h-4 w-4 text-indigo-400 group-hover:scale-125 transition-transform" />
+                  </div>
+                  <p className="text-[10px] text-slate-400">
+                    Set up an OpenSSH connection tunnel with password or private key.
+                  </p>
+                </div>
+
+                {/* Mount Storage Disk Action */}
+                <div
+                  onClick={() => {
+                    setEditingRepo(null);
+                    setShowRepoModal(true);
+                  }}
+                  className="p-3.5 rounded-xl bg-gradient-to-br from-emerald-950/30 via-slate-950 to-slate-950 border border-emerald-900/30 hover:border-emerald-500/60 transition-all cursor-pointer group flex flex-col justify-between space-y-2"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white group-hover:text-emerald-300 transition-colors">
+                      Mount Disk Pool
+                    </span>
+                    <HardDrive className="h-4 w-4 text-emerald-400 group-hover:scale-125 transition-transform" />
+                  </div>
+                  <p className="text-[10px] text-slate-400">
+                    Register a physical disk partition, local folder, or remote mount path.
+                  </p>
+                </div>
+
+                {/* View Execution History Action */}
+                <div
+                  onClick={() => handleTabChange('history')}
+                  className="p-3.5 rounded-xl bg-gradient-to-br from-purple-950/30 via-slate-950 to-slate-950 border border-purple-900/30 hover:border-purple-500/60 transition-all cursor-pointer group flex flex-col justify-between space-y-2"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white group-hover:text-purple-300 transition-colors">
+                      Execution History
+                    </span>
+                    <Terminal className="h-4 w-4 text-purple-400 group-hover:scale-125 transition-transform" />
+                  </div>
+                  <p className="text-[10px] text-slate-400">
+                    Access all historical sync logs, stdout outputs, and rsync terminal runs.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Recent Governance & Audit Activity Feed (Replaces Recent Runs) */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-bold text-white tracking-tight">Recent Synchronization Runs</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Latest 5 executions across all jobs</p>
+                <div className="flex items-center space-x-2">
+                  <Shield className="h-4 w-4 text-amber-400" />
+                  <h3 className="text-sm font-bold text-white tracking-tight">
+                    Recent Governance & System Audit Activity
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Latest system audit entries, execution triggers, server tests, and configuration changes
+                </p>
               </div>
+
               <button
-                onClick={() => handleTabChange('history')}
+                onClick={() => handleTabChange('activity')}
                 className="text-xs font-semibold text-amber-400 hover:text-amber-300 flex items-center space-x-1"
               >
-                <span>View Full History</span>
+                <span>Explore Full Audit Trail</span>
                 <ArrowRight className="h-3.5 w-3.5" />
               </button>
             </div>
 
-            <div className="space-y-2">
-              {dashboardStats.recentRuns.length === 0 ? (
-                <p className="text-xs text-slate-500 italic py-4">No recent executions recorded yet.</p>
+            <div className="space-y-2.5">
+              {(dashboardStats.recentActivity || activityLogs.slice(0, 5)).length === 0 ? (
+                <div className="text-center py-6 text-xs text-slate-500 italic bg-slate-950/40 rounded-xl border border-slate-800/60">
+                  No audit trail events recorded yet.
+                </div>
               ) : (
-                dashboardStats.recentRuns.map((r) => (
-                  <div
-                    key={r.id}
-                    onClick={() => setSelectedRunReport(r)}
-                    className="p-3 rounded-xl bg-slate-950/50 border border-slate-800/70 hover:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs transition-colors cursor-pointer"
-                  >
-                    <div className="flex items-center space-x-3">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold font-mono border ${
-                          r.status === 'SUCCESS'
-                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                            : r.status === 'FAILED'
-                            ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
-                            : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
-                        }`}
-                      >
-                        {r.status}
-                      </span>
-                      <span className="font-bold text-white">{r.job?.name || 'Sync Run'}</span>
-                      <span className="text-[11px] text-slate-400">
-                        {r.runType === 'DRY_RUN' ? 'Simulation' : r.runType}
-                      </span>
-                    </div>
+                (dashboardStats.recentActivity || activityLogs.slice(0, 5)).map((log) => {
+                  const isFailed =
+                    log.action.includes('FAIL') ||
+                    log.details?.status === 'FAILED' ||
+                    Boolean(log.details?.error || log.details?.errorMessage);
+                  const isSuccess =
+                    log.action.includes('COMPLETED') ||
+                    log.action.includes('SUCCESS') ||
+                    log.details?.status === 'SUCCESS' ||
+                    log.details?.status === 'ONLINE';
 
-                    <div className="flex items-center space-x-4 text-slate-400 text-[11px]">
-                      <span>{formatTimestamp(r.startedAt)}</span>
-                      <span>{r.durationSeconds ? `${r.durationSeconds.toFixed(1)}s` : '—'}</span>
-                      <Eye className="h-3.5 w-3.5 text-slate-400 hover:text-white" />
+                  return (
+                    <div
+                      key={log.id}
+                      onClick={() => handleTabChange('activity')}
+                      className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 hover:border-amber-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs transition-colors cursor-pointer group"
+                    >
+                      <div className="flex items-center space-x-3">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold font-mono border ${
+                            isFailed
+                              ? 'bg-rose-950/80 text-rose-300 border-rose-800/70'
+                              : isSuccess
+                              ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800/70'
+                              : 'bg-amber-950/80 text-amber-300 border-amber-800/70'
+                          }`}
+                        >
+                          {log.action}
+                        </span>
+
+                        <span className="font-semibold text-white group-hover:text-amber-300 transition-colors">
+                          {log.details?.jobName || log.details?.serverName || log.entityType}
+                        </span>
+
+                        <span className="text-[11px] text-slate-500 font-mono">
+                          by <span className="text-slate-300">{log.username}</span>
+                        </span>
+                      </div>
+
+                      <div className="flex items-center space-x-3 text-slate-400 text-[11px]">
+                        {log.details?.message && (
+                          <span className="text-slate-500 truncate max-w-xs hidden md:inline">
+                            {log.details.message}
+                          </span>
+                        )}
+                        <span className="font-mono text-slate-500">{formatTimestamp(log.createdAt)}</span>
+                        <ArrowRight className="h-3.5 w-3.5 text-slate-500 group-hover:text-amber-400 group-hover:translate-x-0.5 transition-all" />
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
+            </div>
+          </div>
+
+          {/* Engine Protocol & Readiness Banner */}
+          <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
+            <div className="flex items-center space-x-2">
+              <Cpu className="h-4 w-4 text-emerald-400" />
+              <span className="font-semibold text-slate-300">Rsync 3.5.0 Engine:</span>
+              <span className="text-emerald-400 font-mono">Active & Operational</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Shield className="h-4 w-4 text-indigo-400" />
+              <span className="font-semibold text-slate-300">OpenSSH Tunnels:</span>
+              <span className="text-indigo-400 font-mono">Encrypted (Ed25519 & RSA)</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Database className="h-4 w-4 text-amber-400" />
+              <span className="font-semibold text-slate-300">Audit Trail:</span>
+              <span className="text-amber-400 font-mono">Tamper-Evident Ledger Active</span>
             </div>
           </div>
         </div>
