@@ -665,7 +665,13 @@ export class RsyncService {
         entityId: run.id,
         entityType: 'RUN',
         username: triggeredBy,
-        details: { jobId: job.id, jobName: job.name, runType, topology: isSameRemoteNode ? 'SAME_REMOTE' : isCrossRemoteNodes ? 'CROSS_REMOTE' : 'STANDARD' },
+        details: {
+          jobId: job.id,
+          jobName: job.name,
+          runType,
+          commandMode: (job as any).commandMode || (job.customArgs && job.customArgs.trim() ? 'USER' : 'SYSTEM'),
+          topology: isSameRemoteNode ? 'SAME_REMOTE' : isCrossRemoteNodes ? 'CROSS_REMOTE' : 'STANDARD',
+        },
       },
     });
 

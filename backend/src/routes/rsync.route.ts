@@ -625,7 +625,7 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (request: any, reply: FastifyReply) => {
-      const { search, status, strategy, page = '1', limit = '25' } = request.query || {};
+      const { search, status, strategy, commandMode, page = '1', limit = '25' } = request.query || {};
       const pageNum = Math.max(1, parseInt(page, 10) || 1);
       const limitNum = Math.max(1, parseInt(limit, 10) || 25);
       const skip = (pageNum - 1) * limitNum;
@@ -641,6 +641,9 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
       }
       if (strategy && strategy !== 'ALL') {
         where.syncStrategy = strategy;
+      }
+      if (commandMode && commandMode !== 'ALL') {
+        where.commandMode = commandMode;
       }
 
       const [total, items] = await Promise.all([
@@ -660,9 +663,14 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
         }),
       ]);
 
+      const mappedItems = items.map((job) => ({
+        ...job,
+        commandMode: (job as any).commandMode || (job.customArgs && job.customArgs.trim() ? 'USER' : 'SYSTEM'),
+      }));
+
       return reply.send(
         serializeBigInt({
-          data: items,
+          data: mappedItems,
           pagination: {
             page: pageNum,
             limit: limitNum,
@@ -717,6 +725,7 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
           bandwidthLimitKb: body.bandwidthLimitKb ? parseInt(body.bandwidthLimitKb, 10) : null,
           excludePatterns: Array.isArray(body.excludePatterns) ? body.excludePatterns : [],
           customArgs: body.customArgs?.trim() || null,
+          commandMode: body.commandMode || (body.customArgs?.trim() ? 'USER' : 'SYSTEM'),
           preservePermissions: body.preservePermissions ?? true,
           preserveOwner: body.preserveOwner ?? true,
           preserveTimes: body.preserveTimes ?? true,
@@ -779,6 +788,7 @@ export async function rsyncRoutes(fastify: FastifyInstance): Promise<void> {
           bandwidthLimitKb: body.bandwidthLimitKb !== undefined ? (body.bandwidthLimitKb ? parseInt(body.bandwidthLimitKb, 10) : null) : undefined,
           excludePatterns: Array.isArray(body.excludePatterns) ? body.excludePatterns : undefined,
           customArgs: body.customArgs !== undefined ? (body.customArgs?.trim() || null) : undefined,
+          commandMode: body.commandMode !== undefined ? body.commandMode : (body.customArgs !== undefined ? (body.customArgs?.trim() ? 'USER' : 'SYSTEM') : undefined),
           preservePermissions: body.preservePermissions,
           preserveOwner: body.preserveOwner,
           preserveTimes: body.preserveTimes,

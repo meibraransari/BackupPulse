@@ -629,6 +629,7 @@ export const api = {
     search?: string;
     status?: string;
     strategy?: string;
+    commandMode?: string;
     page?: number;
     limit?: number;
   } = {}): Promise<{ data: RsyncJob[]; pagination: { page: number; limit: number; total: number; totalPages: number } }> {
@@ -636,6 +637,7 @@ export const api = {
     if (params.search) q.append('search', params.search);
     if (params.status && params.status !== 'ALL') q.append('status', params.status);
     if (params.strategy && params.strategy !== 'ALL') q.append('strategy', params.strategy);
+    if (params.commandMode && params.commandMode !== 'ALL') q.append('commandMode', params.commandMode);
     if (params.page) q.append('page', String(params.page));
     if (params.limit) q.append('limit', String(params.limit));
     return request<{ data: RsyncJob[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>(

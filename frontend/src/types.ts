@@ -396,6 +396,7 @@ export interface RsyncJob {
   bandwidthLimitKb?: number | null;
   excludePatterns: string[];
   customArgs?: string | null;
+  commandMode?: 'SYSTEM' | 'USER';
   preservePermissions: boolean;
   preserveOwner: boolean;
   preserveTimes: boolean;

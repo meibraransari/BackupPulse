@@ -87,6 +87,7 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [strategyFilter, setStrategyFilter] = useState('ALL');
+  const [commandModeFilter, setCommandModeFilter] = useState('ALL');
 
   // Pagination states
   const [page, setPage] = useState(1);
@@ -191,6 +192,7 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
         search: searchTerm,
         status: statusFilter,
         strategy: strategyFilter,
+        commandMode: commandModeFilter,
         page,
         limit,
       });
@@ -199,7 +201,7 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
     } catch (err: any) {
       console.error('Error loading rsync jobs:', err);
     }
-  }, [searchTerm, statusFilter, strategyFilter, page, limit]);
+  }, [searchTerm, statusFilter, strategyFilter, commandModeFilter, page, limit]);
 
   const loadServers = useCallback(async () => {
     try {
@@ -1515,6 +1517,16 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
                 <option value="HARDLINK_SNAPSHOT">Time-Machine Snapshots</option>
                 <option value="BACKUP_DIR">Mirror + Recycle Bin</option>
               </select>
+
+              <select
+                value={commandModeFilter}
+                onChange={(e) => setCommandModeFilter(e.target.value)}
+                className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+              >
+                <option value="ALL">All Command Modes</option>
+                <option value="SYSTEM">⚙️ System Managed</option>
+                <option value="USER">⚡ User Managed</option>
+              </select>
             </div>
 
             <div className="flex items-center space-x-2">
@@ -1604,13 +1616,42 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
                           </span>
                         </td>
                         <td className="p-3.5">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-slate-950 border border-slate-800 text-slate-300">
-                            {j.syncStrategy === 'HARDLINK_SNAPSHOT'
-                              ? '📸 Snapshots'
-                              : j.syncStrategy === 'BACKUP_DIR'
-                              ? '📦 Recycle Bin'
-                              : '🪞 1:1 Mirror'}
-                          </span>
+                          <div className="flex flex-col space-y-1.5 items-start">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-slate-950 border border-slate-800 text-slate-300">
+                              {j.syncStrategy === 'HARDLINK_SNAPSHOT'
+                                ? '📸 Snapshots'
+                                : j.syncStrategy === 'BACKUP_DIR'
+                                ? '📦 Recycle Bin'
+                                : '🪞 1:1 Mirror'}
+                            </span>
+                            {j.commandMode === 'USER' || (j.customArgs && j.customArgs.trim()) ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingJob(j);
+                                  setShowJobModal(true);
+                                }}
+                                className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 transition-all cursor-pointer"
+                                title={`User Managed: ${j.customArgs || 'Custom parameters active'}. Click to view/edit rsync command.`}
+                              >
+                                <Terminal className="h-3 w-3" />
+                                <span>User Managed</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingJob(j);
+                                  setShowJobModal(true);
+                                }}
+                                className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-medium bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 transition-all cursor-pointer"
+                                title="System Managed: Automated dynamic flags. Click to inspect rsync command."
+                              >
+                                <Cpu className="h-3 w-3" />
+                                <span>System Managed</span>
+                              </button>
+                            )}
+                          </div>
                         </td>
                         <td className="p-3.5 text-slate-300 font-mono text-[11px]">
                           <div>
@@ -1666,7 +1707,17 @@ export const RsyncView: React.FC<RsyncViewProps> = ({ currentUser }) => {
                                   setEditingJob(j);
                                   setShowJobModal(true);
                                 }}
-                                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
+                                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-amber-400 transition-colors"
+                                title="View & Modify Rsync Command"
+                              >
+                                <Terminal className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setEditingJob(j);
+                                  setShowJobModal(true);
+                                }}
+                                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
                                 title="Edit Job"
                               >
                                 <Edit2 className="h-3.5 w-3.5" />
